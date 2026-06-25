@@ -910,6 +910,30 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
         _commands: &mut Vec<ProjectCommand>,
     ) {
     }
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &UmlSequenceSettings,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) -> PropertiesStatus<UmlSequenceDomain> {
+        if let Some((uuid, ts)) = settings
+            .palette
+            .read()
+            .unwrap()
+            .find_matching_tool_stage(modifiers, key)
+        {
+            PropertiesStatus::ToolRequest(Some(NaiveUmlSequenceTool {
+                uuid,
+                initial_stage: ts.clone(),
+                current_stage: ts,
+                result: PartialUmlSequenceElement::None,
+                event_lock: false,
+                is_spent: None,
+            }))
+        } else {
+            PropertiesStatus::Shown
+        }
+    }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlSequenceElement>) {
         let (new_model, models) = super::umlsequence_models::deep_copy_diagram(&self.model.read());
@@ -1117,6 +1141,7 @@ impl DiagramSettings2<UmlSequenceDomain> for UmlSequenceSettings {
                     UmlSequenceToolStage,
                     String,
                     UmlSequenceElementView,
+                    Option<egui::KeyboardShortcut>,
                 )>,
             ),
         ),
@@ -1130,13 +1155,24 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (
             "Containers",
             vec![
-                (UmlSequenceToolStage::DiagramStart, "Diagram"),
+                (
+                    UmlSequenceToolStage::DiagramStart,
+                    "Diagram",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num7,
+                    )),
+                ),
                 (
                     UmlSequenceToolStage::CombinedFragmentStart {
                         kind: UmlSequenceCombinedFragmentKind::Opt,
                         end_behaviour: UmlSequenceActivationBehaviour::ContinueFirstVariant,
                     },
                     "Combined Fragment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num8,
+                    )),
                 ),
             ],
         ),
@@ -1151,6 +1187,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "Actor Lifeline",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num4,
+                    )),
                 ),
                 (
                     UmlSequenceToolStage::Lifeline {
@@ -1160,6 +1200,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "Object Lifeline",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num5,
+                    )),
                 ),
             ],
         ),
@@ -1179,6 +1223,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Synchronous Message",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num1,
+                    )),
                 ),
                 (
                     UmlSequenceToolStage::LinkStart {
@@ -1193,6 +1241,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Synchronous Return",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num2,
+                    )),
                 ),
                 (
                     UmlSequenceToolStage::LinkStart {
@@ -1208,6 +1260,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Asynchronous Call",
+                    None,
                 ),
                 (
                     UmlSequenceToolStage::LinkStart {
@@ -1223,6 +1276,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Asynchronous Signal",
+                    None,
                 ),
             ],
         ),
@@ -1234,6 +1288,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         text: "Checkout".to_owned(),
                     },
                     "Interaction Fragment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num3,
+                    )),
                 ),
                 (
                     UmlSequenceToolStage::Comment {
@@ -1241,6 +1299,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         align: egui::Align2::CENTER_CENTER,
                     },
                     "Comment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num9,
+                    )),
                 ),
                 //(UmlSequenceToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
             ],
@@ -1253,7 +1315,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             e.1.into_iter()
                 .map(|e| {
                     let v = view_for_stage(&e.0);
-                    (e.0, e.1, v)
+                    (e.0, e.1, v, e.2)
                 })
                 .collect(),
         )

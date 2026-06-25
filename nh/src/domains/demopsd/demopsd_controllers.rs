@@ -673,6 +673,30 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         _commands: &mut Vec<ProjectCommand>,
     ) {
     }
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &DemoPsdSettings,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) -> PropertiesStatus<DemoPsdDomain> {
+        if let Some((uuid, ts)) = settings
+            .palette
+            .read()
+            .unwrap()
+            .find_matching_tool_stage(modifiers, key)
+        {
+            PropertiesStatus::ToolRequest(Some(NaiveDemoPsdTool {
+                uuid,
+                initial_stage: ts.clone(),
+                current_stage: ts,
+                result: PartialDemoPsdElement::None,
+                event_lock: false,
+                is_spent: None,
+            }))
+        } else {
+            PropertiesStatus::Shown
+        }
+    }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DemoPsdElement>) {
         let (new_model, models) = super::demopsd_models::deep_copy_diagram(&self.model.read());
@@ -839,7 +863,13 @@ impl DiagramSettings2<DemoPsdDomain> for DemoPsdSettings {
             &mut (
                 uuid::Uuid,
                 String,
-                Vec<(uuid::Uuid, DemoPsdToolStage, String, DemoPsdElementView)>,
+                Vec<(
+                    uuid::Uuid,
+                    DemoPsdToolStage,
+                    String,
+                    DemoPsdElementView,
+                    Option<egui::KeyboardShortcut>,
+                )>,
             ),
         ),
     {
@@ -904,7 +934,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             e.1.into_iter()
                 .map(|e| {
                     let v = view_for_stage(&e.0);
-                    (e.0, e.1, v)
+                    (e.0, e.1, v, None)
                 })
                 .collect(),
         )

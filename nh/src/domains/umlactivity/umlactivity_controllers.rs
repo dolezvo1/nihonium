@@ -625,6 +625,30 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
         _commands: &mut Vec<ProjectCommand>,
     ) {
     }
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &UmlActivitySettings,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) -> PropertiesStatus<UmlActivityDomain> {
+        if let Some((uuid, ts)) = settings
+            .palette
+            .read()
+            .unwrap()
+            .find_matching_tool_stage(modifiers, key)
+        {
+            PropertiesStatus::ToolRequest(Some(NaiveUmlActivityTool {
+                uuid,
+                initial_stage: ts.clone(),
+                current_stage: ts,
+                result: PartialUmlActivityElement::None,
+                event_lock: false,
+                is_spent: None,
+            }))
+        } else {
+            PropertiesStatus::Shown
+        }
+    }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlActivityElement>) {
         let (new_model, models) = super::umlactivity_models::deep_copy_diagram(&self.model.read());
@@ -896,6 +920,7 @@ impl DiagramSettings2<UmlActivityDomain> for UmlActivitySettings {
                     UmlActivityToolStage,
                     String,
                     UmlActivityElementView,
+                    Option<egui::KeyboardShortcut>,
                 )>,
             ),
         ),
@@ -1085,6 +1110,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Basic Action Node",
+                    None,
                 ),
                 (
                     UmlActivityToolStage::ActionNode {
@@ -1095,6 +1121,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Call Action Node",
+                    None,
                 ),
                 (
                     UmlActivityToolStage::ActionNode {
@@ -1105,6 +1132,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Send Signal Node",
+                    None,
                 ),
                 (
                     UmlActivityToolStage::ActionNode {
@@ -1115,6 +1143,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Accept Signal Node",
+                    None,
                 ),
                 (
                     UmlActivityToolStage::ActionNode {
@@ -1125,19 +1154,28 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Wait Time Node",
+                    None,
                 ),
             ],
         ),
         (
             "Other Nodes",
             vec![
-                (UmlActivityToolStage::InitialNode {}, "Initial Node"),
+                (
+                    UmlActivityToolStage::InitialNode {},
+                    "Initial Node",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num1,
+                    )),
+                ),
                 (
                     UmlActivityToolStage::FinalNode {
                         kind: UmlActivityFinalNodeKind::FlowFinal,
                         with_edge_from: None,
                     },
                     "Flow Final Node",
+                    None,
                 ),
                 (
                     UmlActivityToolStage::FinalNode {
@@ -1145,6 +1183,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Activity Final Node",
+                    None,
                 ),
                 (
                     UmlActivityToolStage::DecisionNode {
@@ -1152,8 +1191,13 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Decision/Merge Node",
+                    None,
                 ),
-                (UmlActivityToolStage::ForkNodeStart {}, "Fork/Join Node"),
+                (
+                    UmlActivityToolStage::ForkNodeStart {},
+                    "Fork/Join Node",
+                    None,
+                ),
                 (
                     UmlActivityToolStage::ObjectNode {
                         stereotype: "".to_owned(),
@@ -1162,6 +1206,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         with_edge_from: None,
                     },
                     "Object Node",
+                    None,
                 ),
             ],
         ),
@@ -1176,6 +1221,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Regular Edge",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num2,
+                    )),
                 ),
                 (
                     UmlActivityToolStage::LinkStart {
@@ -1185,6 +1234,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Interrupting Edge",
+                    None,
                 ),
             ],
         ),
@@ -1198,6 +1248,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         parameters: "".to_owned(),
                     },
                     "Activity",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num3,
+                    )),
                 ),
                 (
                     UmlActivityToolStage::InterruptibleRegionStart {
@@ -1205,6 +1259,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         name: "InterruptibleRegion".to_owned(),
                     },
                     "InterruptibleRegion",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num4,
+                    )),
                 ),
                 (
                     UmlActivityToolStage::PartitionStart {
@@ -1212,6 +1270,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         section_name: "Partition Section".to_owned(),
                     },
                     "Partition",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num5,
+                    )),
                 ),
             ],
         ),
@@ -1225,8 +1287,16 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         align: egui::Align2::CENTER_CENTER,
                     },
                     "Comment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num9,
+                    )),
                 ),
-                (UmlActivityToolStage::CommentLinkStart {}, "Comment Link"),
+                (
+                    UmlActivityToolStage::CommentLinkStart {},
+                    "Comment Link",
+                    None,
+                ),
             ],
         ),
     ]
@@ -1237,7 +1307,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             e.1.into_iter()
                 .map(|e| {
                     let v = view_for_stage(&e.0);
-                    (e.0, e.1, v)
+                    (e.0, e.1, v, e.2)
                 })
                 .collect(),
         )

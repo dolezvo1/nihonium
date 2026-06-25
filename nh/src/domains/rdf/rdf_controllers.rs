@@ -439,6 +439,30 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
             ui.separator();
         }
     }
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &RdfSettings,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) -> PropertiesStatus<RdfDomain> {
+        if let Some((uuid, ts)) = settings
+            .palette
+            .read()
+            .unwrap()
+            .find_matching_tool_stage(modifiers, key)
+        {
+            PropertiesStatus::ToolRequest(Some(NaiveRdfTool {
+                uuid,
+                initial_stage: ts.clone(),
+                current_stage: ts,
+                result: PartialRdfElement::None,
+                event_lock: false,
+                is_spent: None,
+            }))
+        } else {
+            PropertiesStatus::Shown
+        }
+    }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {
         let (new_model, models) = super::rdf_models::deep_copy_diagram(&self.model.read());
@@ -587,7 +611,13 @@ impl DiagramSettings2<RdfDomain> for RdfSettings {
             &mut (
                 uuid::Uuid,
                 String,
-                Vec<(uuid::Uuid, RdfToolStage, String, RdfElementView)>,
+                Vec<(
+                    uuid::Uuid,
+                    RdfToolStage,
+                    String,
+                    RdfElementView,
+                    Option<egui::KeyboardShortcut>,
+                )>,
             ),
         ),
     {
@@ -607,12 +637,20 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         language: "en".to_owned(),
                     },
                     "Literal",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num1,
+                    )),
                 ),
                 (
                     RdfToolStage::Node {
                         iri: "http://iri".to_owned(),
                     },
                     "Node",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num2,
+                    )),
                 ),
             ],
         ),
@@ -623,6 +661,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     iri: "http://iri".to_owned(),
                 },
                 "Predicate",
+                Some(egui::KeyboardShortcut::new(
+                    egui::Modifiers::COMMAND,
+                    egui::Key::Num3,
+                )),
             )],
         ),
         (
@@ -632,6 +674,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     iri: "http://graph".to_owned(),
                 },
                 "Graph",
+                Some(egui::KeyboardShortcut::new(
+                    egui::Modifiers::COMMAND,
+                    egui::Key::Num4,
+                )),
             )],
         ),
     ]
@@ -642,7 +688,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             e.1.into_iter()
                 .map(|e| {
                     let v = view_for_stage(&e.0);
-                    (e.0, e.1, v)
+                    (e.0, e.1, v, e.2)
                 })
                 .collect(),
         )

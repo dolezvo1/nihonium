@@ -429,23 +429,95 @@ mod buttons {
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let mut classes = Vec::new();
-    for (stereotype, label, name, is_abstract) in [
+    for (stereotype, label, name, is_abstract, ksc) in [
         // Sortals
-        (ontouml_models::KIND, "Kind", "Animal", false),
-        (ontouml_models::SUBKIND, "Subkind", "Human", false),
-        (ontouml_models::PHASE, "Phase", "Adult", false),
-        (ontouml_models::ROLE, "Role", "Married", false),
-        (ontouml_models::COLLECTIVE, "Collective", "Forest", false),
-        (ontouml_models::QUANTITY, "Quantity", "Petroleum", false),
-        (ontouml_models::RELATOR, "Relator", "Subscription", false),
+        (
+            ontouml_models::KIND,
+            "Kind",
+            "Animal",
+            false,
+            Some(egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Num1,
+            )),
+        ),
+        (
+            ontouml_models::SUBKIND,
+            "Subkind",
+            "Human",
+            false,
+            Some(egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Num2,
+            )),
+        ),
+        (
+            ontouml_models::PHASE,
+            "Phase",
+            "Adult",
+            false,
+            Some(egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Num3,
+            )),
+        ),
+        (
+            ontouml_models::ROLE,
+            "Role",
+            "Married",
+            false,
+            Some(egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Num4,
+            )),
+        ),
+        (
+            ontouml_models::COLLECTIVE,
+            "Collective",
+            "Forest",
+            false,
+            None,
+        ),
+        (
+            ontouml_models::QUANTITY,
+            "Quantity",
+            "Petroleum",
+            false,
+            None,
+        ),
+        (
+            ontouml_models::RELATOR,
+            "Relator",
+            "Subscription",
+            false,
+            None,
+        ),
         // Nonsortals
-        (ontouml_models::CATEGORY, "Category", "Living thing", true),
-        (ontouml_models::PHASE_MIXIN, "Phase Mixin", "Broken", true),
-        (ontouml_models::ROLE_MIXIN, "Role Mixin", "Customer", true),
-        (ontouml_models::MIXIN, "Mixin", "Luxury good", true),
+        (
+            ontouml_models::CATEGORY,
+            "Category",
+            "Living thing",
+            true,
+            None,
+        ),
+        (
+            ontouml_models::PHASE_MIXIN,
+            "Phase Mixin",
+            "Broken",
+            true,
+            None,
+        ),
+        (
+            ontouml_models::ROLE_MIXIN,
+            "Role Mixin",
+            "Customer",
+            true,
+            None,
+        ),
+        (ontouml_models::MIXIN, "Mixin", "Luxury good", true, None),
         // Aspects
-        (ontouml_models::MODE, "Mode", "Intention", false),
-        (ontouml_models::QUALITY, "Quality", "Height", false),
+        (ontouml_models::MODE, "Mode", "Intention", false, None),
+        (ontouml_models::QUALITY, "Quality", "Height", false, None),
     ] {
         classes.push((
             UmlClassToolStage::Class {
@@ -456,6 +528,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 background_color: MGlobalColor::None,
             },
             label,
+            ksc,
         ));
     }
 
@@ -467,6 +540,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             },
         },
         "Generalization (Set)",
+        Some(egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::Num5,
+        )),
     ));
     for (stereotype, label) in [
         (ontouml_models::FORMAL, "Formal"),
@@ -488,6 +565,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 },
             },
             label,
+            None,
         ));
     }
 
@@ -504,6 +582,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: UmlClassPackageKind::Package,
                     },
                     "Package",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num8,
+                    )),
                 ),
                 (
                     UmlClassToolStage::Comment {
@@ -512,8 +594,12 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         align: egui::Align2::CENTER_CENTER,
                     },
                     "Comment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num9,
+                    )),
                 ),
-                (UmlClassToolStage::CommentLinkStart, "Comment Link"),
+                (UmlClassToolStage::CommentLinkStart, "Comment Link", None),
             ],
         ),
     ];

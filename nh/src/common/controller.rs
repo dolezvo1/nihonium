@@ -653,6 +653,12 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         >,
     );
     fn cancel_tool(&mut self);
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &Box<dyn DiagramSettings>,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    );
 
     fn new_ui_canvas(
         &mut self,
@@ -776,6 +782,13 @@ pub trait DiagramController: Any + NHContextSerialize {
         label_provider: &mut LabelProvider,
     );
     fn cancel_tool(&mut self);
+    fn try_handle_custom_shortcut(
+        &mut self,
+        uuid: &ViewUuid,
+        settings: &Box<dyn DiagramSettings>,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    );
 
     fn show_model_hierarchy(
         &mut self,
@@ -1108,13 +1121,29 @@ pub struct ToolPalette<S: Clone, DomainT: Domain> {
     elements: Vec<(
         uuid::Uuid,
         String,
-        Vec<(uuid::Uuid, S, String, DomainT::CommonElementViewT)>,
+        Vec<(
+            uuid::Uuid,
+            S,
+            String,
+            DomainT::CommonElementViewT,
+            Option<egui::KeyboardShortcut>,
+        )>,
     )>,
     selection: PaletteEditingSelection,
 }
 
 impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
-    pub fn new(elements: Vec<(&str, Vec<(S, &str, DomainT::CommonElementViewT)>)>) -> Self {
+    pub fn new(
+        elements: Vec<(
+            &str,
+            Vec<(
+                S,
+                &str,
+                DomainT::CommonElementViewT,
+                Option<egui::KeyboardShortcut>,
+            )>,
+        )>,
+    ) -> Self {
         let elements = elements
             .into_iter()
             .map(|e| {
@@ -1122,7 +1151,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                     uuid::Uuid::now_v7(),
                     e.0.to_owned(),
                     e.1.into_iter()
-                        .map(|e| (uuid::Uuid::now_v7(), e.0, e.1.to_owned(), e.2))
+                        .map(|e| (uuid::Uuid::now_v7(), e.0, e.1.to_owned(), e.2, e.3))
                         .collect(),
                 )
             })
@@ -1139,7 +1168,13 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
             &mut (
                 uuid::Uuid,
                 String,
-                Vec<(uuid::Uuid, S, String, DomainT::CommonElementViewT)>,
+                Vec<(
+                    uuid::Uuid,
+                    S,
+                    String,
+                    DomainT::CommonElementViewT,
+                    Option<egui::KeyboardShortcut>,
+                )>,
             ),
         ),
     {
@@ -1195,7 +1230,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                                     });
                             b.node(group_node);
 
-                            for (tool_id, _s, tool_label, _v) in elements {
+                            for (tool_id, _s, tool_label, _v, _ksc) in elements {
                                 let tool_node =
                                     egui_ltreeview::NodeBuilder::leaf(TreeElement::Tool(*tool_id))
                                         .label(tool_label)
@@ -1403,7 +1438,13 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                     tlc.get(&e.3.uuid()).cloned().unwrap()
                 };
 
-                let new_e = (uuid::Uuid::now_v7(), e.1.clone(), e.2.to_owned(), new_view);
+                let new_e = (
+                    uuid::Uuid::now_v7(),
+                    e.1.clone(),
+                    e.2.to_owned(),
+                    new_view,
+                    None,
+                );
                 elements.push(new_e);
             }
         }
@@ -1415,13 +1456,34 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
             .for_each(|e| e.2.retain(|e| e.0 != target));
     }
 
+    pub fn find_matching_tool_stage(
+        &self,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) -> Option<(uuid::Uuid, S)> {
+        for e in self.elements.iter() {
+            for e in e.2.iter() {
+                if e.4.is_some_and(|e| {
+                    modifiers.matches_logically(e.modifiers) && e.logical_key == key
+                }) {
+                    return Some((e.0, e.1.clone()));
+                }
+            }
+        }
+        None
+    }
+
     pub fn serialize(&self) -> Result<toml::Value, ()>
     where
         S: serde::Serialize,
     {
         #[derive(serde::Serialize)]
         pub struct ToolPaletteHelper<S: Clone> {
-            elements: Vec<(uuid::Uuid, String, Vec<(uuid::Uuid, S, String)>)>,
+            elements: Vec<(
+                uuid::Uuid,
+                String,
+                Vec<(uuid::Uuid, S, String, Option<egui::KeyboardShortcut>)>,
+            )>,
         }
 
         toml::Value::try_from(ToolPaletteHelper {
@@ -1433,7 +1495,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                         e.0,
                         e.1.clone(),
                         e.2.iter()
-                            .map(|e| (e.0, e.1.clone(), e.2.clone()))
+                            .map(|e| (e.0, e.1.clone(), e.2.clone(), e.4))
                             .collect(),
                     )
                 })
@@ -1449,7 +1511,11 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     {
         #[derive(serde::Deserialize)]
         pub struct ToolPaletteHelper<S: Clone> {
-            elements: Vec<(uuid::Uuid, String, Vec<(uuid::Uuid, S, String)>)>,
+            elements: Vec<(
+                uuid::Uuid,
+                String,
+                Vec<(uuid::Uuid, S, String, Option<egui::KeyboardShortcut>)>,
+            )>,
         }
 
         let e: ToolPaletteHelper<S> = value.try_into().map_err(|_| ())?;
@@ -1464,7 +1530,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                         e.2.into_iter()
                             .map(|e| {
                                 let v = view_for_stage(&e.1);
-                                (e.0, e.1, e.2, v)
+                                (e.0, e.1, e.2, v, e.3)
                             })
                             .collect(),
                     )
@@ -1490,6 +1556,7 @@ pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
                     <<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage,
                     String,
                     DomainT::CommonElementViewT,
+                    Option<egui::KeyboardShortcut>,
                 )>,
             ),
         );
@@ -2712,6 +2779,18 @@ where
         self.views.draw_order_foreach_mut(|e| e.cancel_tool());
     }
 
+    fn try_handle_custom_shortcut(
+        &mut self,
+        uuid: &ViewUuid,
+        settings: &Box<dyn DiagramSettings>,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write()
+            .try_handle_custom_shortcut(settings, modifiers, key);
+    }
+
     fn new_ui_canvas(
         &mut self,
         uuid: &ViewUuid,
@@ -3128,6 +3207,12 @@ pub trait DiagramAdapter<DomainT: Domain>:
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     );
+    fn try_handle_custom_shortcut(
+        &mut self,
+        _settings: &DomainT::SettingsT,
+        _modifiers: egui::Modifiers,
+        _key: egui::Key,
+    ) -> PropertiesStatus<DomainT>;
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
@@ -3970,6 +4055,28 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     fn cancel_tool(&mut self) {
         self.temporaries.current_tool = None;
     }
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &Box<dyn DiagramSettings>,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) {
+        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>()
+        else {
+            return;
+        };
+
+        match self
+            .adapter
+            .try_handle_custom_shortcut(settings, modifiers, key)
+        {
+            PropertiesStatus::NotShown | PropertiesStatus::Shown => {}
+            PropertiesStatus::ToolRequest(t) => {
+                self.temporaries.current_tool = t;
+            }
+        }
+    }
+
     fn show_context_menu(
         &mut self,
         gdc: &GlobalDrawingContext,
@@ -4210,7 +4317,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                 .default_open(true)
                 .show(ui, |ui| {
                     let width = ui.available_width();
-                    for (tid, stage, name, view) in items.iter_mut() {
+                    for (tid, stage, name, view, ksc) in items.iter_mut() {
                         let response = ui.add_sized(
                             [width, button_height],
                             egui::Button::new(&*name).fill(c(tid)),
@@ -4219,10 +4326,19 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                             && *t.initial_stage_uuid() == *tid
                         {
                             ui.painter().text(
-                                response.rect.right_bottom(),
-                                egui::Align2::RIGHT_BOTTOM,
+                                response.rect.right_top(),
+                                egui::Align2::RIGHT_TOP,
                                 if t.repeats() { " ∞ " } else { " 1 " },
                                 egui::FontId::proportional(20.0),
+                                ui.style().visuals.text_color(),
+                            );
+                        }
+                        if let Some(t) = ksc.as_ref().map(|e| ui.format_shortcut(e)) {
+                            ui.painter().text(
+                                response.rect.right_bottom(),
+                                egui::Align2::RIGHT_BOTTOM,
+                                t,
+                                egui::FontId::proportional(12.0),
                                 ui.style().visuals.text_color(),
                             );
                         }

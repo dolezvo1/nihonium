@@ -368,6 +368,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 background_color: MGlobalColor::None,
             },
             "Actor",
+            Some(egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Num1,
+            )),
         ),
         (
             UmlClassToolStage::Class {
@@ -378,6 +382,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 background_color: MGlobalColor::None,
             },
             "Class Actor",
+            Some(egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Num2,
+            )),
         ),
         (
             UmlClassToolStage::UseCase {
@@ -387,6 +395,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 background_color: MGlobalColor::None,
             },
             "Use case",
+            Some(egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND,
+                egui::Key::Num3,
+            )),
         ),
     ];
 
@@ -398,6 +410,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             },
         },
         "Generalization (Set)",
+        Some(egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::Num5,
+        )),
     ));
     relationships.push((
         UmlClassToolStage::LinkStart {
@@ -408,6 +424,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             },
         },
         "Association",
+        Some(egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::Num6,
+        )),
     ));
     for (stereotype, label) in [
         (usecase_models::EXTEND, "Extend"),
@@ -422,6 +442,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 },
             },
             label,
+            None,
         ));
     }
 
@@ -438,6 +459,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: UmlClassPackageKind::Boundary,
                     },
                     "Boundary",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num8,
+                    )),
                 ),
                 (
                     UmlClassToolStage::Comment {
@@ -446,8 +471,12 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         align: egui::Align2::CENTER_CENTER,
                     },
                     "Comment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num9,
+                    )),
                 ),
-                (UmlClassToolStage::CommentLinkStart, "Comment Link"),
+                (UmlClassToolStage::CommentLinkStart, "Comment Link", None),
             ],
         ),
     ];

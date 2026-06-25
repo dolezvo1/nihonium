@@ -789,6 +789,30 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     ) {
         P::menubar_options_fun(&self.model, view_uuid, ui, commands);
     }
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &UmlClassSettings<P>,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
+        if let Some((uuid, ts)) = settings
+            .palette
+            .read()
+            .unwrap()
+            .find_matching_tool_stage(modifiers, key)
+        {
+            PropertiesStatus::ToolRequest(Some(NaiveUmlClassTool {
+                uuid,
+                initial_stage: ts.clone(),
+                current_stage: ts,
+                result: PartialUmlClassElement::None,
+                event_lock: false,
+                is_spent: None,
+            }))
+        } else {
+            PropertiesStatus::Shown
+        }
+    }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
         let (new_model, models) = super::umlclass_models::deep_copy_diagram(&self.model.read());
@@ -1358,6 +1382,7 @@ impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSetting
                     UmlClassToolStage,
                     String,
                     UmlClassElementView<P>,
+                    Option<egui::KeyboardShortcut>,
                 )>,
             ),
         ),
@@ -1367,7 +1392,14 @@ impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSetting
 }
 
 pub fn default_settings_helper<P: UmlClassProfile>(
-    palette_items: Vec<(&'static str, Vec<(UmlClassToolStage, &'static str)>)>,
+    palette_items: Vec<(
+        &'static str,
+        Vec<(
+            UmlClassToolStage,
+            &'static str,
+            Option<egui::KeyboardShortcut>,
+        )>,
+    )>,
     instance_buttons: Vec<(
         usize,
         usize,
@@ -1403,7 +1435,7 @@ pub fn default_settings_helper<P: UmlClassProfile>(
                 e.1.into_iter()
                     .map(|e| {
                         let v = view_for_stage(&e.0);
-                        (e.0, e.1, v)
+                        (e.0, e.1, v, e.2)
                     })
                     .collect(),
             )
@@ -1761,6 +1793,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "Instance",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num1,
+                    )),
                 ),
                 (
                     UmlClassToolStage::Class {
@@ -1771,6 +1807,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "Class",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num2,
+                    )),
                 ),
                 (
                     UmlClassToolStage::ClassProperty {
@@ -1779,6 +1819,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         stereotype: "".to_owned(),
                     },
                     "Property",
+                    None,
                 ),
                 (
                     UmlClassToolStage::ClassOperation {
@@ -1787,6 +1828,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         stereotype: "".to_owned(),
                     },
                     "Operation",
+                    None,
                 ),
             ],
         ),
@@ -1800,6 +1842,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Generalization (Set)",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num5,
+                    )),
                 ),
                 (
                     UmlClassToolStage::LinkStart {
@@ -1810,6 +1856,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Association",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num6,
+                    )),
                 ),
                 (
                     UmlClassToolStage::LinkStart {
@@ -1820,6 +1870,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Interface Realization",
+                    None,
                 ),
                 (
                     UmlClassToolStage::LinkStart {
@@ -1830,6 +1881,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         },
                     },
                     "Usage",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num7,
+                    )),
                 ),
             ],
         ),
@@ -1843,6 +1898,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: UmlClassPackageKind::Package,
                     },
                     "Package",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num8,
+                    )),
                 ),
                 (
                     UmlClassToolStage::Comment {
@@ -1851,8 +1910,12 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         align: egui::Align2::CENTER_CENTER,
                     },
                     "Comment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num9,
+                    )),
                 ),
-                (UmlClassToolStage::CommentLinkStart, "Comment Link"),
+                (UmlClassToolStage::CommentLinkStart, "Comment Link", None),
             ],
         ),
     ];

@@ -477,6 +477,30 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         _commands: &mut Vec<ProjectCommand>,
     ) {
     }
+    fn try_handle_custom_shortcut(
+        &mut self,
+        settings: &NetworkSettings,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
+    ) -> PropertiesStatus<NetworkDomain> {
+        if let Some((uuid, ts)) = settings
+            .palette
+            .read()
+            .unwrap()
+            .find_matching_tool_stage(modifiers, key)
+        {
+            PropertiesStatus::ToolRequest(Some(NaiveNetworkTool {
+                uuid,
+                initial_stage: ts.clone(),
+                current_stage: ts,
+                result: PartialNetworkElement::None,
+                event_lock: false,
+                is_spent: None,
+            }))
+        } else {
+            PropertiesStatus::Shown
+        }
+    }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, NetworkElement>) {
         let (new_model, models) = super::network_models::deep_copy_diagram(&self.model.read());
@@ -668,7 +692,13 @@ impl DiagramSettings2<NetworkDomain> for NetworkSettings {
             &mut (
                 uuid::Uuid,
                 String,
-                Vec<(uuid::Uuid, NetworkToolStage, String, NetworkElementView)>,
+                Vec<(
+                    uuid::Uuid,
+                    NetworkToolStage,
+                    String,
+                    NetworkElementView,
+                    Option<egui::KeyboardShortcut>,
+                )>,
             ),
         ),
     {
@@ -687,6 +717,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: NetworkNodeKind::Workstation,
                     },
                     "Workstation",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num1,
+                    )),
                 ),
                 (
                     NetworkToolStage::Node {
@@ -694,6 +728,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: NetworkNodeKind::Laptop,
                     },
                     "Laptop",
+                    None,
                 ),
                 (
                     NetworkToolStage::Node {
@@ -701,6 +736,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: NetworkNodeKind::Router,
                     },
                     "Router",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num2,
+                    )),
                 ),
                 (
                     NetworkToolStage::Node {
@@ -708,6 +747,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: NetworkNodeKind::Switch,
                     },
                     "Switch",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num3,
+                    )),
                 ),
             ],
         ),
@@ -721,6 +764,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "User",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num4,
+                    )),
                 ),
                 (
                     NetworkToolStage::User {
@@ -729,6 +776,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "Developer",
+                    None,
                 ),
                 (
                     NetworkToolStage::User {
@@ -737,6 +785,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "Audit",
+                    None,
                 ),
                 (
                     NetworkToolStage::User {
@@ -745,6 +794,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         background_color: MGlobalColor::None,
                     },
                     "Black Hat",
+                    None,
                 ),
             ],
         ),
@@ -757,6 +807,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     background_color: MGlobalColor::None,
                 },
                 "File",
+                Some(egui::KeyboardShortcut::new(
+                    egui::Modifiers::COMMAND,
+                    egui::Key::Num5,
+                )),
             )],
         ),
         (
@@ -769,6 +823,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         target_arrowhead: NetworkAssociationArrowheadType::None,
                     },
                     "Association (solid)",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num6,
+                    )),
                 ),
                 (
                     NetworkToolStage::AssociationStart {
@@ -777,6 +835,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
                     },
                     "Association (solid, arrow)",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num7,
+                    )),
                 ),
                 (
                     NetworkToolStage::AssociationStart {
@@ -785,6 +847,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         target_arrowhead: NetworkAssociationArrowheadType::None,
                     },
                     "Association (dashed)",
+                    None,
                 ),
             ],
         ),
@@ -796,6 +859,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         name: "Subnet".to_owned(),
                     },
                     "Container",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num8,
+                    )),
                 ),
                 (
                     NetworkToolStage::Comment {
@@ -803,6 +870,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         align: egui::Align2::CENTER_CENTER,
                     },
                     "Comment",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num9,
+                    )),
                 ),
             ],
         ),
@@ -814,7 +885,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             e.1.into_iter()
                 .map(|e| {
                     let v = view_for_stage(&e.0);
-                    (e.0, e.1, v)
+                    (e.0, e.1, v, e.2)
                 })
                 .collect(),
         )

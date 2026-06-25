@@ -3041,6 +3041,18 @@ impl eframe::App for NHApp {
 
                                 break 'outer;
                             }
+
+                            if *pressed
+                                && !input_probably_blocked
+                                && let Some(d) = self.context.last_focused_diagram()
+                            {
+                                let mut w = d.1.write();
+                                let t = w.controller_type();
+                                let Some(s) = self.context.diagram_settings.get(t) else {
+                                    break;
+                                };
+                                w.try_handle_custom_shortcut(&d.0, s, *modifiers, *key);
+                            }
                         }
                         egui::Event::MouseWheel {
                             unit,
