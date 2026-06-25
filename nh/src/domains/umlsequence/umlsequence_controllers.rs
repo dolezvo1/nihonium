@@ -248,6 +248,7 @@ impl UmlSequenceHorizontalElementView {
     fn draw_inner(
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
+        message_offsets: &HashMap<ViewUuid, (usize, usize)>,
         pos_y: f32,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
@@ -256,14 +257,21 @@ impl UmlSequenceHorizontalElementView {
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> (TargettingStatus, egui::Rect) {
         match self {
-            UmlSequenceHorizontalElementView::CombinedFragment(inner) => {
+            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.write().draw_inner(
+                lifeline_views,
+                message_offsets,
+                pos_y,
+                q,
+                context,
+                settings,
+                canvas,
+                tool,
+            ),
+            UmlSequenceHorizontalElementView::Message(inner) => {
                 inner
                     .write()
-                    .draw_inner(lifeline_views, pos_y, q, context, settings, canvas, tool)
+                    .draw_inner(message_offsets, pos_y, q, context, settings, canvas, tool)
             }
-            UmlSequenceHorizontalElementView::Message(inner) => inner
-                .write()
-                .draw_inner(pos_y, q, context, settings, canvas, tool),
             UmlSequenceHorizontalElementView::Ref(inner) => {
                 inner
                     .write()
@@ -326,13 +334,16 @@ impl UmlSequenceHorizontalElementView {
 #[derive(Default)]
 struct ActivationsCounter {
     current_counts: HashMap<ViewUuid, usize>,
-
+    message_offsets: HashMap<ViewUuid, (usize, usize)>,
     last_message_y: f32,
     open_activations: HashMap<ViewUuid, Vec<(usize, f32, MGlobalColor)>>,
     closed_activations: Vec<(ViewUuid, usize, f32, f32, MGlobalColor)>,
 }
 
 impl ActivationsCounter {
+    pub const ACTIVATION_WIDTH: f32 = 10.0;
+    pub const ACTIVATION_OFFSET: f32 = 7.0;
+
     fn add_combined_fragment(&mut self, combined_fragment: &ERef<UmlSequenceCombinedFragmentView>) {
         let r = combined_fragment.read();
 
@@ -451,6 +462,26 @@ impl ActivationsCounter {
         let source_uuid = *r.source.uuid();
         let target_uuid = *r.target.uuid();
 
+        self.message_offsets.insert(
+            *r.uuid,
+            (
+                self.current_counts
+                    .get(&source_uuid)
+                    .map(|e| e.saturating_sub(1))
+                    .unwrap_or(0),
+                self.current_counts
+                    .get(&target_uuid)
+                    .map(|e| {
+                        if r.temporaries.is_return_buffer {
+                            e.saturating_sub(1)
+                        } else {
+                            *e
+                        }
+                    })
+                    .unwrap_or(0),
+            ),
+        );
+
         if !r.temporaries.is_return_buffer {
             if self
                 .current_counts
@@ -473,9 +504,7 @@ impl ActivationsCounter {
             *target_count += 1;
         } else {
             let source_count = self.current_counts.entry(source_uuid).or_default();
-            if *source_count >= 1 {
-                *source_count -= 1;
-            }
+            *source_count = source_count.saturating_sub(1);
             if let Some(a) = self.open_activations.entry(source_uuid).or_default().pop() {
                 self.closed_activations
                     .push((source_uuid, a.0, a.1, r.temporaries.source_y, a.2));
@@ -484,7 +513,12 @@ impl ActivationsCounter {
         self.last_message_y = r.temporaries.source_y.max(r.temporaries.target_y);
     }
 
-    fn finish(mut self) -> impl Iterator<Item = (ViewUuid, usize, f32, f32, MGlobalColor)> {
+    fn finish(
+        mut self,
+    ) -> (
+        HashMap<ViewUuid, (usize, usize)>,
+        impl Iterator<Item = (ViewUuid, usize, f32, f32, MGlobalColor)>,
+    ) {
         for open in self.open_activations.iter_mut() {
             self.closed_activations.extend(
                 open.1
@@ -495,9 +529,12 @@ impl ActivationsCounter {
 
         self.closed_activations.sort_by_key(|e| e.1);
 
-        self.closed_activations
-            .into_iter()
-            .map(|e| (e.0, e.1, e.2, e.3, e.4))
+        (
+            self.message_offsets,
+            self.closed_activations
+                .into_iter()
+                .map(|e| (e.0, e.1, e.2, e.3, e.4)),
+        )
     }
 }
 
@@ -2404,14 +2441,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 }
             }
 
-            if s.show_activations {
+            let message_offsets = if s.show_activations {
                 let mut ac = ActivationsCounter::default();
                 for e in s.horizontal_element_views.iter() {
                     e.count_activations(&mut ac);
                 }
-                const BAR_WIDTH: f32 = 10.0;
-                for (id, no, start_y, end_y, color) in ac.finish() {
-                    let shift = 7.0 * no as f32;
+
+                let (offsets, activations) = ac.finish();
+                for (id, no, start_y, end_y, color) in activations {
+                    let shift = ActivationsCounter::ACTIVATION_OFFSET * no as f32;
                     let lifeline_center_x = s
                         .lifeline_views
                         .iter()
@@ -2420,8 +2458,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         .unwrap_or(0.0);
                     canvas.draw_rectangle(
                         egui::Rect::from_x_y_ranges(
-                            (lifeline_center_x - BAR_WIDTH / 2.0 + shift)
-                                ..=(lifeline_center_x + BAR_WIDTH / 2.0 + shift),
+                            (lifeline_center_x - ActivationsCounter::ACTIVATION_WIDTH / 2.0 + shift)
+                                ..=(lifeline_center_x
+                                    + ActivationsCounter::ACTIVATION_WIDTH / 2.0
+                                    + shift),
                             start_y..=end_y,
                         ),
                         egui::CornerRadius::ZERO,
@@ -2433,13 +2473,17 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         canvas::Highlight::NONE,
                     );
                 }
-            }
+                offsets
+            } else {
+                HashMap::new()
+            };
 
             const PADDING_Y: f32 = 2.0;
             let mut counter_y = s.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y;
             for v in s.horizontal_element_views.iter_mut() {
                 let (t, r) = v.draw_inner(
                     &s.lifeline_views,
+                    &message_offsets,
                     counter_y,
                     q,
                     context,
@@ -3658,6 +3702,7 @@ impl UmlSequenceCombinedFragmentView {
     fn draw_inner(
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
+        message_offsets: &HashMap<ViewUuid, (usize, usize)>,
         pos_y: f32,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
@@ -3688,6 +3733,7 @@ impl UmlSequenceCombinedFragmentView {
             let (t, r) = e.write().draw_inner(
                 spanned_lifeline_views,
                 span_x,
+                message_offsets,
                 acc.max.y,
                 q,
                 context,
@@ -3952,7 +3998,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlSequenceDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        self.draw_inner(&Vec::new(), 0.0, q, context, settings, canvas, tool);
+        self.draw_inner(
+            &Vec::new(),
+            &HashMap::new(),
+            0.0,
+            q,
+            context,
+            settings,
+            canvas,
+            tool,
+        );
         TargettingStatus::NotDrawn
     }
 
@@ -4589,6 +4644,7 @@ impl UmlSequenceCombinedFragmentSectionView {
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
         (min_lifeline_x, max_lifeline_x): (f32, f32),
+        message_offsets: &HashMap<ViewUuid, (usize, usize)>,
         pos_y: f32,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
@@ -4624,6 +4680,7 @@ impl UmlSequenceCombinedFragmentSectionView {
             for e in self.horizontal_element_views.iter_mut() {
                 let (t, r) = e.draw_inner(
                     lifeline_views,
+                    message_offsets,
                     acc.max.y,
                     q,
                     context,
@@ -4948,6 +5005,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         self.draw_inner(
             &Vec::new(),
             (0.0, 100.0),
+            &HashMap::new(),
             0.0,
             q,
             context,
@@ -6307,6 +6365,7 @@ impl UmlSequenceMessageView {
 
     fn draw_inner(
         &mut self,
+        message_offsets: &HashMap<ViewUuid, (usize, usize)>,
         pos_y: f32,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _context: &GlobalDrawingContext,
@@ -6322,14 +6381,26 @@ impl UmlSequenceMessageView {
 
         let (source_x, target_x) = (self.source.position().x, self.target.position().x);
         let (start, second, penultimate, end) = if source_x == target_x {
-            const WIDTH: f32 = 20.0;
-            let start = egui::Pos2::new(source_x, pos_y + Self::MESSAGE_SPACING / 2.0 - WIDTH);
+            let offset = message_offsets.get(&self.uuid).map(|e| {
+                e.0 as f32 * ActivationsCounter::ACTIVATION_OFFSET
+                    + ActivationsCounter::ACTIVATION_WIDTH / 2.0
+            });
+            let start_offset = offset.unwrap_or(0.0);
+            let end_offset = offset
+                .map(|e| e + ActivationsCounter::ACTIVATION_OFFSET)
+                .unwrap_or(0.0);
+
+            const WIDTH: f32 = 25.0;
+            let start = egui::Pos2::new(
+                source_x + start_offset,
+                pos_y + Self::MESSAGE_SPACING / 2.0 - WIDTH,
+            );
             let end = egui::Pos2::new(
-                target_x,
+                source_x + end_offset,
                 pos_y + Self::MESSAGE_SPACING / 2.0 + WIDTH + self.temporaries.duration_buffer,
             );
             let second = egui::Pos2::new(start.x + WIDTH, start.y);
-            let penultimate = egui::Pos2::new(end.x + WIDTH, end.y);
+            let penultimate = egui::Pos2::new(second.x, end.y);
 
             canvas.draw_line([start, second], s, self.temporaries.highlight);
             canvas.draw_line([second, penultimate], s, self.temporaries.highlight);
@@ -6337,9 +6408,30 @@ impl UmlSequenceMessageView {
             self.bounds_rect = egui::Rect::from_two_pos(start, penultimate);
             (start, second, penultimate, end)
         } else {
-            let start = egui::Pos2::new(source_x, pos_y + Self::MESSAGE_SPACING / 2.0);
+            let (wos, wot) = match source_x < target_x {
+                true => (
+                    ActivationsCounter::ACTIVATION_WIDTH / 2.0,
+                    -ActivationsCounter::ACTIVATION_WIDTH / 2.0,
+                ),
+                false => (
+                    -ActivationsCounter::ACTIVATION_WIDTH / 2.0,
+                    ActivationsCounter::ACTIVATION_WIDTH / 2.0,
+                ),
+            };
+            let (start_offset, end_offset) = message_offsets
+                .get(&self.uuid)
+                .map(|e| {
+                    (
+                        e.0 as f32 * ActivationsCounter::ACTIVATION_OFFSET + wos,
+                        e.1 as f32 * ActivationsCounter::ACTIVATION_OFFSET + wot,
+                    )
+                })
+                .unwrap_or((0.0, 0.0));
+
+            let start =
+                egui::Pos2::new(source_x + start_offset, pos_y + Self::MESSAGE_SPACING / 2.0);
             let end = egui::Pos2::new(
-                target_x,
+                target_x + end_offset,
                 pos_y + Self::MESSAGE_SPACING / 2.0 + self.temporaries.duration_buffer,
             );
             self.bounds_rect = egui::Rect::from_two_pos(start, end);
@@ -6429,7 +6521,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlSequenceDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        self.draw_inner(0.0, q, context, settings, canvas, tool);
+        self.draw_inner(&HashMap::new(), 0.0, q, context, settings, canvas, tool);
         TargettingStatus::NotDrawn
     }
 
