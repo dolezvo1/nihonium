@@ -374,6 +374,20 @@ pub fn mglobalcolor_edit_button(
             }
             MGlobalColor::Global(uuid) => match gdc.global_colors.colors.get(&uuid) {
                 None => {
+                    painter.rect(
+                        response.rect,
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::TRANSPARENT,
+                        egui::Stroke::new(1.0_f32, egui::Color32::RED),
+                        egui::StrokeKind::Inside,
+                    );
+                    painter.text(
+                        response.rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "???",
+                        egui::FontId::proportional(15.0),
+                        egui::Color32::RED,
+                    );
                     ui.label(gdc.translate_0("nh-modal-colorpicker-notfoundbrackets"));
                 }
                 Some((desc, color)) => {

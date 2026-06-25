@@ -1298,7 +1298,8 @@ impl NHContext {
                 self.drawing_context.global_colors
             };
         }
-        for id in gc!().colors_order.iter() {
+        let mut color_to_remove = None;
+        for (idx, id) in gc!().colors_order.iter().enumerate() {
             ui.horizontal(|ui| {
                 if let Some(c) = gc!().colors.get_mut(id) {
                     egui::widgets::color_picker::color_edit_button_srgba(
@@ -1307,9 +1308,17 @@ impl NHContext {
                         egui::widgets::color_picker::Alpha::OnlyBlend,
                     );
 
-                    ui.label(&c.0);
+                    ui.text_edit_singleline(&mut c.0);
+
+                    if ui.button("X").clicked() {
+                        color_to_remove = Some(idx);
+                    }
                 }
             });
+        }
+        if let Some(idx) = color_to_remove {
+            let id = gc!().colors_order.remove(idx);
+            gc!().colors.remove(&id);
         }
 
         ui.horizontal(|ui| {
