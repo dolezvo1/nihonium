@@ -6449,7 +6449,12 @@ impl UmlSequenceMessageView {
             });
             let start_offset = offset.unwrap_or(0.0);
             let end_offset = offset
-                .map(|e| e + ActivationsCounter::ACTIVATION_OFFSET)
+                .map(|e| {
+                    e + match self.temporaries.is_return_buffer {
+                        false => ActivationsCounter::ACTIVATION_OFFSET,
+                        true => -ActivationsCounter::ACTIVATION_OFFSET,
+                    }
+                })
                 .unwrap_or(0.0);
 
             const WIDTH: f32 = 25.0;
