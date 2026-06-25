@@ -1146,6 +1146,18 @@ pub struct ToolPalette<S: Clone, DomainT: Domain> {
     selection: PaletteEditingSelection,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ToolPaletteHelper<S: Clone> {
+    elements: Vec<(uuid::Uuid, String, Vec<ToolPaletteItemHelper<S>>)>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ToolPaletteItemHelper<S: Clone> {
+    uuid: uuid::Uuid,
+    stage: S,
+    name: String,
+    keyboard_shortcut: Option<egui::KeyboardShortcut>,
+}
+
 impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     pub fn new(
         elements: Vec<(
@@ -1501,15 +1513,6 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     where
         S: serde::Serialize,
     {
-        #[derive(serde::Serialize)]
-        pub struct ToolPaletteHelper<S: Clone> {
-            elements: Vec<(
-                uuid::Uuid,
-                String,
-                Vec<(uuid::Uuid, S, String, Option<egui::KeyboardShortcut>)>,
-            )>,
-        }
-
         toml::Value::try_from(ToolPaletteHelper {
             elements: self
                 .elements
@@ -1519,7 +1522,12 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                         e.0,
                         e.1.clone(),
                         e.2.iter()
-                            .map(|e| (e.0, e.1.clone(), e.2.clone(), e.4))
+                            .map(|e| ToolPaletteItemHelper {
+                                uuid: e.0,
+                                stage: e.1.clone(),
+                                name: e.2.clone(),
+                                keyboard_shortcut: e.4,
+                            })
                             .collect(),
                     )
                 })
@@ -1533,15 +1541,6 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         S: serde::Deserialize<'a>,
         F: Fn(&S) -> DomainT::CommonElementViewT,
     {
-        #[derive(serde::Deserialize)]
-        pub struct ToolPaletteHelper<S: Clone> {
-            elements: Vec<(
-                uuid::Uuid,
-                String,
-                Vec<(uuid::Uuid, S, String, Option<egui::KeyboardShortcut>)>,
-            )>,
-        }
-
         let e: ToolPaletteHelper<S> = value.try_into().map_err(|_| ())?;
         Ok(Self {
             elements: e
@@ -1553,8 +1552,8 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                         e.1,
                         e.2.into_iter()
                             .map(|e| {
-                                let v = view_for_stage(&e.1);
-                                (e.0, e.1, e.2, v, e.3)
+                                let v = view_for_stage(&e.stage);
+                                (e.uuid, e.stage, e.name, v, e.keyboard_shortcut)
                             })
                             .collect(),
                     )
