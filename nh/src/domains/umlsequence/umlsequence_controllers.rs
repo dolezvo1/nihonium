@@ -29,7 +29,8 @@ use crate::domains::umlsequence::umlsequence_models::{
 };
 use crate::{
     CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
-    DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut, ShowSettingsF,
+    ShowSettingsResult, TrySetShortcutF,
 };
 use eframe::{egui, epaint};
 use std::any::Any;
@@ -1433,6 +1434,22 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
     }
 }
 
+pub fn try_set_shortcut(
+    settings: &mut Box<dyn DiagramSettings>,
+    tool: uuid::Uuid,
+    shortcut: egui::KeyboardShortcut,
+) {
+    let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<UmlSequenceSettings>()
+    else {
+        return;
+    };
+
+    let mut wp = settings.palette.write().unwrap();
+    wp.set_shortcut(tool, Some(shortcut));
+    let mut wb = settings.palette_edit_buffer.write().unwrap();
+    *wb = wp.get_buffer(wb.uuid().cloned());
+}
+
 pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
     let toml::Value::Table(value) = value else {
         return Err(());
@@ -1448,13 +1465,15 @@ pub fn settings_function(
     gdc: &mut GlobalDrawingContext,
     ui: &mut egui::Ui,
     s: &mut Box<dyn DiagramSettings>,
-) {
+    shortcut_being_set: &Option<SetShortcut>,
+) -> ShowSettingsResult {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlSequenceSettings>() else {
-        return;
+        return ShowSettingsResult::None;
     };
 
     let mut w = s.palette.write().unwrap();
     let mut buffer = s.palette_edit_buffer.write().unwrap();
+    let mut ret = ShowSettingsResult::None;
 
     ui.columns(2, |columns| {
         w.show_treeview(gdc, &mut columns[0]);
@@ -1470,9 +1489,24 @@ pub fn settings_function(
                     w.set_from_buffer(buffer.clone());
                 }
             },
-            PaletteEditBuffer::Tool(_uuid, name, tool, view) => {
+            PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
+
+                match crate::common::controller::show_shortcut(
+                    &mut columns[1],
+                    ksc,
+                    shortcut_being_set.as_ref().is_some_and(|e| e.is_diagram(uuid)),
+                ) {
+                    crate::common::controller::ShortCutStatus::NoChange => {},
+                    crate::common::controller::ShortCutStatus::Cleared => modified = true,
+                    crate::common::controller::ShortCutStatus::Set => {
+                        ret = ShowSettingsResult::SetShortcut(*uuid);
+                    },
+                    crate::common::controller::ShortCutStatus::CancelSet => {
+                        ret = ShowSettingsResult::CancelShortcutSetting;
+                    },
+                }
 
                 match tool {
                     UmlSequenceToolStage::CombinedFragmentStart { kind, end_behaviour } => {
@@ -1587,12 +1621,15 @@ pub fn settings_function(
             },
         }
     });
+
+    ret
 }
 
 inventory::submit! {DiagramInfo {
     type_indentifier: "umlsequence",
     pretty_name: "UML Sequence diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    try_set_shortcut: &(try_set_shortcut as TrySetShortcutF),
     settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {

@@ -30,7 +30,8 @@ use crate::domains::umlclass::umlclass_models::{
 };
 use crate::{
     CustomModal, CustomModalResult, CustomTab, DefaultSettingsF, DeserializeControllerF,
-    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF,
+    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    ShowSettingsF, ShowSettingsResult, TrySetShortcutF,
 };
 use eframe::egui;
 use std::any::Any;
@@ -1927,6 +1928,22 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     )
 }
 
+pub fn try_set_shortcut_helper<P: UmlClassProfile>(
+    settings: &mut Box<dyn DiagramSettings>,
+    tool: uuid::Uuid,
+    shortcut: egui::KeyboardShortcut,
+) {
+    let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<UmlClassSettings<P>>()
+    else {
+        return;
+    };
+
+    let mut wp = settings.palette.write().unwrap();
+    wp.set_shortcut(tool, Some(shortcut));
+    let mut wb = settings.palette_edit_buffer.write().unwrap();
+    *wb = wp.get_buffer(wb.uuid().cloned());
+}
+
 pub fn settings_deserializer_helper<P: UmlClassProfile>(
     value: toml::Value,
     instance_buttons: Vec<(
@@ -1986,13 +2003,15 @@ pub fn settings_function_helper<P: UmlClassProfile>(
     gdc: &mut GlobalDrawingContext,
     ui: &mut egui::Ui,
     s: &mut Box<dyn DiagramSettings>,
-) {
+    shortcut_being_set: &Option<SetShortcut>,
+) -> ShowSettingsResult {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlClassSettings<P>>() else {
-        return;
+        return ShowSettingsResult::None;
     };
 
     let mut w = s.palette.write().unwrap();
     let mut buffer = s.palette_edit_buffer.write().unwrap();
+    let mut ret = ShowSettingsResult::None;
 
     ui.columns(2, |columns| {
         w.show_treeview(gdc, &mut columns[0]);
@@ -2008,9 +2027,24 @@ pub fn settings_function_helper<P: UmlClassProfile>(
                     w.set_from_buffer(buffer.clone());
                 }
             },
-            PaletteEditBuffer::Tool(_uuid, name, tool, view) => {
+            PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
+
+                match crate::common::controller::show_shortcut(
+                    &mut columns[1],
+                    ksc,
+                    shortcut_being_set.as_ref().is_some_and(|e| e.is_diagram(uuid)),
+                ) {
+                    crate::common::controller::ShortCutStatus::NoChange => {},
+                    crate::common::controller::ShortCutStatus::Cleared => modified = true,
+                    crate::common::controller::ShortCutStatus::Set => {
+                        ret = ShowSettingsResult::SetShortcut(*uuid);
+                    },
+                    crate::common::controller::ShortCutStatus::CancelSet => {
+                        ret = ShowSettingsResult::CancelShortcutSetting;
+                    },
+                }
 
                 // TODO: make the stereotypes more efficient
                 match tool {
@@ -2181,20 +2215,24 @@ pub fn settings_function_helper<P: UmlClassProfile>(
                 ui.selectable_value(&mut s.comment_indication, e, e.as_str());
             }
         });
+
+    ret
 }
 
 pub fn settings_function(
     gdc: &mut GlobalDrawingContext,
     ui: &mut egui::Ui,
     s: &mut Box<dyn DiagramSettings>,
-) {
-    settings_function_helper::<UmlClassNullProfile>(gdc, ui, s);
+    shortcut_being_set: &Option<SetShortcut>,
+) -> ShowSettingsResult {
+    settings_function_helper::<UmlClassNullProfile>(gdc, ui, s, shortcut_being_set)
 }
 
 inventory::submit! {DiagramInfo {
     type_indentifier: "umlclass",
     pretty_name: "UML Class diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    try_set_shortcut: &(try_set_shortcut_helper::<UmlClassNullProfile> as TrySetShortcutF),
     settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {

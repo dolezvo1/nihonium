@@ -251,9 +251,41 @@ enum FileIOOperation {
     Error(String),
 }
 
+#[derive(Clone, PartialEq)]
+enum SetShortcut {
+    Global(SimpleProjectCommand),
+    Diagram(&'static str, uuid::Uuid),
+}
+impl SetShortcut {
+    pub fn is_global(&self, command: &SimpleProjectCommand) -> bool {
+        match self {
+            SetShortcut::Global(cmd) => cmd == command,
+            SetShortcut::Diagram(..) => false,
+        }
+    }
+    pub fn is_diagram(&self, uuid: &uuid::Uuid) -> bool {
+        match self {
+            SetShortcut::Global(_) => false,
+            SetShortcut::Diagram(_, id) => id == uuid,
+        }
+    }
+}
+
+enum ShowSettingsResult {
+    None,
+    SetShortcut(uuid::Uuid),
+    CancelShortcutSetting,
+}
+
 type DefaultSettingsF = fn() -> Box<dyn DiagramSettings>;
 type DeserializeSettingsF = fn(toml::Value) -> Result<Box<dyn DiagramSettings>, ()>;
-type ShowSettingsF = fn(&mut GlobalDrawingContext, &mut egui::Ui, &mut Box<dyn DiagramSettings>);
+type ShowSettingsF = fn(
+    &mut GlobalDrawingContext,
+    &mut egui::Ui,
+    &mut Box<dyn DiagramSettings>,
+    &Option<SetShortcut>,
+) -> ShowSettingsResult;
+type TrySetShortcutF = fn(&mut Box<dyn DiagramSettings>, uuid::Uuid, egui::KeyboardShortcut);
 type DiagramConstructorF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
 type DeserializeControllerF = fn(
     ControllerUuid,
@@ -303,8 +335,14 @@ struct NHContext {
     zoom_with_keyboard: bool,
     diagram_type_hierarchy: DiagramTypeHierarchyNode,
     diagram_settings: HashMap<&'static str, Box<dyn DiagramSettings>>,
-    diagram_settings_functions:
-        HashMap<&'static str, (&'static ShowSettingsF, &'static DefaultSettingsF)>,
+    diagram_settings_functions: HashMap<
+        &'static str,
+        (
+            &'static ShowSettingsF,
+            &'static DefaultSettingsF,
+            &'static TrySetShortcutF,
+        ),
+    >,
     shades_profiles: Vec<ShadesProfile>,
     selected_shades_profile: usize,
     selected_language: usize,
@@ -335,7 +373,7 @@ struct NHContext {
         f32,
     )>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
-    shortcut_being_set: Option<SimpleProjectCommand>,
+    shortcut_being_set: Option<SetShortcut>,
     new_global_color_name: String,
 
     search_query: String,
@@ -1920,12 +1958,20 @@ impl NHContext {
 
         ui.collapsing("Diagram specific settings", |ui| {
             for (ctype, ctypename) in self.diagram_type_hierarchy.iter_diagrams() {
-                if let (Some(s), Some((f, d))) = (
+                if let (Some(s), Some((ctype, (f, d, _)))) = (
                     self.diagram_settings.get_mut(ctype),
-                    self.diagram_settings_functions.get(ctype),
+                    self.diagram_settings_functions.get_key_value(ctype),
                 ) {
                     ui.collapsing(ctypename, |ui| {
-                        f(&mut self.drawing_context, ui, s);
+                        match f(&mut self.drawing_context, ui, s, &self.shortcut_being_set) {
+                            ShowSettingsResult::None => {}
+                            ShowSettingsResult::SetShortcut(uuid) => {
+                                self.shortcut_being_set = Some(SetShortcut::Diagram(ctype, uuid));
+                            }
+                            ShowSettingsResult::CancelShortcutSetting => {
+                                self.shortcut_being_set = None;
+                            }
+                        }
 
                         if ui.button("Reset").clicked() {
                             *s = d();
@@ -2122,9 +2168,13 @@ impl NHContext {
                         }
                     });
 
-                    if self.shortcut_being_set.is_none_or(|e| e != *c) {
+                    if self
+                        .shortcut_being_set
+                        .as_ref()
+                        .is_none_or(|e| e.is_global(c))
+                    {
                         if ui.button("Set").clicked() {
-                            self.shortcut_being_set = Some(*c);
+                            self.shortcut_being_set = Some(SetShortcut::Global(*c));
                         }
                     } else {
                         if ui.button("Cancel").clicked() {
@@ -2231,6 +2281,7 @@ struct DiagramInfo {
     type_indentifier: &'static str,
     pretty_name: &'static str,
     default_settings: &'static DefaultSettingsF,
+    try_set_shortcut: &'static TrySetShortcutF,
     settings_deserializer: &'static DeserializeSettingsF,
     show_settings_function: &'static ShowSettingsF,
     diagram_creation_data: DiagramCreationData,
@@ -2535,7 +2586,11 @@ impl NHApp {
             .map(|e| {
                 (
                     e.type_indentifier,
-                    (e.show_settings_function, e.default_settings),
+                    (
+                        e.show_settings_function,
+                        e.default_settings,
+                        e.try_set_shortcut,
+                    ),
                 )
             })
             .collect();
@@ -2981,15 +3036,23 @@ impl eframe::App for NHApp {
                             }
 
                             if let Some(sc) = &self.context.shortcut_being_set {
-                                self.context.drawing_context.shortcuts.insert(
-                                    *sc,
-                                    egui::KeyboardShortcut {
-                                        logical_key: *key,
-                                        modifiers: *modifiers,
-                                    },
-                                );
+                                let nsc = egui::KeyboardShortcut {
+                                    logical_key: *key,
+                                    modifiers: *modifiers,
+                                };
+                                match sc {
+                                    SetShortcut::Global(cmd) => {
+                                        self.context.drawing_context.shortcuts.insert(*cmd, nsc);
+                                        self.context.sort_shortcuts();
+                                    }
+                                    SetShortcut::Diagram(t, id) => {
+                                        let s = self.context.diagram_settings.get_mut(t).unwrap();
+                                        let f =
+                                            self.context.diagram_settings_functions.get(t).unwrap();
+                                        f.2(s, *id, nsc);
+                                    }
+                                }
                                 self.context.shortcut_being_set = None;
-                                self.context.sort_shortcuts();
                                 continue;
                             }
 

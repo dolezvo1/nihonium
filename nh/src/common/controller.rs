@@ -1118,7 +1118,7 @@ impl PaletteEditingSelection {
 pub enum PaletteEditBuffer<T: Clone, V: Clone> {
     None,
     Group(uuid::Uuid, String),
-    Tool(uuid::Uuid, String, T, V),
+    Tool(uuid::Uuid, String, T, V, Option<egui::KeyboardShortcut>),
 }
 
 impl<T: Clone, V: Clone> PaletteEditBuffer<T, V> {
@@ -1350,7 +1350,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
             .iter()
             .find_map(|e| e.2.iter().find(|e| e.0 == id))
         {
-            return PaletteEditBuffer::Tool(id, e.2.clone(), e.1.clone(), e.3.clone());
+            return PaletteEditBuffer::Tool(id, e.2.clone(), e.1.clone(), e.3.clone(), e.4.clone());
         }
 
         PaletteEditBuffer::None
@@ -1366,12 +1366,13 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                     }
                 }
             }
-            PaletteEditBuffer::Tool(uuid, name, tool, view) => {
+            PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
                 for e in self.elements.iter_mut().flat_map(|e| e.2.iter_mut()) {
                     if e.0 == uuid {
                         e.2 = name;
                         e.1 = tool;
                         e.3 = view;
+                        e.4 = ksc;
                         return;
                     }
                 }
@@ -1486,6 +1487,15 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         }
         None
     }
+    pub fn set_shortcut(&mut self, tool: uuid::Uuid, shortcut: Option<egui::KeyboardShortcut>) {
+        for e in self.elements.iter_mut() {
+            for e in e.2.iter_mut() {
+                if e.0 == tool {
+                    e.4 = shortcut;
+                }
+            }
+        }
+    }
 
     pub fn serialize(&self) -> Result<toml::Value, ()>
     where
@@ -1553,6 +1563,45 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
             selection: PaletteEditingSelection::None,
         })
     }
+}
+pub enum ShortCutStatus {
+    NoChange,
+    Cleared,
+    Set,
+    CancelSet,
+}
+pub fn show_shortcut(
+    ui: &mut egui::Ui,
+    ksc: &mut Option<egui::KeyboardShortcut>,
+    is_being_set: bool,
+) -> ShortCutStatus {
+    ui.horizontal(|ui| {
+        ui.label("Keyboard shorcut");
+
+        if let Some(ksc) = ksc.as_ref() {
+            ui.label(ui.format_shortcut(ksc));
+        } else {
+            ui.label("[none]");
+        }
+
+        if is_being_set {
+            if ui.button("Cancel").clicked() {
+                return ShortCutStatus::CancelSet;
+            }
+        } else {
+            if ui.button("Set").clicked() {
+                return ShortCutStatus::Set;
+            }
+        }
+
+        if ksc.is_some() && ui.button("Clear").clicked() {
+            *ksc = None;
+            return ShortCutStatus::Cleared;
+        }
+
+        ShortCutStatus::NoChange
+    })
+    .inner
 }
 
 pub trait DiagramSettings: Any {
@@ -3223,9 +3272,9 @@ pub trait DiagramAdapter<DomainT: Domain>:
     );
     fn try_handle_custom_shortcut(
         &mut self,
-        _settings: &DomainT::SettingsT,
-        _modifiers: egui::Modifiers,
-        _key: egui::Key,
+        settings: &DomainT::SettingsT,
+        modifiers: egui::Modifiers,
+        key: egui::Key,
     ) -> PropertiesStatus<DomainT>;
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
