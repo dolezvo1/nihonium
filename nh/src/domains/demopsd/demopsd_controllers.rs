@@ -1486,7 +1486,6 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     };
                     self.current_stage = DemoPsdToolStage::LinkEnd;
                     self.event_lock = true;
-                } else {
                 }
             }
             TS::Act(inner) => {
@@ -1495,7 +1494,6 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 {
                     *dest = Some(inner);
                     self.event_lock = true;
-                } else {
                 }
             }
             TS::Link(..) => {}
@@ -2086,11 +2084,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         if let Some(child) = self
             .before_views
             .iter_mut()
-            .flat_map(|e| {
-                e.view
-                    .show_properties(gdc, q, ui, commands)
-                    .to_non_default()
-            })
+            .flat_map(|e| e.view.show_properties(gdc, q, ui, commands).non_default())
             .next()
         {
             return child;
@@ -2099,7 +2093,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         if let Some(child) = self.p_act_view.as_mut().and_then(|c| {
             c.write()
                 .show_properties(gdc, q, ui, commands)
-                .to_non_default()
+                .non_default()
         }) {
             return child;
         }
@@ -2107,11 +2101,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         if let Some(child) = self
             .after_views
             .iter_mut()
-            .flat_map(|e| {
-                e.view
-                    .show_properties(gdc, q, ui, commands)
-                    .to_non_default()
-            })
+            .flat_map(|e| e.view.show_properties(gdc, q, ui, commands).non_default())
             .next()
         {
             return child;

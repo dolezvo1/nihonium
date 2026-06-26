@@ -3194,7 +3194,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 });
             }
 
-            if let Some(child) = child.0.to_non_default() {
+            if let Some(child) = child.0.non_default() {
                 return child;
             }
         }
@@ -4010,7 +4010,7 @@ impl UmlActivityPartitionSectionView {
 
         if let Some(child) = self.contained_elements.event_order_find_mut(|v| {
             v.show_properties(drawing_context, q, ui, commands)
-                .to_non_default()
+                .non_default()
         }) {
             return (child, add_sibling);
         }

@@ -47,7 +47,7 @@ pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
     let mut entity_fields_deserialize = Vec::new();
 
     struct_data.fields.iter().for_each(|e| {
-        if let Some(o) = DeriveNHContextSerDeFieldOpts::from_field(e).ok() {
+        if let Ok(o) = DeriveNHContextSerDeFieldOpts::from_field(e) {
             let field_name = &e.ident;
             let field_type = &e.ty;
             if o.skip_and_default {

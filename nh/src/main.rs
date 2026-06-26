@@ -181,10 +181,10 @@ impl NHTab {
     }
 
     pub fn is_persistable(&self) -> bool {
-        match self {
-            Self::Diagram { .. } | Self::Document { .. } | Self::CustomTab { .. } => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            Self::Diagram { .. } | Self::Document { .. } | Self::CustomTab { .. }
+        )
     }
 }
 
@@ -383,7 +383,7 @@ impl TabViewer for NHContext {
                 let c = self.diagram_controllers.get(uuid).unwrap().read();
                 (&*c.view_name(uuid)).into()
             }
-            NHTab::Document { uuid } => self.documents.get(&uuid).unwrap().0.clone().into(),
+            NHTab::Document { uuid } => self.documents.get(uuid).unwrap().0.clone().into(),
             NHTab::CustomTab { uuid } => self
                 .custom_tabs
                 .get(uuid)
@@ -544,19 +544,21 @@ impl NHContext {
         sources_folder_name: &str,
     ) -> Result<(), NHSerializeError> {
         let HierarchyNode::Folder(_, project_name, children) = &self.project_hierarchy else {
-            return Err(format!("invalid hierarchy root for project export").into());
+            return Err("invalid hierarchy root for project export"
+                .to_owned()
+                .into());
         };
 
-        Ok(common::project_serde::NHProjectSerialization::write_to(
+        common::project_serde::NHProjectSerialization::write_to(
             wa,
-            &*project_name,
+            project_name,
             sources_folder_name,
             self.new_diagram_no as usize,
-            &children,
+            children,
             &self.drawing_context.global_colors,
             &self.diagram_controllers,
             &self.documents,
-        )?)
+        )
     }
     fn import_project(&mut self, fh: FileHandle) -> Result<(), NHDeserializeError> {
         let project_file_name = PathBuf::from(fh.file_name());
@@ -608,8 +610,7 @@ impl NHContext {
     ) -> Result<(), NHDeserializeError> {
         let project_file_bytes = ra.read_manifest_file()?;
         let project_file_str = str::from_utf8(&project_file_bytes)?;
-        let pdto: common::project_serde::NHProjectSerialization =
-            toml::from_str(&project_file_str)?;
+        let pdto: common::project_serde::NHProjectSerialization = toml::from_str(project_file_str)?;
         let (hierarchy, top_level_views, documents) =
             pdto.deserialize_all(ra, &self.diagram_deserializers)?;
 
@@ -666,7 +667,7 @@ impl NHContext {
         }
 
         self.shortcut_top_order
-            .sort_by(|a, b| weight(&b.1).cmp(&weight(&a.1)));
+            .sort_by_key(|e| std::cmp::Reverse(weight(&e.1)));
     }
 
     fn show_project_hierarchy(&mut self, ui: &mut egui::Ui) {
@@ -721,11 +722,9 @@ impl NHContext {
         fn hierarchy(
             builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>,
             gdc: &GlobalDrawingContext,
-            new_diagram_no: u32,
             hn: &HierarchyNode,
             docs: &HashMap<ViewUuid, (String, String)>,
             cma: &mut Option<ContextMenuAction>,
-            modal: &mut Option<Box<dyn CustomModal>>,
             commands: &mut Vec<ProjectCommand>,
         ) {
             match hn {
@@ -784,7 +783,7 @@ impl NHContext {
                     }));
 
                     for c in children {
-                        hierarchy(builder, gdc, new_diagram_no, c, docs, cma, modal, commands);
+                        hierarchy(builder, gdc, c, docs, cma, commands);
                     }
 
                     builder.close_dir();
@@ -920,11 +919,9 @@ impl NHContext {
                         hierarchy(
                             builder,
                             &self.drawing_context,
-                            self.new_diagram_no,
                             &self.project_hierarchy,
                             &self.documents,
                             &mut context_menu_action,
-                            &mut self.custom_modal,
                             &mut commands,
                         );
                     });
@@ -978,24 +975,19 @@ impl NHContext {
                             for source_id in &dnd.source {
                                 if let Some((source_node, source_node_parent)) =
                                     self.project_hierarchy.get(source_id)
-                                {
-                                    if (target_is_folder
+                                    && ((target_is_folder
                                         && matches!(
                                             source_node,
                                             HierarchyNode::Folder(..) | HierarchyNode::Diagram(..)
                                         ))
-                                        || dnd.target == source_node_parent.uuid()
-                                    {
-                                        if let Some(source) =
-                                            self.project_hierarchy.remove(source_id)
-                                        {
-                                            _ = self.project_hierarchy.insert(
-                                                &dnd.target,
-                                                dnd.position,
-                                                source,
-                                            );
-                                        }
-                                    }
+                                        || dnd.target == source_node_parent.uuid())
+                                    && let Some(source) = self.project_hierarchy.remove(source_id)
+                                {
+                                    _ = self.project_hierarchy.insert(
+                                        &dnd.target,
+                                        dnd.position,
+                                        source,
+                                    );
                                 }
                             }
                         }
@@ -1040,7 +1032,7 @@ impl NHContext {
                     if view_uuid.is_nil() {
                         f(&self.project_hierarchy);
                     } else if let Some(e) = self.project_hierarchy.get(&view_uuid) {
-                        f(&e.0);
+                        f(e.0);
                     }
                 }
                 ContextMenuAction::RenameElement(view_uuid) => 'a: {
@@ -1054,7 +1046,7 @@ impl NHContext {
                     let original_name = if view_uuid.is_nil() {
                         f(&self.project_hierarchy)
                     } else if let Some(e) = self.project_hierarchy.get(&view_uuid) {
-                        f(&e.0)
+                        f(e.0)
                     } else {
                         break 'a;
                     };
@@ -1099,7 +1091,7 @@ impl NHContext {
 
                     self.custom_modal = Some(Box::new(ViewRenameModal {
                         first_frame: true,
-                        view_uuid: view_uuid,
+                        view_uuid,
                         name_buffer: original_name,
                     }));
                 }
@@ -1109,7 +1101,7 @@ impl NHContext {
             }
         }
 
-        self.unprocessed_commands.extend(commands.into_iter());
+        self.unprocessed_commands.extend(commands);
     }
 
     fn show_model_hierarchy(&mut self, ui: &mut egui::Ui) {
@@ -1406,7 +1398,7 @@ impl NHContext {
                 ) {
                     match e {
                         DiagramTypeHierarchyNode::Folder(id, name, children) => {
-                            builder.dir(*id, &*name);
+                            builder.dir(*id, name);
 
                             for e in children {
                                 h(e, builder);
@@ -1415,7 +1407,7 @@ impl NHContext {
                             builder.close_dir();
                         }
                         DiagramTypeHierarchyNode::DiagramType(id, _dtype, dname) => {
-                            builder.leaf(*id, &*dname);
+                            builder.leaf(*id, dname);
                         }
                     }
                 }
@@ -1429,7 +1421,7 @@ impl NHContext {
             });
             for e in actions {
                 if let egui_ltreeview::Action::SetSelected(items) = e {
-                    self.new_diagram_selected_kind = items.get(0).map_or(0, |e| *e);
+                    self.new_diagram_selected_kind = items.first().map_or(0, |e| *e);
                 }
             }
 
@@ -1921,7 +1913,7 @@ impl NHContext {
             for (idx, e) in self.shades_profiles.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
                     let l = if idx == self.selected_shades_profile {
-                        ui.label(&format!("[{}]", e.name))
+                        ui.label(format!("[{}]", e.name))
                     } else {
                         ui.label(&e.name)
                     };
@@ -2247,7 +2239,7 @@ impl NHContext {
     }
 
     fn show_custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut egui::Ui) {
-        let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
+        let x = self.custom_tabs.get(tab_uuid).cloned().unwrap();
         let mut custom_tab = x.write().unwrap();
         custom_tab.show(&self.drawing_context, ui, &mut self.unprocessed_commands);
     }
@@ -2325,7 +2317,7 @@ impl DiagramTypeHierarchyNode {
                 while let Some(node) = self.stack.pop() {
                     match node {
                         DiagramTypeHierarchyNode::DiagramType(_id, dtype, dname) => {
-                            return Some((&dtype, &dname));
+                            return Some((dtype, dname));
                         }
                         DiagramTypeHierarchyNode::Folder(_id, _name, children) => {
                             for child in children.iter().rev() {
@@ -2684,7 +2676,7 @@ macro_rules! push_tab_to_best {
 
 impl NHApp {
     fn switch_to_tab(&mut self, tab: &NHTab) {
-        let Some(t) = self.tree.find_tab(&tab) else {
+        let Some(t) = self.tree.find_tab(tab) else {
             return;
         };
         let _ = self.tree.set_active_tab(t);
@@ -2815,13 +2807,12 @@ impl eframe::App for NHApp {
                 }
             }
             match e {
-                FileIOOperation::Open(fh) => match self.context.import_project(fh) {
-                    Err(e) => {
+                FileIOOperation::Open(fh) => {
+                    if let Err(e) = self.context.import_project(fh) {
                         self.context.custom_modal =
                             Some(ErrorModal::new_box(format!("Error opening: {:?}", e)))
                     }
-                    Ok(_) => {}
-                },
+                }
                 FileIOOperation::OpenContent(fh, r) => match r {
                     Err(e) => {
                         self.context.custom_modal =
@@ -3500,7 +3491,6 @@ impl eframe::App for NHApp {
                         None,
                     );
                     let diagram_bounds = measuring_canvas.bounds();
-                    drop(measuring_canvas);
 
                     let preview_width = ui.available_width();
                     let camera_scale = preview_width / (diagram_bounds.width() + 2.0 * *padding_x);
@@ -3653,7 +3643,7 @@ impl eframe::App for NHApp {
             }
         }
 
-        if let Some(confirm_reason) = self.context.confirm_modal_reason.clone() {
+        if let Some(confirm_reason) = self.context.confirm_modal_reason {
             egui::Modal::new("Confirm Modal Window".into()).show(ui.ctx(), |ui| {
                 if let SimpleProjectCommand::FocusedDiagramCommand(
                     DiagramCommand::DeleteSelectedElements(k),
@@ -3955,7 +3945,7 @@ impl eframe::App for NHApp {
                             }
                             HierarchyNode::Document(view_uuid) => {
                                 if searched_uuid == *view_uuid
-                                    && let Some(e) = docs.get_mut(&view_uuid)
+                                    && let Some(e) = docs.get_mut(view_uuid)
                                 {
                                     e.0 = new_name.to_owned();
                                     let mut lines: Vec<&str> = e.1.lines().collect();
@@ -4022,7 +4012,7 @@ impl eframe::App for NHApp {
         }
 
         if !self.context.affected_models.is_empty() {
-            for (_, c) in &self.context.diagram_controllers {
+            for c in self.context.diagram_controllers.values() {
                 c.write().refresh_buffers(
                     &self.context.affected_models,
                     &mut self.context.drawing_context.model_labels,
@@ -4034,7 +4024,7 @@ impl eframe::App for NHApp {
         CentralPanel::default()
             // When displaying a DockArea in another UI, it looks better
             // to set inner margins to 0.
-            .frame(Frame::central_panel(&ui.style()).inner_margin(0.))
+            .frame(Frame::central_panel(ui.style()).inner_margin(0.))
             .show_inside(ui, |ui| {
                 let style = self
                     .context

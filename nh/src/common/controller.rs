@@ -54,7 +54,8 @@ impl SnapManager {
         F: Fn(&ViewUuid) -> bool,
     {
         *self.best_xy.write().unwrap() = (None, None);
-        let (mut least_x, mut least_y): (Option<(f32, f32)>, Option<(f32, f32)>) = (None, None);
+        let mut least_x: Option<(f32, f32)> = None;
+        let mut least_y: Option<(f32, f32)> = None;
         let center = s.center();
 
         // Naive guidelines coordinate matching
@@ -372,7 +373,7 @@ pub fn mglobalcolor_edit_button(
                 );
                 ui.label(color.to_hex());
             }
-            MGlobalColor::Global(uuid) => match gdc.global_colors.colors.get(&uuid) {
+            MGlobalColor::Global(uuid) => match gdc.global_colors.colors.get(uuid) {
                 None => {
                     painter.rect(
                         response.rect,
@@ -423,7 +424,7 @@ pub fn mglobalcolor_edit_button(
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
                 let mut state = ui.data_mut(|e| {
-                    e.get_temp_mut_or_insert_with(response.id, || ColorChangePopupState {
+                    *e.get_temp_mut_or_insert_with(response.id, || ColorChangePopupState {
                         selected_color_type: match color {
                             MGlobalColor::None => MGlobalColorType::None,
                             MGlobalColor::Local(_color32) => MGlobalColorType::Local,
@@ -440,7 +441,6 @@ pub fn mglobalcolor_edit_button(
                             uuid::Uuid::nil()
                         },
                     })
-                    .clone()
                 });
 
                 ui.style_mut().spacing.indent += 20.0;
@@ -573,7 +573,7 @@ pub struct GlobalDrawingContext {
 
 impl GlobalDrawingContext {
     pub fn shortcut_text(&self, ui: &egui::Ui, c: SimpleProjectCommand) -> Option<String> {
-        self.shortcuts.get(&c).map(|e| ui.ctx().format_shortcut(&e))
+        self.shortcuts.get(&c).map(|e| ui.ctx().format_shortcut(e))
     }
 
     pub fn get_message<'a, 'b>(&'a self, msg_name: &'b str) -> Result<FluentMessage<'a>, &'b str> {
@@ -1362,7 +1362,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
             .iter()
             .find_map(|e| e.2.iter().find(|e| e.0 == id))
         {
-            return PaletteEditBuffer::Tool(id, e.2.clone(), e.1.clone(), e.3.clone(), e.4.clone());
+            return PaletteEditBuffer::Tool(id, e.2.clone(), e.1.clone(), e.3.clone(), e.4);
         }
 
         PaletteEditBuffer::None
@@ -1620,7 +1620,7 @@ pub trait DiagramSettings: Any {
     fn serialize(&self) -> Result<toml::Value, ()>;
 }
 pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
-    fn palette_for_each_mut<'a, F>(&'a self, f: F)
+    fn palette_for_each_mut<F>(&self, f: F)
     where
         F: FnMut(
             &mut (
@@ -1687,7 +1687,7 @@ impl<
     PropChangeT: TryMerge + Clone + Debug,
 > InsensitiveCommand<OrdinalMovementT, AddElementT, PropChangeT>
 {
-    fn info_text<'a, F, T>(&self, gdc: &'a GlobalDrawingContext, diagram_name: &str, f: F) -> T
+    fn info_text<F, T>(&self, gdc: &GlobalDrawingContext, diagram_name: &str, f: F) -> T
     where
         F: FnOnce(&str) -> T,
     {
@@ -1743,7 +1743,7 @@ impl<
                 gdc.get_message("nh-viewcommand-modifyelements"),
                 uuids.len(),
             ),
-            InsensitiveCommand::Macro(msg, arg, _) => (gdc.get_message(&msg), *arg),
+            InsensitiveCommand::Macro(msg, arg, _) => (gdc.get_message(msg), *arg),
             InsensitiveCommand::HighlightAll(..)
             | InsensitiveCommand::HighlightSpecific(..)
             | InsensitiveCommand::SelectByDrag(..) => {
@@ -1761,7 +1761,7 @@ impl<
                 let mut errors = Vec::new();
                 let msg = gdc
                     .fluent_bundle
-                    .format_pattern(&pattern, Some(&args), &mut errors);
+                    .format_pattern(pattern, Some(&args), &mut errors);
                 f(&msg)
             }
         }
@@ -2066,10 +2066,7 @@ pub enum SelectionStatus {
 
 impl SelectionStatus {
     pub fn selected(&self) -> bool {
-        match self {
-            Self::Selected => true,
-            _ => false,
-        }
+        matches!(self, Self::Selected)
     }
 }
 
@@ -2098,7 +2095,7 @@ pub enum PropertiesStatus<DomainT: Domain> {
 }
 
 impl<DomainT: Domain> PropertiesStatus<DomainT> {
-    pub fn to_non_default(self) -> Option<Self> {
+    pub fn non_default(self) -> Option<Self> {
         match self {
             Self::NotShown => None,
             e => Some(e),
@@ -2321,13 +2318,6 @@ where
             DomainT::AddCommandElementT,
             DomainT::PropChangeT,
         >,
-        u: &mut Vec<
-            InsensitiveCommand<
-                DomainT::OrdinalMovementT,
-                DomainT::AddCommandElementT,
-                DomainT::PropChangeT,
-            >,
-        >,
         m: &mut HashSet<ModelUuid>,
     ) -> InsensitiveCommand<
         DomainT::OrdinalMovementT,
@@ -2338,14 +2328,14 @@ where
             InsensitiveCommand::Macro(lbl, arg, cmds) => {
                 let cmds = cmds
                     .iter()
-                    .map(|c| self.recurse_delete(view, c.clone(), u, m))
+                    .map(|c| self.recurse_delete(view, c.clone(), m))
                     .collect::<Vec<_>>();
                 InsensitiveCommand::Macro(lbl, arg, cmds.into())
             }
             InsensitiveCommand::DeleteSpecificElements(ref mut uuids, delete_kind) => {
                 let mut original_models = HashSet::new();
                 self.views
-                    .draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
+                    .draw_order_foreach(|e| e.extend_models_for(uuids, &mut original_models));
 
                 match delete_kind {
                     DeleteKind::DeleteView => {
@@ -2409,7 +2399,7 @@ where
             let mut undo_accumulator = Vec::new();
             let mut models_to_remove = HashSet::new();
 
-            c = self.recurse_delete(&view, c, &mut undo_accumulator, &mut models_to_remove);
+            c = self.recurse_delete(&view, c, &mut models_to_remove);
 
             if matches!(
                 c,
@@ -2668,7 +2658,7 @@ where
             <ModelT as ContainerModel>::ElementT: VisitableElement,
         {
             fn open_complex(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
-                self.show_element(true, &*e.uuid());
+                self.show_element(true, &e.uuid());
             }
 
             fn close_complex(&mut self, _e: &<ModelT as ContainerModel>::ElementT) {
@@ -2676,7 +2666,7 @@ where
             }
 
             fn visit_simple(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
-                self.show_element(false, &*e.uuid());
+                self.show_element(false, &e.uuid());
             }
         }
         impl<'a, 'ui, ModelT> DiagramVisitor<ModelT> for HierarchyViewVisitor<'a, 'ui, ModelT>
@@ -3011,7 +3001,7 @@ where
         let redo_stack = std::mem::take(&mut self.redo_stack);
         self.apply_commands(
             &original_view,
-            undo_commands.into_iter().rev().map(|c| c.into()).collect(),
+            undo_commands.into_iter().rev().collect(),
             false,
             affected_models,
         );
@@ -3034,12 +3024,7 @@ where
             return;
         };
         let redo_stack = std::mem::take(&mut self.redo_stack);
-        self.apply_commands(
-            &original_view,
-            vec![redo_command.into()],
-            true,
-            affected_models,
-        );
+        self.apply_commands(&original_view, vec![redo_command], true, affected_models);
         self.redo_stack = redo_stack;
         commands.push(ProjectCommand::OpenAndFocusTab(
             NHTab::Diagram {
@@ -3144,7 +3129,7 @@ where
             return Some((
                 new_view_uuid,
                 Some(ERef::new(Self::new(
-                    ControllerUuid::now_v7().into(),
+                    ControllerUuid::now_v7(),
                     self.adapter.clone_with_model(new_view_model),
                     vec![new_view],
                 ))),
@@ -3447,31 +3432,25 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                                 .hold_selection
                                 .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                             {
-                                commands.push(
-                                    InsensitiveCommand::HighlightAll(false, Highlight::SELECTED)
-                                        .into(),
-                                );
-                                commands.push(
-                                    InsensitiveCommand::HighlightSpecific(
-                                        std::iter::once(*k).collect(),
-                                        true,
-                                        Highlight::SELECTED,
-                                    )
-                                    .into(),
-                                );
+                                commands.push(InsensitiveCommand::HighlightAll(
+                                    false,
+                                    Highlight::SELECTED,
+                                ));
+                                commands.push(InsensitiveCommand::HighlightSpecific(
+                                    std::iter::once(*k).collect(),
+                                    true,
+                                    Highlight::SELECTED,
+                                ));
                             } else {
-                                commands.push(
-                                    InsensitiveCommand::HighlightSpecific(
-                                        std::iter::once(*k).collect(),
-                                        !self
-                                            .temporaries
-                                            .flattened_views_status
-                                            .get(&k)
-                                            .is_some_and(|e| e.selected()),
-                                        Highlight::SELECTED,
-                                    )
-                                    .into(),
-                                );
+                                commands.push(InsensitiveCommand::HighlightSpecific(
+                                    std::iter::once(*k).collect(),
+                                    !self
+                                        .temporaries
+                                        .flattened_views_status
+                                        .get(&k)
+                                        .is_some_and(|e| e.selected()),
+                                    Highlight::SELECTED,
+                                ));
                             }
                             EventHandlingStatus::HandledByContainer
                         }
@@ -3500,31 +3479,24 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
             InputEvent::Drag { delta, .. } => {
                 if let Some((a, b)) = self.temporaries.select_by_drag {
                     self.temporaries.select_by_drag = Some((a, b + delta));
-                    commands.push(
-                        InsensitiveCommand::SelectByDrag(
-                            egui::Rect::from_two_pos(a, b + delta),
-                            ehc.modifier_settings
-                                .hold_selection
-                                .is_some_and(|e| ehc.modifiers.is_superset_of(e)),
-                        )
-                        .into(),
-                    );
+                    commands.push(InsensitiveCommand::SelectByDrag(
+                        egui::Rect::from_two_pos(a, b + delta),
+                        ehc.modifier_settings
+                            .hold_selection
+                            .is_some_and(|e| ehc.modifiers.is_superset_of(e)),
+                    ));
                 }
                 true
             }
             InputEvent::Click(pos) => {
                 let mut handled = child
                     .ok_or_else(|| {
-                        commands.push(
-                            InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into(),
-                        );
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
                     })
                     .is_ok();
 
-                if !handled {
-                    if let Some(t) = self.temporaries.current_tool.as_mut() {
-                        t.add_position(pos);
-                    }
+                if !handled && let Some(t) = self.temporaries.current_tool.as_mut() {
+                    t.add_position(pos);
                 }
 
                 let mut tool = self.temporaries.current_tool.take();
@@ -3553,13 +3525,12 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
             {
                 self.temporaries.current_tool = None;
             }
-            self.temporaries
-                .current_tool
-                .as_mut()
-                .map(|e| e.reset_event_lock());
+            if let Some(e) = self.temporaries.current_tool.as_mut() {
+                e.reset_event_lock();
+            }
         }
 
-        commands_accumulator.extend(commands.into_iter());
+        commands_accumulator.extend(commands);
 
         handled
     }
@@ -3607,7 +3578,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 &mut models,
             );
         }
-        for (_usize, v) in top_level_views.iter_mut() {
+        for v in top_level_views.values_mut() {
             v.deep_copy_relink(&views, &models);
         }
 
@@ -3667,35 +3638,35 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 element,
                 into_model,
             } => {
-                if *target == *self.uuid && *bucket == 0 {
-                    if let Ok(mut view) = element.clone().try_into()
-                        && (!*into_model
-                            || self
-                                .adapter
-                                .insert_element(*bucket, *position, view.model())
-                                .is_ok())
-                    {
-                        let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            element: uuid,
-                            including_model: *into_model,
-                        });
+                if *target == *self.uuid
+                    && *bucket == 0
+                    && let Ok(mut view) = element.clone().try_into()
+                    && (!*into_model
+                        || self
+                            .adapter
+                            .insert_element(*bucket, *position, view.model())
+                            .is_ok())
+                {
+                    let uuid = *view.uuid();
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        element: uuid,
+                        including_model: *into_model,
+                    });
 
-                        if *into_model {
-                            affected_models.insert(*self.adapter.model_uuid());
-                        }
-                        let mut model_transitives = HashMap::new();
-                        view.head_count(
-                            &mut HashMap::new(),
-                            &mut HashMap::new(),
-                            &mut model_transitives,
-                        );
-                        affected_models.extend(model_transitives.into_keys());
-
-                        self.owned_views.push(uuid, view);
+                    if *into_model {
+                        affected_models.insert(*self.adapter.model_uuid());
                     }
+                    let mut model_transitives = HashMap::new();
+                    view.head_count(
+                        &mut HashMap::new(),
+                        &mut HashMap::new(),
+                        &mut model_transitives,
+                    );
+                    affected_models.extend(model_transitives.into_keys());
+
+                    self.owned_views.push(uuid, view);
                 }
             }
             InsensitiveCommand::RemoveDependency {
@@ -3762,7 +3733,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 if uuids.is_empty() || uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model_uuid());
                     self.adapter
-                        .apply_property_change_fun(&self.uuid, &command, undo_accumulator);
+                        .apply_property_change_fun(&self.uuid, command, undo_accumulator);
                 }
             }
             InsensitiveCommand::Macro(_, _, cmds) => {
@@ -3774,7 +3745,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
 
         if !matches!(command, InsensitiveCommand::Macro(..)) {
             self.owned_views.event_order_foreach_mut(|v| {
-                v.apply_command(&command, undo_accumulator, affected_models);
+                v.apply_command(command, undo_accumulator, affected_models);
             });
         }
 
@@ -4028,34 +3999,33 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         });
         if response.dragged_by(egui::PointerButton::Primary)
             && ui.input(|i| i.multi_touch().is_none())
+            && let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos
         {
-            if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
-                let delta = response.drag_delta() / self.temporaries.camera_scale;
-                self.handle_event(
-                    InputEvent::Drag {
-                        from: old_pos,
-                        delta,
-                    },
-                    modifier_settings,
-                    modifiers,
-                    settings,
-                    element_setup_modal,
-                    commands,
-                );
-                self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
-            }
+            let delta = response.drag_delta() / self.temporaries.camera_scale;
+            self.handle_event(
+                InputEvent::Drag {
+                    from: old_pos,
+                    delta,
+                },
+                modifier_settings,
+                modifiers,
+                settings,
+                element_setup_modal,
+                commands,
+            );
+            self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
         }
-        if response.clicked_by(egui::PointerButton::Primary) {
-            if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.handle_event(
-                    InputEvent::Click(pos_to_abs!(pos)),
-                    modifier_settings,
-                    modifiers,
-                    settings,
-                    element_setup_modal,
-                    commands,
-                );
-            }
+        if response.clicked_by(egui::PointerButton::Primary)
+            && let Some(pos) = ui.ctx().pointer_interact_pos()
+        {
+            self.handle_event(
+                InputEvent::Click(pos_to_abs!(pos)),
+                modifier_settings,
+                modifiers,
+                settings,
+                element_setup_modal,
+                commands,
+            );
         }
         ui.input(|is| {
             is.events.iter().for_each(|e| match e {
@@ -4370,7 +4340,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             .add_sized(
                 [width, button_height],
                 egui::Button::new(gdc.translate_0("nh-tab-toolbar-selectmove")).fill(
-                    if stage == None {
+                    if stage.is_none() {
                         selected_background_color
                     } else {
                         button_background_color
@@ -4488,7 +4458,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
 
             let child = self.owned_views.event_order_find_mut(|v| {
                 v.show_properties(context, &queryable, ui, commands)
-                    .to_non_default()
+                    .non_default()
             });
             if let Some(child) = child {
                 child
@@ -4528,9 +4498,8 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         ui: &mut egui::Ui,
     ) {
         let mut measuring_canvas = canvas::MeasuringCanvas::new(ui.painter());
-        self.draw_in(&context, settings, &mut measuring_canvas, None);
+        self.draw_in(context, settings, &mut measuring_canvas, None);
         let diagram_bounds = measuring_canvas.bounds();
-        drop(measuring_canvas);
 
         let outline_size = ui.available_size();
         let camera_scale = (outline_size.x / diagram_bounds.width())
@@ -4560,7 +4529,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             crate::common::canvas::Highlight::NONE,
             (false, false),
         );
-        self.draw_in(&context, settings, &mut ui_canvas, None);
+        self.draw_in(context, settings, &mut ui_canvas, None);
 
         // Draw viewport location hint
         {
@@ -4682,7 +4651,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
-        self.adapter.menubar_options_fun(&*self.uuid, ui, commands);
+        self.adapter.menubar_options_fun(&self.uuid, ui, commands);
     }
 
     fn diagram_command_to_sensitives(
@@ -4717,8 +4686,8 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             DiagramCommand::UndoImmediate | DiagramCommand::RedoImmediate => {}
             DiagramCommand::InvertSelection => {
                 return vec![
-                    InsensitiveCommand::HighlightAll(true, Highlight::SELECTED).into(),
-                    InsensitiveCommand::HighlightSpecific(se!(), false, Highlight::SELECTED).into(),
+                    InsensitiveCommand::HighlightAll(true, Highlight::SELECTED),
+                    InsensitiveCommand::HighlightSpecific(se!(), false, Highlight::SELECTED),
                 ];
             }
             DiagramCommand::DeleteSelectedElements(_)
@@ -4765,15 +4734,12 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                             |_| true,
                             HashMap::new(),
                             clipboard.iter().filter_map(|e| {
-                                if let Some(e) = e.downcast_ref::<DomainT::CommonElementViewT>() {
-                                    Some((*e.uuid(), e.clone()))
-                                } else {
-                                    None
-                                }
+                                e.downcast_ref::<DomainT::CommonElementViewT>()
+                                    .map(|e| (*e.uuid(), e.clone()))
                             }),
                         );
                         let mut new_elements_area = egui::Rect::NOTHING;
-                        for (_k, v) in elements.iter() {
+                        for v in elements.values() {
                             new_elements_area = new_elements_area.union(v.bounding_box());
                         }
                         let new_position = match pos {
@@ -4832,7 +4798,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                 self.set_clipboard_from_selected(clipboard);
             }
             DiagramCommand::HighlightAllElements(set, h) => {
-                return vec![InsensitiveCommand::HighlightAll(set, h).into()];
+                return vec![InsensitiveCommand::HighlightAll(set, h)];
             }
             DiagramCommand::HighlightElement(e, set, h) => {
                 let view_uuid = match e {
@@ -4845,14 +4811,11 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     EntityUuid::Controller(_) => return vec![],
                 };
                 if let Some(view_uuid) = view_uuid {
-                    return vec![
-                        InsensitiveCommand::HighlightSpecific(
-                            std::iter::once(view_uuid).collect(),
-                            set,
-                            h,
-                        )
-                        .into(),
-                    ];
+                    return vec![InsensitiveCommand::HighlightSpecific(
+                        std::iter::once(view_uuid).collect(),
+                        set,
+                        h,
+                    )];
                 }
             }
             DiagramCommand::PanToElement(e, force) => {
@@ -4924,11 +4887,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                         let mut pseudo_frm = self.temporaries.flattened_represented_models.clone();
                         let mut pseudo_fvs = self.temporaries.flattened_views_status.clone();
 
-                        loop {
-                            let Some(model_uuid) = models_to_create_views_for.last().cloned()
-                            else {
-                                break;
-                            };
+                        while let Some(model_uuid) = models_to_create_views_for.last().cloned() {
                             if pseudo_frm.contains_key(&model_uuid) {
                                 models_to_create_views_for.pop();
                                 continue;
@@ -4965,16 +4924,13 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                                     pseudo_frm.insert(*model.uuid(), *new_view.uuid());
                                     pseudo_fvs
                                         .insert(*new_view.uuid(), SelectionStatus::NotSelected);
-                                    cmds.push(
-                                        InsensitiveCommand::AddDependency {
-                                            target: parent_view_uuid,
-                                            bucket: b,
-                                            position: Some(pos),
-                                            element: new_view.into(),
-                                            into_model: false,
-                                        }
-                                        .into(),
-                                    );
+                                    cmds.push(InsensitiveCommand::AddDependency {
+                                        target: parent_view_uuid,
+                                        bucket: b,
+                                        position: Some(pos),
+                                        element: new_view.into(),
+                                        into_model: false,
+                                    });
                                     models_to_create_views_for.pop();
                                 }
                                 Err(mut prerequisites) => {
@@ -4993,17 +4949,14 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     .flattened_represented_models
                     .get(&model_uuid)
                 {
-                    return vec![
-                        InsensitiveCommand::DeleteSpecificElements(
-                            std::iter::once(*view_uuid).collect(),
-                            if !including_model {
-                                DeleteKind::DeleteView
-                            } else {
-                                DeleteKind::DeleteAll
-                            },
-                        )
-                        .into(),
-                    ];
+                    return vec![InsensitiveCommand::DeleteSpecificElements(
+                        std::iter::once(*view_uuid).collect(),
+                        if !including_model {
+                            DeleteKind::DeleteView
+                        } else {
+                            DeleteKind::DeleteAll
+                        },
+                    )];
                 }
             }
         };

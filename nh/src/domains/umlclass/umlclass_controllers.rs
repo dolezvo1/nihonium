@@ -6212,7 +6212,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             .flat_map(|e| {
                 e.write()
                     .show_properties(gdc, q, ui, commands)
-                    .to_non_default()
+                    .non_default()
             })
             .next();
         if let Some(status) = properties_status.or_else(|| {
@@ -6221,7 +6221,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 .flat_map(|e| {
                     e.write()
                         .show_properties(gdc, q, ui, commands)
-                        .to_non_default()
+                        .non_default()
                 })
                 .next()
         }) {

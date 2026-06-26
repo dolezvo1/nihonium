@@ -16,7 +16,7 @@ fn unique_segments_intersection(
     let s = (-s1.y * (s1a.x - s2a.x) + s1.x * (s1a.y - s2a.y)) / (-s2.x * s1.y + s1.x * s2.y);
     let t = (s2.x * (s1a.y - s2a.y) - s2.y * (s1a.x - s2a.x)) / (-s2.x * s1.y + s1.x * s2.y);
 
-    if s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0 {
+    if (0.0..=1.0).contains(&s) && (0.0..=1.0).contains(&t) {
         Some(s1a + t * egui::Vec2::new(s1.x, s1.y))
     } else {
         None
@@ -74,7 +74,7 @@ fn segment_rect_point(p: egui::Pos2, rect: egui::Rect) -> Option<egui::Pos2> {
         }
     }
 
-    return None;
+    None
 }
 
 // based on https://stackoverflow.com/a/25704033 by Danial Esmaeili
@@ -87,7 +87,7 @@ fn segment_ellipse_point(p: egui::Pos2, (center, radius): (egui::Pos2, egui::Vec
     let r = ((center.y - p.y).powf(2.0) + (center.x - p.x).powf(2.0)).sqrt()
         - ((radius.x * radius.y)
             / ((radius.y * theta.cos()).powf(2.0) + (radius.x * theta.sin()).powf(2.0)).sqrt());
-    return egui::Pos2::new(p.x + r * theta.cos(), p.y + r * theta.sin());
+    egui::Pos2::new(p.x + r * theta.cos(), p.y + r * theta.sin())
 }
 
 fn segment_rhombus_point(
@@ -673,7 +673,7 @@ impl Highlight {
     }
 }
 
-impl<'a> BitOr<Highlight> for &'a Highlight {
+impl BitOr<Highlight> for &Highlight {
     type Output = Highlight;
 
     fn bitor(self, rhs: Highlight) -> Self::Output {
@@ -686,7 +686,7 @@ impl<'a> BitOr<Highlight> for &'a Highlight {
     }
 }
 
-impl<'a> BitAnd<Highlight> for &'a Highlight {
+impl BitAnd<Highlight> for &Highlight {
     type Output = Highlight;
 
     fn bitand(self, rhs: Highlight) -> Self::Output {
@@ -1329,7 +1329,7 @@ impl<'a> SVGCanvas<'a> {
         }
     }
 
-    pub fn into_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
+    pub fn into_bytes(self) -> Result<Vec<u8>, std::io::Error> {
         let mut buffer = Vec::new();
 
         buffer.write_all(

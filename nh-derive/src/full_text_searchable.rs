@@ -20,14 +20,12 @@ pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
     match &input_ast.data {
         syn::Data::Enum(e) => derive_enum(&input_ast, &opts, e),
         syn::Data::Struct(s) => derive_struct(&input_ast, &opts, s),
-        syn::Data::Union(_u) => {
-            return syn::Error::new(
-                input_ast.ident.span(),
-                "FullTextSearchable cannot be derived for unions",
-            )
-            .to_compile_error()
-            .into();
-        }
+        syn::Data::Union(_u) => syn::Error::new(
+            input_ast.ident.span(),
+            "FullTextSearchable cannot be derived for unions",
+        )
+        .to_compile_error()
+        .into(),
     }
 }
 
@@ -55,7 +53,7 @@ fn derive_enum(
             (
                 e.0,
                 match &e.1.passthrough {
-                    Some(darling::util::Override::Explicit(p)) => &p,
+                    Some(darling::util::Override::Explicit(p)) => p,
                     _ => &opts.default_passthrough,
                 },
             )

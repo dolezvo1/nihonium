@@ -43,7 +43,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             (
                 e.0,
                 match &e.1.passthrough {
-                    Some(darling::util::Override::Explicit(p)) => &p,
+                    Some(darling::util::Override::Explicit(p)) => p,
                     _ => &opts.default_passthrough,
                 },
             )

@@ -1784,7 +1784,7 @@ fn new_network_node_view(model: ERef<NetworkNode>, position: egui::Pos2) -> ERef
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
-        position: position,
+        position,
         bounds_rect: egui::Rect::from_pos(position),
     })
 }
@@ -2509,7 +2509,7 @@ fn new_network_user_view(
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
-        position: position,
+        position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
     })
@@ -3123,7 +3123,7 @@ fn new_network_file_view(
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
-        position: position,
+        position,
         bounds_rect: egui::Rect::ZERO,
         background_color,
     })

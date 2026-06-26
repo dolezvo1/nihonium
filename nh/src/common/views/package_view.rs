@@ -230,7 +230,7 @@ where
     ) -> PropertiesStatus<DomainT> {
         let child = self
             .owned_views
-            .event_order_find_mut(|v| v.show_properties(gdc, q, ui, commands).to_non_default());
+            .event_order_find_mut(|v| v.show_properties(gdc, q, ui, commands).non_default());
 
         if let Some(child) = child {
             child

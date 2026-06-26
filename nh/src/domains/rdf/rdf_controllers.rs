@@ -1444,7 +1444,7 @@ fn new_rdf_node_view(model: ERef<RdfNode>, position: egui::Pos2) -> ERef<RdfNode
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
-        position: position,
+        position,
         bounds_radius: egui::Vec2::ZERO,
     });
     node_view
@@ -1879,7 +1879,7 @@ fn new_rdf_literal_view(model: ERef<RdfLiteral>, position: egui::Pos2) -> ERef<R
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
-        position: position,
+        position,
         bounds_rect: egui::Rect::from_pos(position),
     });
     literal_view

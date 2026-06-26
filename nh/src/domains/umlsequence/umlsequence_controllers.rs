@@ -2444,13 +2444,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             .flat_map(|v| {
                 v.write()
                     .show_properties(gdc, q, ui, commands)
-                    .to_non_default()
+                    .non_default()
             })
             .next()
             .or_else(|| {
                 self.horizontal_element_views
                     .iter_mut()
-                    .flat_map(|v| v.show_properties(gdc, q, ui, commands).to_non_default())
+                    .flat_map(|v| v.show_properties(gdc, q, ui, commands).non_default())
                     .next()
             });
 
@@ -4179,7 +4179,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             .filter_map(|v| {
                 v.write()
                     .show_properties(drawing_context, q, ui, commands)
-                    .to_non_default()
+                    .non_default()
             })
             .next()
         {
@@ -5102,7 +5102,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
             .iter_mut()
             .filter_map(|v| {
                 v.show_properties(drawing_context, q, ui, commands)
-                    .to_non_default()
+                    .non_default()
             })
             .next()
         {

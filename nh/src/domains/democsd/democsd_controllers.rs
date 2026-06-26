@@ -1953,7 +1953,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         if let Some(child) = self.transaction_view.as_mut().and_then(|t| {
             t.write()
                 .show_properties(gdc, q, ui, commands)
-                .to_non_default()
+                .non_default()
         }) {
             return child;
         }
@@ -3028,7 +3028,7 @@ fn draw_tx_mark(
     );
 
     canvas::NHShape::Ellipse {
-        position: position,
+        position,
         bounds_radius: egui::Vec2::splat(radius),
     }
 }

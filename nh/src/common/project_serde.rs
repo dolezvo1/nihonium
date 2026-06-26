@@ -562,7 +562,6 @@ pub enum NHSerializeError {
 }
 
 pub trait NHContextSerialize {
-    #[clippy::must_use]
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>;
 }
 

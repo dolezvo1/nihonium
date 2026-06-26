@@ -3111,7 +3111,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         if let Some(child) = self.specialization_view.as_mut().and_then(|t| {
             t.write()
                 .show_properties(gdc, q, ui, commands)
-                .to_non_default()
+                .non_default()
         }) {
             return child;
         }
