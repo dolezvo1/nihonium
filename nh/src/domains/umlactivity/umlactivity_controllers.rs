@@ -882,19 +882,7 @@ pub fn deserializer(
 pub struct UmlActivitySettings {
     palette: RwLock<ToolPalette<UmlActivityToolStage, UmlActivityDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlActivityToolStage, UmlActivityElementView>>,
-    nonfinal_buttons: Vec<(
-        usize,
-        usize,
-        &'static str,
-        &'static dyn Fn(
-            UmlActivityNonFinalNode,
-        ) -> (
-            UmlActivityToolStage,
-            UmlActivityToolStage,
-            PartialUmlActivityElement,
-            bool,
-        ),
-    )>,
+    nonfinal_buttons: Vec<(usize, usize, &'static str, &'static NonFinalNodeButtonF)>,
 }
 
 impl DiagramSettings for UmlActivitySettings {

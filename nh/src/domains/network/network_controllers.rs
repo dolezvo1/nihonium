@@ -673,6 +673,7 @@ pub fn deserializer(
 pub struct NetworkSettings {
     palette: RwLock<ToolPalette<NetworkToolStage, NetworkDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<NetworkToolStage, NetworkElementView>>,
+    element_buttons: Vec<(usize, usize, &'static str, &'static ElementButtonF)>,
 }
 impl DiagramSettings for NetworkSettings {
     fn show(
@@ -726,7 +727,11 @@ impl DiagramSettings for NetworkSettings {
                     }
 
                     match tool {
-                        NetworkToolStage::Node { name, kind } => {
+                        NetworkToolStage::Node {
+                            name,
+                            kind,
+                            with_edge_from: _,
+                        } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Name", name)
                                 .changed();
@@ -745,6 +750,7 @@ impl DiagramSettings for NetworkSettings {
                             name,
                             kind,
                             background_color,
+                            with_edge_from: _,
                         } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Name", name)
@@ -775,6 +781,7 @@ impl DiagramSettings for NetworkSettings {
                             name,
                             kind,
                             background_color,
+                            with_edge_from: _,
                         } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Name", name)
@@ -932,6 +939,130 @@ impl DiagramSettings2<NetworkDomain> for NetworkSettings {
     }
 }
 
+type ElementButtonF = dyn Fn(
+    NetworkElement,
+) -> (
+    NetworkToolStage,
+    NetworkToolStage,
+    PartialNetworkElement,
+    bool,
+);
+mod buttons {
+    use super::*;
+    use std::sync::LazyLock;
+
+    fn element_association_none(
+        m: NetworkElement,
+    ) -> (
+        NetworkToolStage,
+        NetworkToolStage,
+        PartialNetworkElement,
+        bool,
+    ) {
+        (
+            NetworkToolStage::AssociationStart {
+                line_type: NetworkAssociationLineType::Solid,
+                source_arrowhead: NetworkAssociationArrowheadType::None,
+                target_arrowhead: NetworkAssociationArrowheadType::None,
+            },
+            NetworkToolStage::AssociationEnd,
+            PartialNetworkElement::Association {
+                line_type: NetworkAssociationLineType::Solid,
+                source_arrowhead: NetworkAssociationArrowheadType::None,
+                target_arrowhead: NetworkAssociationArrowheadType::None,
+                source: m,
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn element_association_open(
+        m: NetworkElement,
+    ) -> (
+        NetworkToolStage,
+        NetworkToolStage,
+        PartialNetworkElement,
+        bool,
+    ) {
+        (
+            NetworkToolStage::AssociationStart {
+                line_type: NetworkAssociationLineType::Solid,
+                source_arrowhead: NetworkAssociationArrowheadType::None,
+                target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
+            },
+            NetworkToolStage::AssociationEnd,
+            PartialNetworkElement::Association {
+                line_type: NetworkAssociationLineType::Solid,
+                source_arrowhead: NetworkAssociationArrowheadType::None,
+                target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
+                source: m,
+                dest: None,
+            },
+            true,
+        )
+    }
+
+    fn element_node(
+        m: NetworkElement,
+    ) -> (
+        NetworkToolStage,
+        NetworkToolStage,
+        PartialNetworkElement,
+        bool,
+    ) {
+        let stage = NetworkToolStage::Node {
+            name: "Node".to_owned(),
+            kind: NetworkNodeKind::Server,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialNetworkElement::None, true)
+    }
+    fn element_user(
+        m: NetworkElement,
+    ) -> (
+        NetworkToolStage,
+        NetworkToolStage,
+        PartialNetworkElement,
+        bool,
+    ) {
+        let stage = NetworkToolStage::User {
+            name: "User".to_owned(),
+            kind: NetworkUserKind::Normal,
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialNetworkElement::None, true)
+    }
+    fn element_file(
+        m: NetworkElement,
+    ) -> (
+        NetworkToolStage,
+        NetworkToolStage,
+        PartialNetworkElement,
+        bool,
+    ) {
+        let stage = NetworkToolStage::File {
+            name: "File".to_owned(),
+            kind: NetworkFileKind::Unspecified,
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialNetworkElement::None, true)
+    }
+
+    pub const ELEMENT_BUTTONS: LazyLock<
+        Vec<(usize, usize, &'static str, &'static ElementButtonF)>,
+    > = LazyLock::new(|| {
+        vec![
+            (0, 0, "\\", &element_association_none as &ElementButtonF),
+            (0, 1, "↘", &element_association_open as &ElementButtonF),
+            (1, 0, "N", &element_node as &ElementButtonF),
+            (1, 1, "U", &element_user as &ElementButtonF),
+            (1, 2, "F", &element_file as &ElementButtonF),
+        ]
+    });
+}
+
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let palette_items = vec![
         (
@@ -941,6 +1072,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Workstation".to_owned(),
                         kind: NetworkNodeKind::Workstation,
+                        with_edge_from: None,
                     },
                     "Workstation",
                     Some(egui::KeyboardShortcut::new(
@@ -952,6 +1084,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Laptop".to_owned(),
                         kind: NetworkNodeKind::Laptop,
+                        with_edge_from: None,
                     },
                     "Laptop",
                     None,
@@ -960,6 +1093,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Router".to_owned(),
                         kind: NetworkNodeKind::Router,
+                        with_edge_from: None,
                     },
                     "Router",
                     Some(egui::KeyboardShortcut::new(
@@ -971,6 +1105,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Switch".to_owned(),
                         kind: NetworkNodeKind::Switch,
+                        with_edge_from: None,
                     },
                     "Switch",
                     Some(egui::KeyboardShortcut::new(
@@ -988,6 +1123,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         name: "User".to_owned(),
                         kind: NetworkUserKind::Normal,
                         background_color: MGlobalColor::None,
+                        with_edge_from: None,
                     },
                     "User",
                     Some(egui::KeyboardShortcut::new(
@@ -1000,6 +1136,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         name: "Developer".to_owned(),
                         kind: NetworkUserKind::Developer,
                         background_color: MGlobalColor::None,
+                        with_edge_from: None,
                     },
                     "Developer",
                     None,
@@ -1009,6 +1146,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         name: "Audit".to_owned(),
                         kind: NetworkUserKind::Audit,
                         background_color: MGlobalColor::None,
+                        with_edge_from: None,
                     },
                     "Audit",
                     None,
@@ -1018,6 +1156,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         name: "Black Hat".to_owned(),
                         kind: NetworkUserKind::BlackHat,
                         background_color: MGlobalColor::None,
+                        with_edge_from: None,
                     },
                     "Black Hat",
                     None,
@@ -1031,6 +1170,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     name: "File".to_owned(),
                     kind: NetworkFileKind::Unspecified,
                     background_color: MGlobalColor::None,
+                    with_edge_from: None,
                 },
                 "File",
                 Some(egui::KeyboardShortcut::new(
@@ -1121,12 +1261,17 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     Box::new(NetworkSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
+        element_buttons: buttons::ELEMENT_BUTTONS.clone(),
     })
 }
 
 fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
     match s {
-        NetworkToolStage::Node { name, kind } => {
+        NetworkToolStage::Node {
+            name,
+            kind,
+            with_edge_from: _,
+        } => {
             let node_view = new_network_node(name, *kind, egui::Pos2::ZERO).1;
             node_view.into()
         }
@@ -1134,6 +1279,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             name,
             kind,
             background_color,
+            with_edge_from: _,
         } => {
             let user_view = new_network_user(name, *kind, egui::Pos2::ZERO, *background_color).1;
             user_view.into()
@@ -1142,6 +1288,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             name,
             kind,
             background_color,
+            with_edge_from: _,
         } => {
             let file_view = new_network_file(name, *kind, egui::Pos2::ZERO, *background_color).1;
             file_view.into()
@@ -1200,6 +1347,7 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
         palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?
             .into(),
         palette_edit_buffer: PaletteEditBuffer::None.into(),
+        element_buttons: buttons::ELEMENT_BUTTONS.clone(),
     }))
 }
 
@@ -1224,16 +1372,19 @@ pub enum NetworkToolStage {
     Node {
         name: String,
         kind: NetworkNodeKind,
+        with_edge_from: Option<ModelUuid>,
     },
     User {
         name: String,
         kind: NetworkUserKind,
         background_color: MGlobalColor,
+        with_edge_from: Option<ModelUuid>,
     },
     File {
         name: String,
         kind: NetworkFileKind,
         background_color: MGlobalColor,
+        with_edge_from: Option<ModelUuid>,
     },
     AssociationStart {
         line_type: NetworkAssociationLineType,
@@ -1348,8 +1499,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         canvas: &mut dyn NHCanvas,
         pos: egui::Pos2,
     ) {
-        match &self.result {
-            PartialNetworkElement::Association { source, .. } => {
+        match (&self.result, &self.initial_stage) {
+            (PartialNetworkElement::Association { source, .. }, _) => {
                 if let Some(source_view) = q.get_view_for(&source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1358,7 +1509,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     );
                 }
             }
-            PartialNetworkElement::Container { a, .. } => {
+            (PartialNetworkElement::Container { a, .. }, _) => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(*a, pos),
                     egui::CornerRadius::ZERO,
@@ -1366,6 +1517,29 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
+            }
+            (
+                _,
+                NetworkToolStage::Node {
+                    with_edge_from: Some(source_uuid),
+                    ..
+                }
+                | NetworkToolStage::User {
+                    with_edge_from: Some(source_uuid),
+                    ..
+                }
+                | NetworkToolStage::File {
+                    with_edge_from: Some(source_uuid),
+                    ..
+                },
+            ) => {
+                if let Some(source_view) = q.get_view_for(source_uuid) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
             _ => {}
         }
@@ -1377,7 +1551,14 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         }
 
         match (&self.current_stage, &mut self.result) {
-            (NetworkToolStage::Node { name, kind }, _) => {
+            (
+                NetworkToolStage::Node {
+                    name,
+                    kind,
+                    with_edge_from: _,
+                },
+                _,
+            ) => {
                 let (_, node_view) = new_network_node(name, *kind, pos);
                 self.result = PartialNetworkElement::Some(node_view.into());
                 self.event_lock = true;
@@ -1387,6 +1568,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     name,
                     kind,
                     background_color,
+                    with_edge_from: _,
                 },
                 _,
             ) => {
@@ -1399,6 +1581,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     name,
                     kind,
                     background_color,
+                    with_edge_from: _,
                 },
                 _,
             ) => {
@@ -1486,7 +1669,42 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         match &self.result {
             PartialNetworkElement::Some(element) => {
                 let element = element.clone();
+                let additional_edge = match &self.initial_stage {
+                    NetworkToolStage::Node {
+                        with_edge_from: Some(source_uuid),
+                        ..
+                    }
+                    | NetworkToolStage::User {
+                        with_edge_from: Some(source_uuid),
+                        ..
+                    }
+                    | NetworkToolStage::File {
+                        with_edge_from: Some(source_uuid),
+                        ..
+                    } if let Some(source) = q.get_view_for(source_uuid)
+                        && let nearest_common_container = q
+                            .find_container(&source.uuid(), |uuid, _| {
+                                uuid == preferred_container
+                                    || q.is_contained(preferred_container, uuid)
+                            })
+                            .map(|e| e.0)
+                            .unwrap_or_else(|| q.get_root()) =>
+                    {
+                        let edge_view = new_network_association(
+                            NetworkAssociationLineType::Solid,
+                            (source.model(), source.clone().into()),
+                            NetworkAssociationArrowheadType::None,
+                            (element.model(), element.clone()),
+                            NetworkAssociationArrowheadType::None,
+                        )
+                        .1;
+                        Some((nearest_common_container, edge_view))
+                    }
+                    _ => None,
+                };
+
                 self.try_spend();
+
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1494,6 +1712,15 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     element: element.into(),
                     into_model: true,
                 });
+                if let Some((parent, e)) = additional_edge {
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: parent,
+                        bucket: 0,
+                        position: None,
+                        element: NetworkElementView::from(e).into(),
+                        into_model: true,
+                    });
+                }
                 Ok(None)
             }
             PartialNetworkElement::Association {
@@ -1763,6 +1990,59 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     }
 }
 
+fn element_button_rect(
+    origin: egui::Pos2,
+    ui_scale: f32,
+    row_index: usize,
+    column_index: usize,
+) -> egui::Rect {
+    const BUTTON_RADIUS: f32 = 8.0;
+    let b_center = origin
+        + egui::Vec2::new(
+            (1.0 + 2.0 * column_index as f32) * BUTTON_RADIUS / ui_scale,
+            (1.0 + 2.0 * row_index as f32) * BUTTON_RADIUS / ui_scale,
+        );
+    egui::Rect::from_center_size(b_center, egui::Vec2::splat(2.0 * BUTTON_RADIUS / ui_scale))
+}
+fn draw_element_button_rects(
+    settings: &<NetworkDomain as Domain>::SettingsT,
+    canvas: &mut dyn NHCanvas,
+    origin: egui::Pos2,
+    ui_scale: f32,
+) {
+    for (row_idx, col_idx, l, _f) in settings.element_buttons.iter() {
+        let r = element_button_rect(origin, ui_scale, *row_idx, *col_idx);
+        canvas.draw_rectangle(
+            r,
+            egui::CornerRadius::ZERO,
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Highlight::NONE,
+        );
+        canvas.draw_text(
+            r.center(),
+            egui::Align2::CENTER_CENTER,
+            l,
+            14.0 / ui_scale,
+            egui::Color32::BLACK,
+        );
+    }
+}
+fn handle_element_button_click(
+    settings: &<NetworkDomain as Domain>::SettingsT,
+    origin: egui::Pos2,
+    ui_scale: f32,
+    click_pos: egui::Pos2,
+) -> Option<&ElementButtonF> {
+    for (row_idx, col_idx, _l, f) in settings.element_buttons.iter() {
+        let r = element_button_rect(origin, ui_scale, *row_idx, *col_idx);
+        if r.contains(click_pos) {
+            return Some(f);
+        }
+    }
+    None
+}
+
 fn new_network_node(
     name: &str,
     kind: NetworkNodeKind,
@@ -1923,7 +2203,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         &mut self,
         _q: &<NetworkDomain as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
-        _settings: &NetworkSettings,
+        settings: &NetworkSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveNetworkTool)>,
     ) -> TargettingStatus {
@@ -2265,6 +2545,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             }
         }
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
+
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
@@ -2289,7 +2574,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<NetworkDomain as Domain>::SettingsT,
+        settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -2312,6 +2597,27 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos)
+                if self.highlight.selected
+                    && let Some(f) = handle_element_button_click(
+                        settings,
+                        self.bounds_rect.right_top(),
+                        ehc.ui_scale,
+                        pos,
+                    ) =>
+            {
+                let (initial_stage, current_stage, result, event_lock) =
+                    f(self.model.clone().into());
+                *tool = Some(NaiveNetworkTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -2659,7 +2965,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         &mut self,
         _q: &<NetworkDomain as Domain>::QueryableT<'_>,
         gdc: &GlobalDrawingContext,
-        _settings: &NetworkSettings,
+        settings: &NetworkSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveNetworkTool)>,
     ) -> TargettingStatus {
@@ -2869,6 +3175,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         );
         self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
+
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
@@ -2893,7 +3204,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<NetworkDomain as Domain>::SettingsT,
+        settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -2916,6 +3227,27 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos)
+                if self.highlight.selected
+                    && let Some(f) = handle_element_button_click(
+                        settings,
+                        self.bounds_rect.right_top(),
+                        ehc.ui_scale,
+                        pos,
+                    ) =>
+            {
+                let (initial_stage, current_stage, result, event_lock) =
+                    f(self.model.clone().into());
+                *tool = Some(NaiveNetworkTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -3273,7 +3605,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         &mut self,
         _q: &<NetworkDomain as Domain>::QueryableT<'_>,
         gdc: &GlobalDrawingContext,
-        _settings: &NetworkSettings,
+        settings: &NetworkSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveNetworkTool)>,
     ) -> TargettingStatus {
@@ -3375,6 +3707,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         );
         self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
+
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
@@ -3399,7 +3736,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<NetworkDomain as Domain>::SettingsT,
+        settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -3422,6 +3759,27 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos)
+                if self.highlight.selected
+                    && let Some(f) = handle_element_button_click(
+                        settings,
+                        self.bounds_rect.right_top(),
+                        ehc.ui_scale,
+                        pos,
+                    ) =>
+            {
+                let (initial_stage, current_stage, result, event_lock) =
+                    f(self.model.clone().into());
+                *tool = Some(NaiveNetworkTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {

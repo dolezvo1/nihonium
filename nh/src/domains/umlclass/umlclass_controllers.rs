@@ -1221,7 +1221,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
 
     let (instance, instance_view) = new_umlclass_instance(
-        "d",
+        "dolezvo1",
         "Human",
         "person",
         "firstName = \"Vojtěch\"\nlastName = \"Doležal\"",
@@ -1327,32 +1327,8 @@ pub struct UmlClassSettings<P: UmlClassProfile> {
     palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassDomain<P>>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlClassToolStage, UmlClassElementView<P>>>,
     comment_indication: CommentIndication,
-    instance_buttons: Vec<(
-        usize,
-        usize,
-        &'static str,
-        &'static dyn Fn(
-            ERef<UmlClassInstance>,
-        ) -> (
-            UmlClassToolStage,
-            UmlClassToolStage,
-            PartialUmlClassElement<P>,
-            bool,
-        ),
-    )>,
-    class_buttons: Vec<(
-        usize,
-        usize,
-        &'static str,
-        &'static dyn Fn(
-            ERef<UmlClass>,
-        ) -> (
-            UmlClassToolStage,
-            UmlClassToolStage,
-            PartialUmlClassElement<P>,
-            bool,
-        ),
-    )>,
+    instance_buttons: Vec<(usize, usize, &'static str, &'static InstanceButtonF<P>)>,
+    class_buttons: Vec<(usize, usize, &'static str, &'static ClassButtonF<P>)>,
 }
 
 impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
@@ -1969,6 +1945,22 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
     }
 }
 
+type InstanceButtonF<P> = dyn Fn(
+    ERef<UmlClassInstance>,
+) -> (
+    UmlClassToolStage,
+    UmlClassToolStage,
+    PartialUmlClassElement<P>,
+    bool,
+);
+type ClassButtonF<P> = dyn Fn(
+    ERef<UmlClass>,
+) -> (
+    UmlClassToolStage,
+    UmlClassToolStage,
+    PartialUmlClassElement<P>,
+    bool,
+);
 mod buttons {
     use super::*;
     use std::sync::LazyLock;
@@ -1998,17 +1990,10 @@ mod buttons {
             true,
         )
     }
-    type InstanceButtonF = dyn Fn(
-        ERef<UmlClassInstance>,
-    ) -> (
-        UmlClassToolStage,
-        UmlClassToolStage,
-        PartialUmlClassElement<UmlClassNullProfile>,
-        bool,
-    );
+    type NullInstanceButtonF = InstanceButtonF<UmlClassNullProfile>;
     pub const INSTANCE_BUTTONS: LazyLock<
-        Vec<(usize, usize, &'static str, &'static InstanceButtonF)>,
-    > = LazyLock::new(|| vec![(0, 0, "\\", &instance_association as &InstanceButtonF)]);
+        Vec<(usize, usize, &'static str, &'static NullInstanceButtonF)>,
+    > = LazyLock::new(|| vec![(0, 0, "\\", &instance_association as &NullInstanceButtonF)]);
     fn class_association(
         m: ERef<UmlClass>,
     ) -> (
@@ -2089,23 +2074,17 @@ mod buttons {
         };
         (stage.clone(), stage, PartialUmlClassElement::None, false)
     }
-    type ClassButtonF = dyn Fn(
-        ERef<UmlClass>,
-    ) -> (
-        UmlClassToolStage,
-        UmlClassToolStage,
-        PartialUmlClassElement<UmlClassNullProfile>,
-        bool,
-    );
-    pub const CLASS_BUTTONS: LazyLock<Vec<(usize, usize, &'static str, &'static ClassButtonF)>> =
-        LazyLock::new(|| {
-            vec![
-                (0, 0, "\\", &class_association as &ClassButtonF),
-                (0, 1, "↘", &class_generalization as &ClassButtonF),
-                (1, 0, "P", &class_property as &ClassButtonF),
-                (1, 1, "O", &class_operation as &ClassButtonF),
-            ]
-        });
+    type NullClassButtonF = ClassButtonF<UmlClassNullProfile>;
+    pub const CLASS_BUTTONS: LazyLock<
+        Vec<(usize, usize, &'static str, &'static NullClassButtonF)>,
+    > = LazyLock::new(|| {
+        vec![
+            (0, 0, "\\", &class_association as &NullClassButtonF),
+            (0, 1, "↘", &class_generalization as &NullClassButtonF),
+            (1, 0, "P", &class_property as &NullClassButtonF),
+            (1, 1, "O", &class_operation as &NullClassButtonF),
+        ]
+    });
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
