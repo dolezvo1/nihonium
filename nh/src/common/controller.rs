@@ -656,7 +656,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
@@ -669,7 +669,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn cancel_tool(&mut self);
     fn try_handle_custom_shortcut(
         &mut self,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         modifiers: egui::Modifiers,
         key: egui::Key,
     );
@@ -684,7 +684,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn draw_in(
         &mut self,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     );
@@ -701,7 +701,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn show_toolbar(
         &mut self,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     );
     fn show_properties(
@@ -719,7 +719,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn show_outline(
         &mut self,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     );
     fn show_menubar_edit_options(
@@ -731,7 +731,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn show_menubar_view_options(
         &mut self,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     );
@@ -799,7 +799,7 @@ pub trait DiagramController: Any + NHContextSerialize {
     fn try_handle_custom_shortcut(
         &mut self,
         uuid: &ViewUuid,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         modifiers: egui::Modifiers,
         key: egui::Key,
     );
@@ -819,7 +819,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
@@ -836,7 +836,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     );
@@ -856,7 +856,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     );
     fn show_properties(
@@ -870,7 +870,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     );
     fn show_menubar_edit_options(
@@ -884,7 +884,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     );
@@ -2823,7 +2823,7 @@ where
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
@@ -2847,7 +2847,7 @@ where
     fn try_handle_custom_shortcut(
         &mut self,
         uuid: &ViewUuid,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         modifiers: egui::Modifiers,
         key: egui::Key,
     ) {
@@ -2871,7 +2871,7 @@ where
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     ) {
@@ -2901,7 +2901,7 @@ where
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     ) {
         let view = self.views.get(uuid).unwrap();
@@ -2926,7 +2926,7 @@ where
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     ) {
         let view = self.views.get(uuid).unwrap();
@@ -2949,7 +2949,7 @@ where
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
@@ -3950,7 +3950,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         // TODO: remove, handle as a command
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
@@ -3961,8 +3961,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             >,
         >,
     ) {
-        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>()
-        else {
+        let Some(settings) = (settings as &dyn Any).downcast_ref::<DomainT::SettingsT>() else {
             return;
         };
 
@@ -4101,12 +4100,11 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     }
     fn try_handle_custom_shortcut(
         &mut self,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         modifiers: egui::Modifiers,
         key: egui::Key,
     ) {
-        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>()
-        else {
+        let Some(settings) = (settings as &dyn Any).downcast_ref::<DomainT::SettingsT>() else {
             return;
         };
 
@@ -4304,11 +4302,10 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     fn show_toolbar(
         &mut self,
         gdc: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     ) {
-        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>()
-        else {
+        let Some(settings) = (settings as &dyn Any).downcast_ref::<DomainT::SettingsT>() else {
             return;
         };
 
@@ -4493,7 +4490,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     fn show_outline(
         &mut self,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
     ) {
         let mut measuring_canvas = canvas::MeasuringCanvas::new(ui.painter());
@@ -4602,7 +4599,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     fn show_menubar_view_options(
         &mut self,
         context: &GlobalDrawingContext,
-        _settings: &Box<dyn DiagramSettings>,
+        _settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
@@ -4983,12 +4980,11 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     fn draw_in(
         &mut self,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        settings: &dyn DiagramSettings,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     ) {
-        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>()
-        else {
+        let Some(settings) = (settings as &dyn Any).downcast_ref::<DomainT::SettingsT>() else {
             return;
         };
 

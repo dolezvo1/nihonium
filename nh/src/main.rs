@@ -1282,7 +1282,7 @@ impl NHContext {
             return;
         };
         c.write()
-            .show_toolbar(last_focused_diagram, &self.drawing_context, s, ui);
+            .show_toolbar(last_focused_diagram, &self.drawing_context, s.as_ref(), ui);
     }
 
     fn show_properties(&mut self, ui: &mut egui::Ui) {
@@ -1370,7 +1370,7 @@ impl NHContext {
         };
         let outline_rect = ui.content_rect();
 
-        c.show_outline(last_focused_diagram, &self.drawing_context, s, ui);
+        c.show_outline(last_focused_diagram, &self.drawing_context, s.as_ref(), ui);
 
         let shade_color = self.shades_profiles[self.selected_shades_profile].get(ctype);
         ui.painter().rect(
@@ -2203,7 +2203,7 @@ impl NHContext {
         diagram_controller.draw_in(
             tab_uuid,
             &self.drawing_context,
-            settings,
+            settings.as_ref(),
             ui_canvas.as_mut(),
             pos,
         );
@@ -2221,7 +2221,7 @@ impl NHContext {
             ui,
             &response,
             self.modifier_settings,
-            settings,
+            settings.as_ref(),
             &mut self.custom_modal,
             &mut self.affected_models,
         );
@@ -3084,7 +3084,7 @@ impl eframe::App for NHApp {
                                 let Some(s) = self.context.diagram_settings.get(t) else {
                                     break;
                                 };
-                                w.try_handle_custom_shortcut(&d.0, s, *modifiers, *key);
+                                w.try_handle_custom_shortcut(&d.0, s.as_ref(), *modifiers, *key);
                             }
                         }
                         egui::Event::MouseWheel {
@@ -3289,7 +3289,7 @@ impl eframe::App for NHApp {
                     c.show_menubar_view_options(
                         &v,
                         &self.context.drawing_context,
-                        s,
+                        s.as_ref(),
                         ui,
                         &mut commands,
                     );
@@ -3486,7 +3486,7 @@ impl eframe::App for NHApp {
                     controller.draw_in(
                         v,
                         &self.context.drawing_context,
-                        s,
+                        s.as_ref(),
                         &mut measuring_canvas,
                         None,
                     );
@@ -3554,7 +3554,13 @@ impl eframe::App for NHApp {
                             Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
                         );
                     }
-                    controller.draw_in(v, &self.context.drawing_context, s, &mut ui_canvas, None);
+                    controller.draw_in(
+                        v,
+                        &self.context.drawing_context,
+                        s.as_ref(),
+                        &mut ui_canvas,
+                        None,
+                    );
                 }
 
                 ui.separator();
@@ -3569,7 +3575,7 @@ impl eframe::App for NHApp {
                         controller.draw_in(
                             v,
                             &self.context.drawing_context,
-                            s,
+                            s.as_ref(),
                             &mut measuring_canvas,
                             None,
                         );
@@ -3592,7 +3598,7 @@ impl eframe::App for NHApp {
                         controller.draw_in(
                             v,
                             &self.context.drawing_context,
-                            s,
+                            s.as_ref(),
                             &mut svg_canvas,
                             None,
                         );
