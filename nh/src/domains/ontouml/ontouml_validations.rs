@@ -327,12 +327,12 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     problems.push(ValidationProblem::Error {
                         uuid: *m.uuid,
                         error_type: ErrorType::InvalidStereotype,
-                        text: format!("Invalid or missing stereotype"),
+                        text: "Invalid or missing stereotype".to_string(),
                     });
                 }
 
                 e.stereotype = m.stereotype.clone();
-                if is_identity_provider(&*m.stereotype) {
+                if is_identity_provider(&m.stereotype) {
                     e.identity_providers_min += 1;
                     e.identity_providers_max += 1;
                 }
@@ -346,8 +346,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     .targets
                     .iter()
                     .filter(|t| {
-                        is_identity_provider(&*t.read().stereotype)
-                            || requires_identity(&*t.read().stereotype)
+                        is_identity_provider(&t.read().stereotype)
+                            || requires_identity(&t.read().stereotype)
                     })
                     .count();
                 let (weight_min, weight_max) =
@@ -378,7 +378,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     }
 
                     for t in &m.targets {
-                        if !valid_direct_subtyping(&*s.read().stereotype, &*t.read().stereotype) {
+                        if !valid_direct_subtyping(&s.read().stereotype, &t.read().stereotype) {
                             problems.push(ValidationProblem::Error {
                                 uuid: *m.uuid,
                                 error_type: ErrorType::InvalidSubtyping,
@@ -419,18 +419,18 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     problems.push(ValidationProblem::Error {
                         uuid: *m.uuid,
                         error_type: ErrorType::InvalidStereotype,
-                        text: format!("Invalid or missing stereotype"),
+                        text: "Invalid or missing stereotype".to_string(),
                     });
                 }
 
-                let source_multiplicity = parse_multiplicity(&*m.source_label_multiplicity);
-                let target_multiplicity = parse_multiplicity(&*m.target_label_multiplicity);
+                let source_multiplicity = parse_multiplicity(&m.source_label_multiplicity);
+                let target_multiplicity = parse_multiplicity(&m.target_label_multiplicity);
 
                 if source_multiplicity.zip(target_multiplicity).is_none() {
                     problems.push(ValidationProblem::Error {
                         uuid: *m.uuid,
                         error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                        text: format!("invalid multiplicities"),
+                        text: "invalid multiplicities".to_string(),
                     });
                 }
                 if let Some((lm1, um1)) = source_multiplicity
@@ -439,7 +439,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     problems.push(ValidationProblem::Error {
                         uuid: *m.uuid,
                         error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                        text: format!("invalid multiplicities"),
+                        text: "invalid multiplicities".to_string(),
                     });
                 }
                 if let Some((lm2, um2)) = target_multiplicity
@@ -448,7 +448,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     problems.push(ValidationProblem::Error {
                         uuid: *m.uuid,
                         error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                        text: format!("invalid multiplicities"),
+                        text: "invalid multiplicities".to_string(),
                     });
                 }
 
@@ -463,9 +463,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 error_type: ErrorType::InvalidRelation(
                                     RelationError::Multiplicities,
                                 ),
-                                text: format!(
-                                    "«mediation» must have multiplicities of at least 1..*"
-                                ),
+                                text: "«mediation» must have multiplicities of at least 1..*"
+                                    .to_string(),
                             });
                         }
                         if let Some((lm, _um)) = &target_multiplicity {
@@ -485,7 +484,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             problems.push(ValidationProblem::Error {
                                 uuid: *m.uuid,
                                 error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*"),
+                                text: "«characterization» must have multiplicities of 1..1 and at least 1..*".to_string(),
                             });
                         }
                         if let UmlClassAssociable::Class(t) = &m.target {
@@ -498,7 +497,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
-                                    text: format!("«characterization» must have «quality» or «mode» on the target end"),
+                                    text: "«characterization» must have «quality» or «mode» on the target end".to_string(),
                                 });
                             }
 
@@ -513,7 +512,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             problems.push(ValidationProblem::Error {
                                 uuid: *m.uuid,
                                 error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                text: format!("«structuration» must have multiplicities of 1..1 on the target end"),
+                                text: "«structuration» must have multiplicities of 1..1 on the target end".to_string(),
                             });
                         }
 
@@ -525,9 +524,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                     error_type: ErrorType::InvalidRelation(
                                         RelationError::SourceStereotype,
                                     ),
-                                    text: format!(
-                                        "«structuration» must have «quality» on the source end"
-                                    ),
+                                    text: "«structuration» must have «quality» on the source end"
+                                        .to_string(),
                                 });
                             }
                         }
@@ -540,7 +538,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
-                                    text: format!("«structuration» must have «quality» or «mode» on the target end"),
+                                    text: "«structuration» must have «quality» or «mode» on the target end".to_string(),
                                 });
                             }
                         }
@@ -553,7 +551,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             problems.push(ValidationProblem::Error {
                                 uuid: *m.uuid,
                                 error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                text: format!("«componentOf» must have multiplicities of at least 1..* on the source end"),
+                                text: "«componentOf» must have multiplicities of at least 1..* on the source end".to_string(),
                             });
                         }
                     }
@@ -570,7 +568,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 error_type: ErrorType::InvalidRelation(
                                     RelationError::Multiplicities,
                                 ),
-                                text: format!("«subcollectionOf» must have multiplicities of 1..1"),
+                                text: "«subcollectionOf» must have multiplicities of 1..1"
+                                    .to_string(),
                             });
                         }
 
@@ -582,9 +581,9 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                     error_type: ErrorType::InvalidRelation(
                                         RelationError::SourceStereotype,
                                     ),
-                                    text: format!(
+                                    text:
                                         "«subcollectionOf» must have «collective» on the source end"
-                                    ),
+                                            .to_string(),
                                 });
                             }
                         }
@@ -597,9 +596,9 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                     error_type: ErrorType::InvalidRelation(
                                         RelationError::TargetStereotype,
                                     ),
-                                    text: format!(
+                                    text:
                                         "«subcollectionOf» must have «collective» on the target end"
-                                    ),
+                                            .to_string(),
                                 });
                             }
                         }
@@ -614,9 +613,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 error_type: ErrorType::InvalidRelation(
                                     RelationError::Multiplicities,
                                 ),
-                                text: format!(
-                                    "«memberOf» must have multiplicities of at least 1..*"
-                                ),
+                                text: "«memberOf» must have multiplicities of at least 1..*"
+                                    .to_string(),
                             });
                         }
 
@@ -628,9 +626,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                     error_type: ErrorType::InvalidRelation(
                                         RelationError::SourceStereotype,
                                     ),
-                                    text: format!(
-                                        "«memberOf» must have «collective» on the source end"
-                                    ),
+                                    text: "«memberOf» must have «collective» on the source end"
+                                        .to_string(),
                                 });
                             }
                         }
@@ -648,7 +645,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 error_type: ErrorType::InvalidRelation(
                                     RelationError::Multiplicities,
                                 ),
-                                text: format!("«containment» must have multiplicities of 1..1"),
+                                text: "«containment» must have multiplicities of 1..1".to_string(),
                             });
                         }
 
@@ -660,9 +657,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                     error_type: ErrorType::InvalidRelation(
                                         RelationError::TargetStereotype,
                                     ),
-                                    text: format!(
-                                        "«containment» must have «quantity» on the target end"
-                                    ),
+                                    text: "«containment» must have «quantity» on the target end"
+                                        .to_string(),
                                 });
                             }
                         }
@@ -680,7 +676,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 error_type: ErrorType::InvalidRelation(
                                     RelationError::Multiplicities,
                                 ),
-                                text: format!("«subquantityOf» must have multiplicities of 1..1"),
+                                text: "«subquantityOf» must have multiplicities of 1..1"
+                                    .to_string(),
                             });
                         }
 
@@ -692,9 +689,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                     error_type: ErrorType::InvalidRelation(
                                         RelationError::SourceStereotype,
                                     ),
-                                    text: format!(
-                                        "«subquantityOf» must have «quantity» on the source end"
-                                    ),
+                                    text: "«subquantityOf» must have «quantity» on the source end"
+                                        .to_string(),
                                 });
                             }
                         }
@@ -707,9 +703,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                     error_type: ErrorType::InvalidRelation(
                                         RelationError::TargetStereotype,
                                     ),
-                                    text: format!(
-                                        "«subquantityOf» must have «quantity» on the target end"
-                                    ),
+                                    text: "«subquantityOf» must have «quantity» on the target end"
+                                        .to_string(),
                                 });
                             }
                         }
@@ -757,7 +752,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
             has_matching_supertype_inner(&mut HashSet::new(), infos, a, f)
         }
 
-        if requires_identity(&*info.stereotype)
+        if requires_identity(&info.stereotype)
             && (info.identity_providers_min != 1 || info.identity_providers_max != 1)
         {
             problems.push(ValidationProblem::Error {
@@ -778,13 +773,13 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     r += if g.set_is_disjoint {
                         g.targets
                             .iter()
-                            .map(|e| r_lowerbounds(infos, &*e.read().uuid))
+                            .map(|e| r_lowerbounds(infos, &e.read().uuid))
                             .min()
                             .unwrap_or(0)
                     } else {
                         g.targets
                             .iter()
-                            .map(|e| r_lowerbounds(infos, &*e.read().uuid))
+                            .map(|e| r_lowerbounds(infos, &e.read().uuid))
                             .sum()
                     };
                 }
@@ -794,13 +789,12 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                 0
             }
         }
-        if info.stereotype.as_str() == ontouml_models::ROLE
-            && r_lowerbounds(&element_infos, &k) == 0
+        if info.stereotype.as_str() == ontouml_models::ROLE && r_lowerbounds(&element_infos, k) == 0
         {
             problems.push(ValidationProblem::Error {
                 uuid: *k,
                 error_type: ErrorType::InvalidRole,
-                text: format!("«role» must be connected to a «mediation»"),
+                text: "«role» must be connected to a «mediation»".to_string(),
             });
         }
 
@@ -809,19 +803,19 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                 || has_matching_supertype(&element_infos, *k, &|e| {
                     e.stereotype.as_str() == ontouml_models::RELATOR
                 }))
-            && r_lowerbounds(&element_infos, &k) < 2
+            && r_lowerbounds(&element_infos, k) < 2
         {
             problems.push(ValidationProblem::Error {
                 uuid: *k,
                 error_type: ErrorType::InvalidRelator,
-                text: format!("«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2"),
+                text: "«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2".to_string(),
             });
         }
         if info.stereotype.as_str() == ontouml_models::PHASE && !info.in_disjoint_complete_set {
             problems.push(ValidationProblem::Error {
                 uuid: *k,
                 error_type: ErrorType::InvalidPhase,
-                text: format!("«phase» must always be part of a generalization set which is disjoint and complete"),
+                text: "«phase» must always be part of a generalization set which is disjoint and complete".to_string(),
             });
         }
         if (info.stereotype.as_str() == ontouml_models::CATEGORY
@@ -1367,7 +1361,7 @@ fn validate_binover(
             match c {
                 UmlClassAssociable::Instance(_) | UmlClassAssociable::UseCase(_) => false,
                 UmlClassAssociable::Class(inner) => {
-                    &*inner.read().stereotype == ontouml_models::RELATOR
+                    *inner.read().stereotype == ontouml_models::RELATOR
                 }
             }
         }
@@ -1375,7 +1369,7 @@ fn validate_binover(
             match c {
                 UmlClassAssociable::Instance(_) | UmlClassAssociable::UseCase(_) => false,
                 UmlClassAssociable::Class(inner) => {
-                    &*inner.read().stereotype == ontouml_models::MODE
+                    *inner.read().stereotype == ontouml_models::MODE
                 }
             }
         }
@@ -1522,7 +1516,7 @@ fn validate_binover(
         }
     }
     for e in &m.contained_elements {
-        r_binover_test(problems, &mut infos, e);
+        r_binover_test(problems, &infos, e);
     }
 }
 
@@ -1611,7 +1605,7 @@ fn validate_relators(
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::MEDIATION {
                     if let UmlClassAssociable::Class(s) = &r.source
-                        && is_relator(&infos, *s.read().uuid)
+                        && is_relator(infos, *s.read().uuid)
                     {
                         infos
                             .entry(*r.target.uuid())
@@ -1620,7 +1614,7 @@ fn validate_relators(
                             .push(*s.read().uuid);
                     }
                     if let UmlClassAssociable::Class(t) = &r.target
-                        && is_relator(&infos, *t.read().uuid)
+                        && is_relator(infos, *t.read().uuid)
                     {
                         infos
                             .entry(*r.source.uuid())

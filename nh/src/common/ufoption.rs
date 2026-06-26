@@ -1,7 +1,8 @@
 /// Unflattening Option - works exactly like the standard option, but the variants are serialized without flattening
 /// That allows for saner TOML serialization (citation needed)
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub enum UFOption<T> {
+    #[default]
     None,
     Some(T),
 }
@@ -33,12 +34,6 @@ impl<T> UFOption<T> {
             Self::None => panic!("UFOption::unwrap on UFOption::None"),
             Self::Some(e) => e,
         }
-    }
-}
-
-impl<T> Default for UFOption<T> {
-    fn default() -> Self {
-        Self::None
     }
 }
 

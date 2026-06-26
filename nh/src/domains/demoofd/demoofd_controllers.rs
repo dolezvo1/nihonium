@@ -904,7 +904,7 @@ impl DiagramSettings for DemoOfdSettings {
                     }
 
                     if modified {
-                        *view = view_for_stage(&tool);
+                        *view = view_for_stage(tool);
                         w.set_from_buffer(buffer.clone());
                     }
                 }
@@ -925,7 +925,7 @@ impl DiagramSettings for DemoOfdSettings {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         Ok(table.into())
     }
@@ -1445,7 +1445,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
     ) {
         match &self.result {
             PartialDemoOfdElement::Event { source, .. } => {
-                if let Some(source_view) = q.get_view_for(&*source.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1454,7 +1454,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::EntityLink { source, .. } => {
-                if let Some(source_view) = q.get_view_for(&*source.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1466,7 +1466,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 agg_model: gen_model,
                 ..
             } => {
-                if let Some(source_view) = q.get_view_for(&*gen_model.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&gen_model.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1475,7 +1475,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::EventLink { source, .. } => {
-                if let Some(source_view) = q.get_view_for(&*source.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1484,7 +1484,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::TypeLink { source, .. } => {
-                if let Some(source_view) = q.get_view_for(&*source.uuid()) {
+                if let Some(source_view) = q.get_view_for(&source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1582,7 +1582,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     ) => {
                         self.result = PartialDemoOfdElement::EntityLink {
                             link_type: link_type.clone(),
-                            source: inner.into(),
+                            source: inner,
                             dest: None,
                         };
                         self.current_stage = DemoOfdToolStage::LinkEnd;
@@ -1616,7 +1616,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                             || (*link_type == LinkType::Aggregation
                                 && *source.read().uuid != *inner.read().uuid)
                         {
-                            *dest = Some(inner.into());
+                            *dest = Some(inner);
                         }
                         self.event_lock = true;
                     }
@@ -1687,7 +1687,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     ) => {
                         self.result = PartialDemoOfdElement::EventLink {
                             link_type: link_type.clone(),
-                            source: inner.into(),
+                            source: inner,
                             dest: None,
                         };
                         self.current_stage = DemoOfdToolStage::LinkEnd;
@@ -1718,7 +1718,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         if *link_type == LinkType::Precedence
                             && *source.read().uuid != *inner.read().uuid
                         {
-                            *dest = Some(inner.into());
+                            *dest = Some(inner);
                         }
                         self.event_lock = true;
                     }
@@ -1795,7 +1795,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     target: *preferred_container,
                     bucket: preferred_bucket,
                     position: preferred_position,
-                    element: DemoOfdElementView::from(element).into(),
+                    element: element.into(),
                     into_model: true,
                 });
                 Ok(esm)
@@ -2719,7 +2719,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     current_stage: DemoOfdToolStage::LinkEnd,
                     result: PartialDemoOfdElement::EntityLink {
                         link_type,
-                        source: self.model.clone().into(),
+                        source: self.model.clone(),
                         dest: None,
                     },
                     event_lock: true,
@@ -2886,7 +2886,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -3356,14 +3356,12 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
                     if !self.specialization_view.is_some()
                         && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                    {
-                        if ehc
+                        && ehc
                             .modifier_settings
                             .alternative_tool_mode
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                    {
+                        *element_setup_modal = esm;
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -3717,7 +3715,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -4252,15 +4250,12 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            match property {
-                DemoOfdPropChange::CommentChange(comment) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(*view_uuid).collect(),
-                        DemoOfdPropChange::CommentChange(model.comment.clone()),
-                    ));
-                    model.comment = comment.clone();
-                }
-                _ => {}
+            if let DemoOfdPropChange::CommentChange(comment) = property {
+                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    DemoOfdPropChange::CommentChange(model.comment.clone()),
+                ));
+                model.comment = comment.clone();
             }
         }
     }
@@ -4368,7 +4363,7 @@ fn new_demoofd_aggregation_view(
         },
         sources
             .into_iter()
-            .zip(sp.into_iter())
+            .zip(sp)
             .map(|e| Ending::new_p(e.0, e.1))
             .collect(),
         vec![Ending::new_p(target, tp[0].clone())],
@@ -4786,15 +4781,12 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            match property {
-                DemoOfdPropChange::CommentChange(comment) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(*view_uuid).collect(),
-                        DemoOfdPropChange::CommentChange(model.comment.clone()),
-                    ));
-                    model.comment = comment.clone();
-                }
-                _ => {}
+            if let DemoOfdPropChange::CommentChange(comment) = property {
+                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    DemoOfdPropChange::CommentChange(model.comment.clone()),
+                ));
+                model.comment = comment.clone();
             }
         }
     }
@@ -5041,15 +5033,12 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            match property {
-                DemoOfdPropChange::CommentChange(comment) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(*view_uuid).collect(),
-                        DemoOfdPropChange::CommentChange(model.comment.clone()),
-                    ));
-                    model.comment = comment.clone();
-                }
-                _ => {}
+            if let DemoOfdPropChange::CommentChange(comment) = property {
+                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    DemoOfdPropChange::CommentChange(model.comment.clone()),
+                ));
+                model.comment = comment.clone();
             }
         }
     }

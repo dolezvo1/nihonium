@@ -331,7 +331,7 @@ where
                 ad.arrowhead_type
                     .get_intersect(focal_point.1, points.get(1).unwrap_or(&central_point).1),
             ))
-            .chain(points.iter().skip(1).map(|e| *e))
+            .chain(points.iter().skip(1).copied())
             .chain(std::iter::once(central_point));
             (
                 ad.arrowhead_type,
@@ -530,44 +530,35 @@ where
                             .add_enabled(views.len() > 1, egui::Button::new("Remove from view"))
                             .clicked()
                         {
-                            commands.push(
-                                InsensitiveCommand::RemoveDependency {
-                                    target: self_uuid,
-                                    bucket: b,
-                                    element: *e.element.uuid(),
-                                    including_model: false,
-                                }
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::RemoveDependency {
+                                target: self_uuid,
+                                bucket: b,
+                                element: *e.element.uuid(),
+                                including_model: false,
+                            });
                         }
                         if ui
                             .add_enabled(models.len() > 1, egui::Button::new("Remove from model"))
                             .clicked()
                         {
-                            commands.push(
-                                InsensitiveCommand::RemoveDependency {
-                                    target: self_uuid,
-                                    bucket: b,
-                                    element: *e.element.uuid(),
-                                    including_model: true,
-                                }
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::RemoveDependency {
+                                target: self_uuid,
+                                bucket: b,
+                                element: *e.element.uuid(),
+                                including_model: true,
+                            });
                         }
                     } else {
-                        if ui.button("Add to view").clicked() {
-                            if let Some(v) = q.get_view_for(model_uuid) {
-                                commands.push(
-                                    InsensitiveCommand::AddDependency {
-                                        target: self_uuid,
-                                        bucket: b,
-                                        position: None,
-                                        element: v.into(),
-                                        into_model: false,
-                                    }
-                                    .into(),
-                                );
-                            }
+                        if ui.button("Add to view").clicked()
+                            && let Some(v) = q.get_view_for(model_uuid)
+                        {
+                            commands.push(InsensitiveCommand::AddDependency {
+                                target: self_uuid,
+                                bucket: b,
+                                position: None,
+                                element: v.into(),
+                                into_model: false,
+                            });
                         }
                         if ui
                             .add_enabled(models.len() > 1, egui::Button::new("Remove from model"))
@@ -600,7 +591,7 @@ where
             1,
         );
 
-        return self.adapter.show_properties(q, ui, commands);
+        self.adapter.show_properties(q, ui, commands)
     }
 
     fn draw_in(
@@ -622,13 +613,7 @@ where
 
         for e in self.sources.iter_mut().chain(self.targets.iter_mut()) {
             let shape = e.element.min_shape();
-            let next_point = e
-                .points
-                .iter()
-                .skip(1)
-                .next()
-                .map(|p| p.1)
-                .unwrap_or(center_point);
+            let next_point = e.points.iter().nth(1).map(|p| p.1).unwrap_or(center_point);
             let intersect = shape
                 .orthogonal_intersect(next_point)
                 .unwrap_or_else(|| shape.center_intersect(next_point));
@@ -704,7 +689,7 @@ where
                         canvas.draw_text(
                             *p.0,
                             egui::Align2::CENTER_CENTER,
-                            *l,
+                            l,
                             canvas::CLASS_TOP_FONT_SIZE,
                             egui::Color32::BLACK,
                         );
@@ -803,7 +788,7 @@ where
                 );
             }
             if let Some(reading) = &data.reading {
-                draw_reading(canvas, shape_intersect, next_point, &reading);
+                draw_reading(canvas, shape_intersect, next_point, reading);
             }
         }
         for (target, e) in self
@@ -882,7 +867,7 @@ where
                     egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
                 )
             };
-            return distance_squared.sqrt();
+            distance_squared.sqrt()
         }
 
         match event {
@@ -897,21 +882,18 @@ where
                     }
                     UFOption::None if is_over(pos, self.position()) => {
                         self.dragged_node = Some((ViewUuid::now_v7(), pos));
-                        commands.push(
-                            InsensitiveCommand::AddDependency {
-                                target: *self.uuid,
-                                bucket: MULTICONNECTION_VERTEX_BUCKET,
-                                position: None,
-                                element: VertexInformation {
-                                    after: ViewUuid::nil(),
-                                    id: self.dragged_node.unwrap().0,
-                                    position: self.position(),
-                                }
-                                .into(),
-                                into_model: false,
+                        commands.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: MULTICONNECTION_VERTEX_BUCKET,
+                            position: None,
+                            element: VertexInformation {
+                                after: ViewUuid::nil(),
+                                id: self.dragged_node.unwrap().0,
+                                position: self.position(),
                             }
                             .into(),
-                        );
+                            into_model: false,
+                        });
 
                         return EventHandlingStatus::HandledByContainer;
                     }
@@ -1104,13 +1086,10 @@ where
                         coerced_delta,
                     ));
                 } else {
-                    commands.push(
-                        InsensitiveCommand::MovePositional(
-                            std::iter::once(dragged_node.0).collect(),
-                            coerced_delta,
-                        )
-                        .into(),
-                    );
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(dragged_node.0).collect(),
+                        coerced_delta,
+                    ));
                 }
 
                 EventHandlingStatus::HandledByContainer
@@ -1228,20 +1207,10 @@ where
 
                     // Move any last point to the center
                     self.center_point = 'a: {
-                        if let Some(e) = self
-                            .sources
-                            .iter_mut()
-                            .filter(|p| p.points.len() > 1)
-                            .next()
-                        {
+                        if let Some(e) = self.sources.iter_mut().find(|p| p.points.len() > 1) {
                             break 'a e.points.pop().into();
                         }
-                        if let Some(e) = self
-                            .targets
-                            .iter_mut()
-                            .filter(|p| p.points.len() > 1)
-                            .next()
-                        {
+                        if let Some(e) = self.targets.iter_mut().find(|p| p.points.len() > 1) {
                             break 'a e.points.pop().into();
                         }
                         None.into()
@@ -1415,7 +1384,7 @@ where
                                 let pos = if !including_model {
                                     None
                                 } else if let Some(pos) =
-                                    self.adapter.remove_source(&*e.element.model_uuid())
+                                    self.adapter.remove_source(&e.element.model_uuid())
                                 {
                                     Some(pos)
                                 } else {
@@ -1442,7 +1411,7 @@ where
                                 let pos = if !including_model {
                                     None
                                 } else if let Some(pos) =
-                                    self.adapter.remove_target(&*e.element.model_uuid())
+                                    self.adapter.remove_target(&e.element.model_uuid())
                                 {
                                     Some(pos)
                                 } else {
@@ -1527,7 +1496,7 @@ where
         c: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
         m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *self.model_uuid())

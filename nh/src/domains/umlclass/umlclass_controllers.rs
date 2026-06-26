@@ -656,7 +656,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             }
-            UmlClassElement::CommentLink(_inner) => Arc::new(format!("Comment Link")),
+            UmlClassElement::CommentLink(_inner) => Arc::new("Comment Link".to_string()),
         }
     }
 
@@ -1415,7 +1415,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             background_color,
                         } => {
                             let mut sc = P::InstanceStereotypeController::default();
-                            sc.refresh(&stereotype);
+                            sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
                                 *stereotype = sc.get_raw();
@@ -1446,7 +1446,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             background_color,
                         } => {
                             let mut sc = P::ClassStereotypeController::default();
-                            sc.refresh(&stereotype);
+                            sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
                                 *stereotype = sc.get_raw();
@@ -1473,7 +1473,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             stereotype,
                         } => {
                             let mut sc = P::ClassPropertyStereotypeController::default();
-                            sc.refresh(&stereotype);
+                            sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
                                 *stereotype = sc.get_raw();
@@ -1491,7 +1491,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             stereotype,
                         } => {
                             let mut sc = P::ClassOperationStereotypeController::default();
-                            sc.refresh(&stereotype);
+                            sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
                                 *stereotype = sc.get_raw();
@@ -1510,7 +1510,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             background_color,
                         } => {
                             let mut sc = P::UseCaseStereotypeController::default();
-                            sc.refresh(&stereotype);
+                            sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
                                 *stereotype = sc.get_raw();
@@ -1543,7 +1543,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                                 name,
                             } => {
                                 let mut sc = P::DependencyStereotypeController::default();
-                                sc.refresh(&stereotype);
+                                sc.refresh(stereotype);
                                 if sc.show(&mut columns[1]) {
                                     modified = true;
                                     *stereotype = sc.get_raw();
@@ -1561,7 +1561,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                                 target_multiplicity,
                             } => {
                                 let mut sc = P::AssociationStereotypeController::default();
-                                sc.refresh(&stereotype);
+                                sc.refresh(stereotype);
                                 if sc.show(&mut columns[1]) {
                                     modified = true;
                                     *stereotype = sc.get_raw();
@@ -1586,7 +1586,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             kind,
                         } => {
                             let mut sc = P::PackageStereotypeController::default();
-                            sc.refresh(&stereotype);
+                            sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
                                 *stereotype = sc.get_raw();
@@ -1611,7 +1611,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             align,
                         } => {
                             let mut sc = P::CommentStereotypeController::default();
-                            sc.refresh(&stereotype);
+                            sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
                                 *stereotype = sc.get_raw();
@@ -1689,7 +1689,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         table.insert(
             "comment_indication".to_owned(),
@@ -2689,8 +2689,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 _,
             ) => {
                 let (_class_model, class_view) = new_umlclass_class(
-                    &name,
-                    &stereotype,
+                    name,
+                    stereotype,
                     *is_abstract,
                     Vec::new(),
                     Vec::new(),
@@ -2711,7 +2711,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 _,
             ) => {
                 let (_usecase_model, usecase_view) =
-                    new_uml_usecase(&name, &stereotype, *is_abstract, pos, *background_color);
+                    new_uml_usecase(name, stereotype, *is_abstract, pos, *background_color);
                 self.result = PartialUmlClassElement::Some(usecase_view.into());
                 self.event_lock = true;
             }
@@ -2759,16 +2759,16 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         }
 
         match element {
-            UmlClassElement::Package(inner) => match (&self.current_stage, &mut self.result) {
-                (
+            UmlClassElement::Package(inner) => {
+                if let (
                     UmlClassToolStage::CommentLinkEnd,
                     PartialUmlClassElement::CommentLink { dest, .. },
-                ) => {
+                ) = (&self.current_stage, &mut self.result)
+                {
                     *dest = Some(inner.into());
                     self.event_lock = true;
                 }
-                _ => {}
-            },
+            }
             UmlClassElement::Instance(inner) => match (&self.current_stage, &mut self.result) {
                 (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None)
                     if !matches!(link_type, LinkType::Generalization { .. }) =>
@@ -2942,8 +2942,10 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 }
                 _ => {}
             },
-            UmlClassElement::Comment(inner) => match (&self.current_stage, &mut self.result) {
-                (UmlClassToolStage::CommentLinkStart, PartialUmlClassElement::None) => {
+            UmlClassElement::Comment(inner) => {
+                if let (UmlClassToolStage::CommentLinkStart, PartialUmlClassElement::None) =
+                    (&self.current_stage, &mut self.result)
+                {
                     self.result = PartialUmlClassElement::CommentLink {
                         source: inner,
                         dest: None,
@@ -2951,8 +2953,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     self.current_stage = UmlClassToolStage::CommentLinkEnd;
                     self.event_lock = true;
                 }
-                _ => {}
-            },
+            }
             UmlClassElement::Generalization(..)
             | UmlClassElement::Dependency(..)
             | UmlClassElement::Association(..)
@@ -3034,7 +3035,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     target: *preferred_container,
                     bucket: preferred_bucket,
                     position: preferred_position,
-                    element: UmlClassElementView::from(element).into(),
+                    element: element.into(),
                     into_model: true,
                 });
                 Ok(esm)
@@ -3223,7 +3224,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
             display_text: Arc::new("".to_owned()),
             name_buffer: (*m.name).clone(),
             stereotype_controller: Default::default(),
-            kind_buffer: m.kind.clone(),
+            kind_buffer: m.kind,
             comment_buffer: (*m.comment).clone(),
             _profile: PhantomData,
         },
@@ -3415,7 +3416,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             let mut model = self.model.write();
             match property {
                 UmlClassPropChange::StereotypeChange(stereotype) => {
-                    if !self.stereotype_controller.is_valid(&stereotype) {
+                    if !self.stereotype_controller.is_valid(stereotype) {
                         return;
                     }
 
@@ -3437,7 +3438,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                         std::iter::once(*view_uuid).collect(),
                         UmlClassPropChange::PackageKindChange(model.kind),
                     ));
-                    model.kind = kind.clone();
+                    model.kind = *kind;
                 }
                 UmlClassPropChange::CommentChange(comment) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -3494,11 +3495,11 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
 
         Self {
             model,
-            background_color: self.background_color.clone(),
+            background_color: self.background_color,
             display_text: self.display_text.clone(),
             stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer.clone(),
+            kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
             _profile: PhantomData,
         }
@@ -3571,7 +3572,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClassInstance>> for UmlClassInstanc
     fn from(model: &ERef<UmlClassInstance>) -> Self {
         let m = model.read();
         let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&*m.stereotype);
+        stereotype_controller.refresh(&m.stereotype);
         Self {
             model: model.clone(),
             first_frame: true,
@@ -4118,7 +4119,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                             model.instance_slots = s.clone();
                         }
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(&stereotype) {
+                            if !self.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -4168,7 +4169,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
         self.name_buffer = (*model.instance_name).clone();
         self.type_buffer = (*model.instance_type).clone();
-        self.stereotype_controller.refresh(&*model.stereotype);
+        self.stereotype_controller.refresh(&model.stereotype);
         self.slots_buffer = (*model.instance_slots).clone();
         self.comment_buffer = (*model.comment).clone();
     }
@@ -4192,7 +4193,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -4302,7 +4303,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClassProperty>> for UmlClassPropert
     fn from(model: &ERef<UmlClassProperty>) -> Self {
         let m = model.read();
         let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&*m.stereotype);
+        stereotype_controller.refresh(&m.stereotype);
         Self {
             model: model.clone(),
             first_frame: true,
@@ -4810,7 +4811,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(&stereotype) {
+                            if !self.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -4855,51 +4856,51 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                         UmlClassPropChange::VisibilityChange(visibility) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::VisibilityChange(model.visibility.clone()),
+                                UmlClassPropChange::VisibilityChange(model.visibility),
                             ));
-                            model.visibility = visibility.clone();
+                            model.visibility = *visibility;
                         }
                         UmlClassPropChange::IsStaticChange(is_static) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsStaticChange(model.is_static.clone()),
+                                UmlClassPropChange::IsStaticChange(model.is_static),
                             ));
-                            model.is_static = is_static.clone();
+                            model.is_static = *is_static;
                         }
                         UmlClassPropChange::IsDerivedChange(is_derived) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsDerivedChange(model.is_derived.clone()),
+                                UmlClassPropChange::IsDerivedChange(model.is_derived),
                             ));
-                            model.is_derived = is_derived.clone();
+                            model.is_derived = *is_derived;
                         }
                         UmlClassPropChange::IsReadOnlyChange(is_read_only) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsReadOnlyChange(model.is_read_only.clone()),
+                                UmlClassPropChange::IsReadOnlyChange(model.is_read_only),
                             ));
-                            model.is_read_only = is_read_only.clone();
+                            model.is_read_only = *is_read_only;
                         }
                         UmlClassPropChange::IsOrderedChange(is_ordered) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsOrderedChange(model.is_ordered.clone()),
+                                UmlClassPropChange::IsOrderedChange(model.is_ordered),
                             ));
-                            model.is_ordered = is_ordered.clone();
+                            model.is_ordered = *is_ordered;
                         }
                         UmlClassPropChange::IsUniqueChange(is_unique) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsUniqueChange(model.is_unique.clone()),
+                                UmlClassPropChange::IsUniqueChange(model.is_unique),
                             ));
-                            model.is_unique = is_unique.clone();
+                            model.is_unique = *is_unique;
                         }
                         UmlClassPropChange::IsIdChange(is_id) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsIdChange(model.is_id.clone()),
+                                UmlClassPropChange::IsIdChange(model.is_id),
                             ));
-                            model.is_id = is_id.clone();
+                            model.is_id = *is_id;
                         }
                         _ => {}
                     }
@@ -4916,8 +4917,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             let mut t = String::new();
 
             if !m.stereotype.is_empty() {
-                t.push_str("«");
-                t.push_str(&*m.stereotype);
+                t.push('«');
+                t.push_str(&m.stereotype);
                 t.push_str("» ");
             }
 
@@ -4926,27 +4927,27 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             }
 
             if m.is_derived {
-                t.push_str("/");
+                t.push('/');
             }
-            t.push_str(&*m.name);
+            t.push_str(&m.name);
 
             if !m.value_type.is_empty() {
                 t.push_str(": ");
-                t.push_str(&*m.value_type);
+                t.push_str(&m.value_type);
             }
 
             if !m.multiplicity.is_empty() {
                 if m.value_type.is_empty() {
-                    t.push_str(" ");
+                    t.push(' ');
                 }
-                t.push_str("[");
-                t.push_str(&*m.multiplicity);
-                t.push_str("]");
+                t.push('[');
+                t.push_str(&m.multiplicity);
+                t.push(']');
             }
 
             if !m.default_value.is_empty() {
                 t.push_str(" = ");
-                t.push_str(&*m.default_value);
+                t.push_str(&m.default_value);
             }
 
             if m.is_read_only || m.is_ordered || m.is_unique || m.is_id {
@@ -4968,14 +4969,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     }
                     t.push_str(e.1);
                 }
-                t.push_str("}");
+                t.push('}');
             }
 
             t
         };
 
         self.visibility_buffer = m.visibility;
-        self.stereotype_controller.refresh(&*m.stereotype);
+        self.stereotype_controller.refresh(&m.stereotype);
         self.name_buffer = (*m.name).clone();
         self.value_type_buffer = (*m.value_type).clone();
         self.multiplicity_buffer = (*m.multiplicity).clone();
@@ -5010,7 +5011,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -5121,7 +5122,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClassOperation>> for UmlClassOperat
     fn from(model: &ERef<UmlClassOperation>) -> Self {
         let m = model.read();
         let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&*m.stereotype);
+        stereotype_controller.refresh(&m.stereotype);
         Self {
             model: model.clone(),
             first_frame: true,
@@ -5603,7 +5604,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(&stereotype) {
+                            if !self.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -5641,44 +5642,44 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                         UmlClassPropChange::VisibilityChange(visibility) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::VisibilityChange(model.visibility.clone()),
+                                UmlClassPropChange::VisibilityChange(model.visibility),
                             ));
-                            model.visibility = visibility.clone();
+                            model.visibility = *visibility;
                         }
                         UmlClassPropChange::IsStaticChange(is_static) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsStaticChange(model.is_static.clone()),
+                                UmlClassPropChange::IsStaticChange(model.is_static),
                             ));
-                            model.is_static = is_static.clone();
+                            model.is_static = *is_static;
                         }
                         UmlClassPropChange::IsAbstractChange(is_abstract) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsAbstractChange(model.is_abstract.clone()),
+                                UmlClassPropChange::IsAbstractChange(model.is_abstract),
                             ));
-                            model.is_abstract = is_abstract.clone();
+                            model.is_abstract = *is_abstract;
                         }
                         UmlClassPropChange::IsQueryChange(is_query) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsQueryChange(model.is_query.clone()),
+                                UmlClassPropChange::IsQueryChange(model.is_query),
                             ));
-                            model.is_query = is_query.clone();
+                            model.is_query = *is_query;
                         }
                         UmlClassPropChange::IsOrderedChange(is_ordered) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsOrderedChange(model.is_ordered.clone()),
+                                UmlClassPropChange::IsOrderedChange(model.is_ordered),
                             ));
-                            model.is_ordered = is_ordered.clone();
+                            model.is_ordered = *is_ordered;
                         }
                         UmlClassPropChange::IsUniqueChange(is_unique) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::IsUniqueChange(model.is_unique.clone()),
+                                UmlClassPropChange::IsUniqueChange(model.is_unique),
                             ));
-                            model.is_unique = is_unique.clone();
+                            model.is_unique = *is_unique;
                         }
                         _ => {}
                     }
@@ -5695,8 +5696,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             let mut t = String::new();
 
             if !m.stereotype.is_empty() {
-                t.push_str("«");
-                t.push_str(&*m.stereotype);
+                t.push('«');
+                t.push_str(&m.stereotype);
                 t.push_str("» ");
             }
 
@@ -5704,14 +5705,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                 t.push_str(vis.as_char());
             }
 
-            t.push_str(&*m.name);
-            t.push_str("(");
-            t.push_str(&*m.parameters);
-            t.push_str(")");
+            t.push_str(&m.name);
+            t.push('(');
+            t.push_str(&m.parameters);
+            t.push(')');
 
             if !m.return_type.is_empty() {
                 t.push_str(": ");
-                t.push_str(&*m.return_type);
+                t.push_str(&m.return_type);
             }
 
             if m.is_query || m.is_ordered || m.is_unique {
@@ -5732,14 +5733,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     }
                     t.push_str(e.1);
                 }
-                t.push_str("}");
+                t.push('}');
             }
 
             t
         };
 
         self.visibility_buffer = m.visibility;
-        self.stereotype_controller.refresh(&*m.stereotype);
+        self.stereotype_controller.refresh(&m.stereotype);
         self.name_buffer = (*m.name).clone();
         self.parameters_buffer = (*m.parameters).clone();
         self.return_type_buffer = (*m.return_type).clone();
@@ -5772,7 +5773,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -5890,7 +5891,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClass>> for UmlClassSetupModal<SC> 
     fn from(model: &ERef<UmlClass>) -> Self {
         let m = model.read();
         let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&*m.stereotype);
+        stereotype_controller.refresh(&m.stereotype);
         Self {
             model: model.clone(),
             first_frame: true,
@@ -6063,7 +6064,7 @@ pub fn draw_uml_class<'a>(
             let r = canvas.measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_TOP,
-                &top_label,
+                top_label,
                 canvas::CLASS_TOP_FONT_SIZE,
             );
             offsets.push(r.height());
@@ -6074,7 +6075,7 @@ pub fn draw_uml_class<'a>(
             let r = canvas.measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_TOP,
-                &main_label,
+                main_label,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             );
             offsets.push(r.height());
@@ -6085,7 +6086,7 @@ pub fn draw_uml_class<'a>(
             let r = canvas.measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_TOP,
-                &bottom_label,
+                bottom_label,
                 canvas::CLASS_BOTTOM_FONT_SIZE,
             );
             offsets.push(r.height());
@@ -6108,13 +6109,7 @@ pub fn draw_uml_class<'a>(
             position,
             egui::Vec2::new(max_width + 14.0, 2.0 * global_offset + 14.0),
         );
-        canvas.draw_rectangle(
-            rect,
-            egui::CornerRadius::ZERO,
-            fill,
-            stroke.into(),
-            highlight,
-        );
+        canvas.draw_rectangle(rect, egui::CornerRadius::ZERO, fill, stroke, highlight);
 
         (offsets, global_offset, max_width, category_separators, rect)
     };
@@ -6127,7 +6122,7 @@ pub fn draw_uml_class<'a>(
             canvas.draw_text(
                 position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
                 egui::Align2::CENTER_TOP,
-                &top_label,
+                top_label,
                 canvas::CLASS_TOP_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -6138,7 +6133,7 @@ pub fn draw_uml_class<'a>(
             canvas.draw_text(
                 position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
                 egui::Align2::CENTER_TOP,
-                &main_label,
+                main_label,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
                 if !is_abstract {
                     egui::Color32::BLACK
@@ -6153,7 +6148,7 @@ pub fn draw_uml_class<'a>(
             canvas.draw_text(
                 position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
                 egui::Align2::CENTER_TOP,
-                &bottom_label,
+                bottom_label,
                 canvas::CLASS_BOTTOM_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -6480,7 +6475,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         .measure_text(
                             self.position,
                             egui::Align2::LEFT_TOP,
-                            &*read.comment,
+                            &read.comment,
                             canvas::CLASS_ITEM_FONT_SIZE,
                         )
                         .size(),
@@ -6488,7 +6483,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         c.draw_text(
                             at,
                             egui::Align2::LEFT_TOP,
-                            &*comment,
+                            &comment,
                             canvas::CLASS_ITEM_FONT_SIZE,
                             egui::Color32::BLACK,
                         );
@@ -6678,14 +6673,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
-                        if ehc
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
                             .modifier_settings
                             .alternative_tool_mode
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                    {
+                        *element_setup_modal = esm;
                     }
                 }
 
@@ -6766,14 +6760,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
 
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
-                        if ehc
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
                             .modifier_settings
                             .alternative_tool_mode
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                    {
+                        *element_setup_modal = esm;
                     }
                 } else {
                     if ehc
@@ -7141,7 +7134,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(&stereotype) {
+                            if !self.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -7209,7 +7202,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             Some(format!("«{}»", model.stereotype).into())
         };
 
-        self.stereotype_controller.refresh(&*model.stereotype);
+        self.stereotype_controller.refresh(&model.stereotype);
         self.name_buffer = (*model.name).clone();
         self.template_parameters_buffer = (*model.template_parameters).clone();
         self.is_abstract_buffer = model.is_abstract;
@@ -7281,7 +7274,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -7337,7 +7330,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
-            render_style: self.render_style.clone(),
+            render_style: self.render_style,
             suppress_template_parameters: self.suppress_template_parameters,
             suppress_properties: self.suppress_properties,
             suppress_operations: self.suppress_operations,
@@ -7583,7 +7576,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             let stereotype_bounds = canvas.measure_text(
                 name_bounds.center_top(),
                 egui::Align2::CENTER_BOTTOM,
-                &s,
+                s,
                 canvas::CLASS_TOP_FONT_SIZE,
             );
             text_bounds = text_bounds.union(stereotype_bounds);
@@ -7617,7 +7610,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             canvas.draw_text(
                 name_bounds.center_top(),
                 egui::Align2::CENTER_BOTTOM,
-                &s,
+                s,
                 canvas::CLASS_TOP_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -7767,7 +7760,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(&stereotype) {
+                            if !self.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -7824,7 +7817,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             Some(format!("«{}»", model.stereotype).into())
         };
 
-        self.stereotype_controller.refresh(&*model.stereotype);
+        self.stereotype_controller.refresh(&model.stereotype);
         self.name_buffer = (*model.name).clone();
         self.is_abstract_buffer = model.is_abstract;
         self.comment_buffer = (*model.comment).clone();
@@ -7849,7 +7842,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -7926,12 +7919,12 @@ pub fn new_umlclass_generalization_view<P: UmlClassProfile>(
         },
         sources
             .into_iter()
-            .zip(sp.into_iter())
+            .zip(sp)
             .map(|e| Ending::new_p(e.0, e.1))
             .collect(),
         targets
             .into_iter()
-            .zip(tp.into_iter())
+            .zip(tp)
             .map(|e| Ending::new_p(e.0, e.1))
             .collect(),
         mp,
@@ -8189,16 +8182,16 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 UmlClassPropChange::SetCoveringChange(is_covering) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        UmlClassPropChange::SetCoveringChange(model.set_is_covering.clone()),
+                        UmlClassPropChange::SetCoveringChange(model.set_is_covering),
                     ));
-                    model.set_is_covering = is_covering.clone();
+                    model.set_is_covering = *is_covering;
                 }
                 UmlClassPropChange::SetDisjointChange(is_disjoint) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        UmlClassPropChange::SetDisjointChange(model.set_is_disjoint.clone()),
+                        UmlClassPropChange::SetDisjointChange(model.set_is_disjoint),
                     ));
-                    model.set_is_disjoint = is_disjoint.clone();
+                    model.set_is_disjoint = *is_disjoint;
                 }
                 UmlClassPropChange::CommentChange(comment) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -8319,13 +8312,13 @@ pub fn stereotype_name_format(stereotype: &str, name: &str) -> Option<Arc<String
     } else {
         let mut label = String::new();
         if !stereotype.is_empty() {
-            label.push_str("«");
+            label.push('«');
             label.push_str(stereotype);
-            label.push_str("»");
+            label.push('»');
         }
         if !name.is_empty() {
             if !label.is_empty() {
-                label.push_str("\n");
+                label.push('\n');
             }
             label.push_str(name);
         }
@@ -8535,7 +8528,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             let mut model = self.model.write();
             match property {
                 UmlClassPropChange::StereotypeChange(stereotype) => {
-                    if !self.temporaries.stereotype_controller.is_valid(&stereotype) {
+                    if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                         return;
                     }
 
@@ -8595,10 +8588,10 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.midpoint_label = stereotype_name_format(&*model.stereotype, &*model.name);
+        self.temporaries.midpoint_label = stereotype_name_format(&model.stereotype, &model.name);
         self.temporaries
             .stereotype_controller
-            .refresh(&*model.stereotype);
+            .refresh(&model.stereotype);
         self.temporaries.name_buffer = (*model.name).clone();
         self.temporaries.target_arrow_open_buffer = model.target_arrow_open;
         self.temporaries.comment_buffer = (*model.comment).clone();
@@ -8843,7 +8836,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         }
         ui.label("Source navigability:");
         egui::ComboBox::from_id_salt("source navigability")
-            .selected_text(&*self.temporaries.source_navigability_buffer.name())
+            .selected_text(self.temporaries.source_navigability_buffer.name())
             .show_ui(ui, |ui| {
                 for sv in [
                     UmlClassAssociationNavigability::Unspecified,
@@ -8854,7 +8847,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                         .selectable_value(
                             &mut self.temporaries.source_navigability_buffer,
                             sv,
-                            &*sv.name(),
+                            sv.name(),
                         )
                         .changed()
                     {
@@ -8870,7 +8863,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             });
         ui.label("Source aggregation:");
         egui::ComboBox::from_id_salt("source aggregation")
-            .selected_text(&*self.temporaries.source_aggregation_buffer.name())
+            .selected_text(self.temporaries.source_aggregation_buffer.name())
             .show_ui(ui, |ui| {
                 for sv in [
                     UmlClassAssociationAggregation::None,
@@ -8881,7 +8874,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                         .selectable_value(
                             &mut self.temporaries.source_aggregation_buffer,
                             sv,
-                            &*sv.name(),
+                            sv.name(),
                         )
                         .changed()
                     {
@@ -8941,7 +8934,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         }
         ui.label("Target navigability:");
         egui::ComboBox::from_id_salt("target navigability")
-            .selected_text(&*self.temporaries.target_navigability_buffer.name())
+            .selected_text(self.temporaries.target_navigability_buffer.name())
             .show_ui(ui, |ui| {
                 for sv in [
                     UmlClassAssociationNavigability::Unspecified,
@@ -8952,7 +8945,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                         .selectable_value(
                             &mut self.temporaries.target_navigability_buffer,
                             sv,
-                            &*sv.name(),
+                            sv.name(),
                         )
                         .changed()
                     {
@@ -8968,7 +8961,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             });
         ui.label("Target aggregation:");
         egui::ComboBox::from_id_salt("target aggregation")
-            .selected_text(&*self.temporaries.target_aggregation_buffer.name())
+            .selected_text(self.temporaries.target_aggregation_buffer.name())
             .show_ui(ui, |ui| {
                 for sv in [
                     UmlClassAssociationAggregation::None,
@@ -8979,7 +8972,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                         .selectable_value(
                             &mut self.temporaries.target_aggregation_buffer,
                             sv,
-                            &*sv.name(),
+                            sv.name(),
                         )
                         .changed()
                     {
@@ -9037,7 +9030,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             let mut model = self.model.write();
             match property {
                 UmlClassPropChange::StereotypeChange(stereotype) => {
-                    if !self.temporaries.stereotype_controller.is_valid(&stereotype) {
+                    if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                         return;
                     }
 
@@ -9225,10 +9218,10 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.midpoint_label = stereotype_name_format(&*model.stereotype, &*model.name);
+        self.temporaries.midpoint_label = stereotype_name_format(&model.stereotype, &model.name);
         self.temporaries
             .stereotype_controller
-            .refresh(&*model.stereotype);
+            .refresh(&model.stereotype);
         self.temporaries.name_buffer = (*model.name).clone();
         self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
         self.temporaries.source_role_buffer = (*model.source_label_role).clone();
@@ -9325,12 +9318,12 @@ pub fn new_uml_usecasegeneralization_view<P: UmlClassProfile>(
         },
         sources
             .into_iter()
-            .zip(sp.into_iter())
+            .zip(sp)
             .map(|e| Ending::new_p(e.0, e.1))
             .collect(),
         targets
             .into_iter()
-            .zip(tp.into_iter())
+            .zip(tp)
             .map(|e| Ending::new_p(e.0, e.1))
             .collect(),
         mp,
@@ -9588,16 +9581,16 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 UmlClassPropChange::SetCoveringChange(is_covering) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        UmlClassPropChange::SetCoveringChange(model.set_is_covering.clone()),
+                        UmlClassPropChange::SetCoveringChange(model.set_is_covering),
                     ));
-                    model.set_is_covering = is_covering.clone();
+                    model.set_is_covering = *is_covering;
                 }
                 UmlClassPropChange::SetDisjointChange(is_disjoint) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        UmlClassPropChange::SetDisjointChange(model.set_is_disjoint.clone()),
+                        UmlClassPropChange::SetDisjointChange(model.set_is_disjoint),
                     ));
-                    model.set_is_disjoint = is_disjoint.clone();
+                    model.set_is_disjoint = *is_disjoint;
                 }
                 UmlClassPropChange::CommentChange(comment) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -10131,7 +10124,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     is_spent: Some(false),
                 });
 
-                return EventHandlingStatus::HandledByElement;
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -10234,7 +10227,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(&stereotype) {
+                            if !self.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -10289,7 +10282,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         self.display_text = {
             let mut s = String::new();
             if !model.stereotype.is_empty() {
-                s.push_str("«");
+                s.push('«');
                 s.push_str(&model.stereotype);
                 s.push_str("»\n");
             }
@@ -10319,7 +10312,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)

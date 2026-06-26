@@ -42,7 +42,7 @@ where
         self.draw_order
             .iter()
             .rev()
-            .flat_map(|k| self.views.get(k).and_then(|e| Some((*k, e))))
+            .flat_map(|k| self.views.get(k).map(|e| (*k, e)))
     }
 
     pub fn event_order_foreach(&self, f: impl FnMut(&T)) {

@@ -82,22 +82,22 @@ impl Debug for NetworkPropChange {
             "NetworkPropChange::{}",
             match self {
                 Self::NameChange(name) => format!("NameChange({})", name),
-                Self::NodeKindChange(_kind) => format!("NodeKindChange(..)"),
-                Self::UserKindChange(_kind) => format!("UserKindChange(..)"),
-                Self::FileKindChange(_kind) => format!("FileKindChange(..)"),
+                Self::NodeKindChange(_kind) => "NodeKindChange(..)".to_string(),
+                Self::UserKindChange(_kind) => "UserKindChange(..)".to_string(),
+                Self::FileKindChange(_kind) => "FileKindChange(..)".to_string(),
 
-                Self::AssociationLineTypeChange(_) => format!("AssociationLineTypeChange(..)"),
+                Self::AssociationLineTypeChange(_) => "AssociationLineTypeChange(..)".to_string(),
                 Self::AssociationArrowheadTypeChange(..) =>
-                    format!("AssociationArrowheadTypeChange(..)"),
+                    "AssociationArrowheadTypeChange(..)".to_string(),
                 Self::AssociationMultiplicityChange(..) =>
-                    format!("AssociationMultiplicityChange(..)"),
-                Self::AssociationRoleChange(..) => format!("AssociationRoleChange(..)"),
-                Self::AssociationReadingChange(..) => format!("AssociationReadingChange(..)"),
-                Self::FlipMulticonnection(_) => format!("FlipMulticonnection"),
+                    "AssociationMultiplicityChange(..)".to_string(),
+                Self::AssociationRoleChange(..) => "AssociationRoleChange(..)".to_string(),
+                Self::AssociationReadingChange(..) => "AssociationReadingChange(..)".to_string(),
+                Self::FlipMulticonnection(_) => "FlipMulticonnection".to_string(),
 
-                Self::ColorChange(_color) => format!("ColorChange(..)"),
+                Self::ColorChange(_color) => "ColorChange(..)".to_string(),
                 Self::CommentChange(comment) => format!("CommentChange({})", comment),
-                Self::CommentAlignChange(..) => format!("CommentAlignChange(..)"),
+                Self::CommentAlignChange(..) => "CommentAlignChange(..)".to_string(),
             }
         )
     }
@@ -906,7 +906,7 @@ impl DiagramSettings for NetworkSettings {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         Ok(table.into())
     }
@@ -1491,7 +1491,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     target: *preferred_container,
                     bucket: preferred_bucket,
                     position: preferred_position,
-                    element: NetworkElementView::from(element).into(),
+                    element: element.into(),
                     into_model: true,
                 });
                 Ok(None)
@@ -1747,7 +1747,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         };
         Self {
             model,
-            background_color: self.background_color.clone(),
+            background_color: self.background_color,
             name_buffer: self.name_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
         }
@@ -1779,7 +1779,7 @@ fn new_network_node_view(model: ERef<NetworkNode>, position: egui::Pos2) -> ERef
         model: model.clone(),
 
         name_buffer: (*m.name).to_owned(),
-        kind_buffer: m.kind.clone(),
+        kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
@@ -2409,9 +2409,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         NetworkPropChange::NodeKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::NodeKindChange(model.kind.clone()),
+                                NetworkPropChange::NodeKindChange(model.kind),
                             ));
-                            model.kind = kind.clone();
+                            model.kind = *kind;
                         }
                         NetworkPropChange::CommentChange(comment) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -2430,7 +2430,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.name_buffer = (*model.name).clone();
-        self.kind_buffer = model.kind.clone();
+        self.kind_buffer = model.kind;
         self.comment_buffer = (*model.comment).clone();
     }
 
@@ -2453,8 +2453,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (ViewUuid::now_v7().into(), ModelUuid::now_v7().into())
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2471,7 +2471,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             uuid: view_uuid.into(),
             model: modelish,
             name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer.clone(),
+            kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
@@ -2504,7 +2504,7 @@ fn new_network_user_view(
         model: model.clone(),
 
         name_buffer: (*m.name).to_owned(),
-        kind_buffer: m.kind.clone(),
+        kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
@@ -3012,9 +3012,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         NetworkPropChange::UserKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::UserKindChange(model.kind.clone()),
+                                NetworkPropChange::UserKindChange(model.kind),
                             ));
-                            model.kind = kind.clone();
+                            model.kind = *kind;
                         }
                         NetworkPropChange::CommentChange(comment) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -3043,7 +3043,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.name_buffer = (*model.name).clone();
-        self.kind_buffer = model.kind.clone();
+        self.kind_buffer = model.kind;
         self.comment_buffer = (*model.comment).clone();
     }
 
@@ -3066,7 +3066,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -3084,13 +3084,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             uuid: view_uuid.into(),
             model: modelish,
             name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer.clone(),
+            kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
-            background_color: self.background_color.clone(),
+            background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -3118,7 +3118,7 @@ fn new_network_file_view(
         model: model.clone(),
 
         name_buffer: (*m.name).to_owned(),
-        kind_buffer: m.kind.clone(),
+        kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
@@ -3518,9 +3518,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                         NetworkPropChange::FileKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::FileKindChange(model.kind.clone()),
+                                NetworkPropChange::FileKindChange(model.kind),
                             ));
-                            model.kind = kind.clone();
+                            model.kind = *kind;
                         }
                         NetworkPropChange::CommentChange(comment) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -3549,7 +3549,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.name_buffer = (*model.name).clone();
-        self.kind_buffer = model.kind.clone();
+        self.kind_buffer = model.kind;
         self.comment_buffer = (*model.comment).clone();
     }
 
@@ -3572,7 +3572,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -3590,13 +3590,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             uuid: view_uuid.into(),
             model: modelish,
             name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer.clone(),
+            kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
-            background_color: self.background_color.clone(),
+            background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -3914,9 +3914,9 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 NetworkPropChange::AssociationLineTypeChange(line_type) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        NetworkPropChange::AssociationLineTypeChange(model.line_type.clone()),
+                        NetworkPropChange::AssociationLineTypeChange(model.line_type),
                     ));
-                    model.line_type = line_type.clone();
+                    model.line_type = *line_type;
                 }
                 NetworkPropChange::AssociationArrowheadTypeChange(t, arrowhead) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -3924,16 +3924,16 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                         NetworkPropChange::AssociationArrowheadTypeChange(
                             *t,
                             if !t {
-                                model.source_arrowhead.clone()
+                                model.source_arrowhead
                             } else {
-                                model.target_arrowhead.clone()
+                                model.target_arrowhead
                             },
                         ),
                     ));
                     if !t {
-                        model.source_arrowhead = arrowhead.clone();
+                        model.source_arrowhead = *arrowhead;
                     } else {
-                        model.target_arrowhead = arrowhead.clone();
+                        model.target_arrowhead = *arrowhead;
                     }
                 }
                 NetworkPropChange::AssociationMultiplicityChange(t, multiplicity) => {
@@ -4075,12 +4075,12 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.line_type_buffer = model.line_type.clone();
-        self.temporaries.source_arrowhead_buffer = model.source_arrowhead.clone();
+        self.temporaries.line_type_buffer = model.line_type;
+        self.temporaries.source_arrowhead_buffer = model.source_arrowhead;
         self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
         self.temporaries.source_role_buffer = (*model.source_label_role).clone();
         self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
-        self.temporaries.target_arrowhead_buffer = model.target_arrowhead.clone();
+        self.temporaries.target_arrowhead_buffer = model.target_arrowhead;
         self.temporaries.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
         self.temporaries.target_role_buffer = (*model.target_label_role).clone();
         self.temporaries.target_reading_buffer = (*model.target_label_reading).clone();
@@ -4637,7 +4637,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)

@@ -75,7 +75,7 @@ pub fn deep_copy_diagram(
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e, &mut all_models);
+        let new_model = walk(e, &mut all_models);
         all_models.insert(*e.uuid(), new_model.clone());
         new_contained_elements.push(new_model);
     }
@@ -354,7 +354,7 @@ impl ContainerModel for NetworkDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -362,7 +362,7 @@ impl ContainerModel for NetworkDiagram {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -459,7 +459,7 @@ impl ContainerModel for NetworkContainer {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -467,7 +467,7 @@ impl ContainerModel for NetworkContainer {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -586,7 +586,7 @@ impl NetworkNode {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
-            kind: self.kind.clone(),
+            kind: self.kind,
             comment: self.comment.clone(),
         })
     }
@@ -671,7 +671,7 @@ impl NetworkUser {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
-            kind: self.kind.clone(),
+            kind: self.kind,
             comment: self.comment.clone(),
         })
     }
@@ -761,7 +761,7 @@ impl NetworkFile {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
-            kind: self.kind.clone(),
+            kind: self.kind,
             comment: self.comment.clone(),
         })
     }
@@ -878,14 +878,14 @@ impl NetworkAssociation {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
 
-            line_type: self.line_type.clone(),
+            line_type: self.line_type,
             source: self.source.clone(),
-            source_arrowhead: self.source_arrowhead.clone(),
+            source_arrowhead: self.source_arrowhead,
             source_label_multiplicity: self.source_label_multiplicity.clone(),
             source_label_role: self.source_label_role.clone(),
             source_label_reading: self.source_label_reading.clone(),
             target: self.target.clone(),
-            target_arrowhead: self.target_arrowhead.clone(),
+            target_arrowhead: self.target_arrowhead,
             target_label_multiplicity: self.target_label_multiplicity.clone(),
             target_label_role: self.target_label_role.clone(),
             target_label_reading: self.target_label_reading.clone(),

@@ -46,7 +46,7 @@ impl SparqlQueriesTab {
         } else {
             let uuid = uuid::Uuid::now_v7();
             model.stored_queries.insert(
-                uuid.clone(),
+                uuid,
                 (
                     self.query_name_buffer.to_owned(),
                     self.query_value_buffer.to_owned(),
@@ -111,11 +111,7 @@ impl CustomTab for SparqlQueriesTab {
                 .show_ui(ui, |ui| {
                     for (k, q) in &model.stored_queries {
                         if ui
-                            .selectable_value(
-                                &mut self.selected_query,
-                                Some(k.clone()),
-                                q.0.clone(),
-                            )
+                            .selectable_value(&mut self.selected_query, Some(*k), q.0.clone())
                             .clicked()
                         {
                             self.query_name_buffer = q.0.clone();
@@ -128,7 +124,7 @@ impl CustomTab for SparqlQueriesTab {
                 let uuid = uuid::Uuid::now_v7();
                 model
                     .stored_queries
-                    .insert(uuid.clone(), ("".to_owned(), "".to_owned()));
+                    .insert(uuid, ("".to_owned(), "".to_owned()));
                 self.selected_query = Some(uuid);
             }
 

@@ -399,11 +399,11 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 let mut s = "Activity (".to_owned();
                 s.push_str(&r.name);
                 if !r.stereotype.is_empty() {
-                    s.push_str("«");
+                    s.push('«');
                     s.push_str(&r.stereotype);
-                    s.push_str("»");
+                    s.push('»');
                 }
-                s.push_str(")");
+                s.push(')');
                 s.into()
             }
             UmlActivityElement::InterruptibleRegion(inner) => {
@@ -411,11 +411,11 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 let mut s = "Interruptible Region (".to_owned();
                 s.push_str(&r.name);
                 if !r.stereotype.is_empty() {
-                    s.push_str("«");
+                    s.push('«');
                     s.push_str(&r.stereotype);
-                    s.push_str("»");
+                    s.push('»');
                 }
-                s.push_str(")");
+                s.push(')');
                 s.into()
             }
             UmlActivityElement::Partition(_inner) => "Partition".to_owned().into(),
@@ -424,11 +424,11 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 let mut s = "Partition Section (".to_owned();
                 s.push_str(&r.name);
                 if !r.stereotype.is_empty() {
-                    s.push_str("«");
+                    s.push('«');
                     s.push_str(&r.stereotype);
-                    s.push_str("»");
+                    s.push('»');
                 }
-                s.push_str(")");
+                s.push(')');
                 s.into()
             }
             UmlActivityElement::ActionNode(inner) => {
@@ -436,11 +436,11 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 let mut s = "Action Node (".to_owned();
                 s.push_str(&LabelProvider::filter_and_elipsis(&r.name));
                 if !r.stereotype.is_empty() {
-                    s.push_str("«");
+                    s.push('«');
                     s.push_str(&r.stereotype);
-                    s.push_str("»");
+                    s.push('»');
                 }
-                s.push_str(")");
+                s.push(')');
                 s.into()
             }
             UmlActivityElement::InitialNode(..) => "Initial Node".to_owned().into(),
@@ -465,11 +465,11 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 let mut s = "Object Node (".to_owned();
                 s.push_str(&LabelProvider::filter_and_elipsis(&r.name));
                 if !r.stereotype.is_empty() {
-                    s.push_str("«");
+                    s.push('«');
                     s.push_str(&r.stereotype);
-                    s.push_str("»");
+                    s.push('»');
                 }
-                s.push_str(")");
+                s.push(')');
                 s.into()
             }
             UmlActivityElement::Edge(inner) => {
@@ -480,7 +480,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 if !r.name.is_empty() {
                     s.push_str(" (");
                     s.push_str(&r.name);
-                    s.push_str(")");
+                    s.push(')');
                 }
                 Arc::new(s)
             }
@@ -493,7 +493,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 };
                 Arc::new(s)
             }
-            UmlActivityElement::CommentLink(_inner) => Arc::new(format!("Comment Link")),
+            UmlActivityElement::CommentLink(_inner) => Arc::new("Comment Link".to_string()),
         }
     }
 
@@ -1130,7 +1130,7 @@ impl DiagramSettings for UmlActivitySettings {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         Ok(table.into())
     }
@@ -1187,7 +1187,7 @@ mod buttons {
             UmlActivityToolStage::LinkEnd,
             PartialUmlActivityElement::Link {
                 link_type,
-                source: m.into(),
+                source: m,
                 dest: None,
             },
             true,
@@ -1981,7 +1981,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 },
                 _,
             ) => {
-                if let Some(source_view) = q.get_view_for(&source_uuid) {
+                if let Some(source_view) = q.get_view_for(source_uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -2064,7 +2064,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::ForkNodeStart {}, _) => {
+            (UmlActivityToolStage::ForkNodeStart, _) => {
                 self.result = PartialUmlActivityElement::ForkNode { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::ForkNodeEnd;
                 self.event_lock = true;
@@ -2206,8 +2206,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     _ => {}
                 }
             }
-            UmlActivityElement::Comment(inner) => match &self.current_stage {
-                UmlActivityToolStage::CommentLinkStart => {
+            UmlActivityElement::Comment(inner) => {
+                if let UmlActivityToolStage::CommentLinkStart = &self.current_stage {
                     self.result = PartialUmlActivityElement::CommentLink {
                         source: inner,
                         dest: None,
@@ -2215,8 +2215,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     self.current_stage = UmlActivityToolStage::CommentLinkEnd;
                     self.event_lock = true;
                 }
-                _ => {}
-            },
+            }
             _ => {}
         }
     }
@@ -2254,7 +2253,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     | UmlActivityToolStage::ObjectNode {
                         with_edge_from: Some(source_uuid),
                         ..
-                    } if let Some(source) = q.get_view_for(&source_uuid)
+                    } if let Some(source) = q.get_view_for(source_uuid)
                         && let nearest_common_container = q
                             .find_container(&source.uuid(), |uuid, e| {
                                 (uuid == preferred_container
@@ -2269,7 +2268,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                             })
                             .map(|e| e.0)
                         && let target_activity = q
-                            .find_container_inclusive(&preferred_container, |_, e| {
+                            .find_container_inclusive(preferred_container, |_, e| {
                                 matches!(e, UmlActivityElementView::Activity(_))
                             })
                             .map(|e| e.0)
@@ -2294,7 +2293,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     target: *preferred_container,
                     bucket: preferred_bucket,
                     position: preferred_position,
-                    element: UmlActivityElementView::from(element).into(),
+                    element: element.into(),
                     into_model: true,
                 });
                 if let Some((parent, e)) = additional_edge {
@@ -2767,15 +2766,15 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
             let mut acc = "act: ".to_owned();
 
             if !model.stereotype.is_empty() {
-                acc.push_str("«");
+                acc.push('«');
                 acc.push_str(&model.stereotype);
                 acc.push_str("» ");
             }
             acc.push_str(&model.name);
             if !model.parameters.is_empty() {
-                acc.push_str("(");
+                acc.push('(');
                 acc.push_str(&model.parameters);
-                acc.push_str(")");
+                acc.push(')');
             }
 
             acc.into()
@@ -2806,7 +2805,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
 
         Self {
             model,
-            background_color: self.background_color.clone(),
+            background_color: self.background_color,
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -2998,7 +2997,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         self.display_text = {
             let mut acc = String::new();
             if !model.stereotype.is_empty() {
-                acc.push_str("«");
+                acc.push('«');
                 acc.push_str(&model.stereotype);
                 acc.push_str("» ");
             }
@@ -3199,7 +3198,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
             }
         }
 
-        return PropertiesStatus::NotShown;
+        PropertiesStatus::NotShown
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
@@ -3253,30 +3252,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(
-                                    false,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.temporaries.selected_direct_elements.contains(&k),
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -3650,21 +3640,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                                 view_pos
                             };
 
-                            let old_position = if self.section_views.len() == view_pos.into() {
+                            let old_position = if self.section_views.len() == view_pos {
                                 self.section_views
                                     .last()
                                     .map(|e| e.read().bounds_rect.right_top())
                             } else {
                                 self.section_views
                                     .iter()
-                                    .skip(view_pos.into())
+                                    .skip(view_pos)
                                     .map(|e| e.read().bounds_rect.min)
                                     .next()
                             }
                             .unwrap_or_default();
                             let delta = (vw.bounds_rect.width(), 0.0).into();
                             let (mut u, mut m) = Default::default();
-                            for e in self.section_views.iter().skip(view_pos.into()) {
+                            for e in self.section_views.iter().skip(view_pos) {
                                 e.write().apply_command(
                                     &InsensitiveCommand::MovePositionalAll(delta),
                                     &mut u,
@@ -3858,7 +3848,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -4377,14 +4367,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
-                        if ehc
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
                             .modifier_settings
                             .alternative_tool_mode
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                    {
+                        *element_setup_modal = esm;
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -4395,30 +4384,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(
-                                    false,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.temporaries.selected_direct_elements.contains(&k),
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -4794,7 +4774,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -4817,8 +4797,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             model,
             contained_elements: OrderedViews::new(inner.into_values().collect()),
 
-            bounds_rect: self.bounds_rect.clone(),
-            background_color: self.background_color.clone(),
+            bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
             temporaries: self.temporaries.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -5533,7 +5513,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -5900,7 +5880,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -6272,15 +6252,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    match property {
-                        UmlActivityPropChange::FinalNodeKindChange(kind) => {
-                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                std::iter::once(*self.uuid).collect(),
-                                UmlActivityPropChange::FinalNodeKindChange(model.kind),
-                            ));
-                            model.kind = *kind;
-                        }
-                        _ => {}
+                    if let UmlActivityPropChange::FinalNodeKindChange(kind) = property {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlActivityPropChange::FinalNodeKindChange(model.kind),
+                        ));
+                        model.kind = *kind;
                     }
                 }
             }
@@ -6311,7 +6288,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -6699,15 +6676,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    match property {
-                        UmlActivityPropChange::NameChange(name) => {
-                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                std::iter::once(*self.uuid).collect(),
-                                UmlActivityPropChange::NameChange(model.name.clone()),
-                            ));
-                            model.name = name.clone();
-                        }
-                        _ => {}
+                    if let UmlActivityPropChange::NameChange(name) = property {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlActivityPropChange::NameChange(model.name.clone()),
+                        ));
+                        model.name = name.clone();
                     }
                 }
             }
@@ -6738,7 +6712,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -7150,7 +7124,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -7634,7 +7608,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -7899,7 +7873,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
 
         self.temporaries.midpoint_label = match model.name.is_empty() {
             true => None,
-            false => Some(model.name.clone().into()),
+            false => Some(model.name.clone()),
         };
         self.temporaries.name_buffer = (*model.name).clone();
         self.temporaries.kind_buffer = model.kind;
@@ -8359,7 +8333,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
                     is_spent: Some(false),
                 });
 
-                return EventHandlingStatus::HandledByElement;
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -8513,7 +8487,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
         self.display_text = {
             let mut s = "".to_owned();
             if !model.stereotype.is_empty() {
-                s.push_str("«");
+                s.push('«');
                 s.push_str(&model.stereotype);
                 s.push_str("»\n");
             }
@@ -8543,7 +8517,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)

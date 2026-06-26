@@ -80,9 +80,9 @@ impl Debug for RdfPropChange {
                 Self::DataTypeChange(datatype) => format!("DataTypeChange({})", datatype),
                 Self::LangTagChange(langtag) => format!("LangTagChange({})", langtag),
 
-                Self::ColorChange(_color) => format!("ColorChange(..)"),
+                Self::ColorChange(_color) => "ColorChange(..)".to_string(),
                 Self::CommentChange(comment) => format!("CommentChange({})", comment),
-                Self::FlipMulticonnection(_) => format!("FlipMulticonnection"),
+                Self::FlipMulticonnection(_) => "FlipMulticonnection".to_string(),
             }
         )
     }
@@ -701,7 +701,7 @@ impl DiagramSettings for RdfSettings {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         Ok(table.into())
     }
@@ -1058,13 +1058,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
         match controller {
             RdfElement::RdfGraph(..) => {}
-            RdfElement::RdfLiteral(inner) => match (&self.current_stage, &mut self.result) {
-                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
+            RdfElement::RdfLiteral(inner) => {
+                if let (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) =
+                    (&self.current_stage, &mut self.result)
+                {
                     *dest = Some(RdfTargettableElement::from(inner));
                     self.event_lock = true;
                 }
-                _ => {}
-            },
+            }
             RdfElement::RdfNode(inner) => match (&self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateStart { iri }, PartialRdfElement::None) => {
                     self.result = PartialRdfElement::Predicate {
@@ -1115,7 +1116,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     target: *preferred_container,
                     bucket: preferred_bucket,
                     position: preferred_position,
-                    element: RdfElementView::from(element).into(),
+                    element: element.into(),
                     into_model: true,
                 });
                 Ok(esm)
@@ -1412,7 +1413,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         };
         Self {
             model,
-            background_color: self.background_color.clone(),
+            background_color: self.background_color,
             iri_buffer: self.iri_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
         }
@@ -1435,7 +1436,8 @@ fn new_rdf_node(iri: &str, position: egui::Pos2) -> (ERef<RdfNode>, ERef<RdfNode
 }
 fn new_rdf_node_view(model: ERef<RdfNode>, position: egui::Pos2) -> ERef<RdfNodeView> {
     let m = model.read();
-    let node_view = ERef::new(RdfNodeView {
+
+    ERef::new(RdfNodeView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
@@ -1446,8 +1448,7 @@ fn new_rdf_node_view(model: ERef<RdfNode>, position: egui::Pos2) -> ERef<RdfNode
         highlight: canvas::Highlight::NONE,
         position,
         bounds_radius: egui::Vec2::ZERO,
-    });
-    node_view
+    })
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -1822,7 +1823,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -1868,7 +1869,8 @@ fn new_rdf_literal(
 }
 fn new_rdf_literal_view(model: ERef<RdfLiteral>, position: egui::Pos2) -> ERef<RdfLiteralView> {
     let m = model.read();
-    let literal_view = ERef::new(RdfLiteralView {
+
+    ERef::new(RdfLiteralView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
@@ -1881,8 +1883,7 @@ fn new_rdf_literal_view(model: ERef<RdfLiteral>, position: egui::Pos2) -> ERef<R
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_pos(position),
-    });
-    literal_view
+    })
 }
 
 struct RdfLiteralSetupModal {
@@ -2292,8 +2293,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (ViewUuid::now_v7().into(), ModelUuid::now_v7().into())
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2547,7 +2548,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
 
         let source_uuid = *model.source.read().uuid();
         if let Some(RdfElement::RdfNode(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone().into();
+            model.source = new_source.clone();
         }
 
         let target_uuid = *model.target.uuid();

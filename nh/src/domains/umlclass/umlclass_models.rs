@@ -155,7 +155,7 @@ pub fn deep_copy_diagram(
                     uuid: new_uuid,
                     name: model.name.clone(),
                     stereotype: model.stereotype.clone(),
-                    kind: model.kind.clone(),
+                    kind: model.kind,
                     contained_elements: model
                         .contained_elements
                         .iter()
@@ -260,7 +260,7 @@ pub fn deep_copy_diagram(
 
                 let source_uuid = *model.source.read().uuid();
                 if let Some(UmlClassElement::Comment(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone().into();
+                    model.source = s.clone();
                 }
                 let target_uuid = *model.target.uuid();
                 if let Some(t) = all_models.get(&target_uuid) {
@@ -273,7 +273,7 @@ pub fn deep_copy_diagram(
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e, &mut all_models);
+        let new_model = walk(e, &mut all_models);
         all_models.insert(*e.uuid(), new_model.clone());
         new_contained_elements.push(new_model);
     }
@@ -639,7 +639,7 @@ impl ContainerModel for UmlClassDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -647,7 +647,7 @@ impl ContainerModel for UmlClassDiagram {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -742,7 +742,7 @@ impl UmlClassPackage {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
-            kind: self.kind.clone(),
+            kind: self.kind,
             contained_elements: self.contained_elements.clone(),
             comment: self.comment.clone(),
         })
@@ -773,7 +773,7 @@ impl ContainerModel for UmlClassPackage {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -781,7 +781,7 @@ impl ContainerModel for UmlClassPackage {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -988,7 +988,7 @@ impl UmlClassProperty {
             default_value: self.default_value.clone(),
             stereotype: self.stereotype.clone(),
 
-            visibility: self.visibility.clone(),
+            visibility: self.visibility,
             inherited: self.inherited.clone(),
             is_static: self.is_static,
             is_derived: self.is_derived,
@@ -1073,7 +1073,7 @@ impl UmlClassOperation {
             return_type: self.return_type.clone(),
             stereotype: self.stereotype.clone(),
 
-            visibility: self.visibility.clone(),
+            visibility: self.visibility,
             inherited: self.inherited.clone(),
             is_static: self.is_static,
             is_abstract: self.is_abstract,
@@ -1164,16 +1164,15 @@ impl UmlClass {
                 let e = self.properties.remove(idx);
                 self.properties.insert(target_pos.try_into().unwrap(), e);
             }
-        } else if within == Self::OPERATIONS_BUCKET {
-            if let Some((idx, _e)) = self
+        } else if within == Self::OPERATIONS_BUCKET
+            && let Some((idx, _e)) = self
                 .operations
                 .iter()
                 .enumerate()
                 .find(|e| *e.1.read().uuid() == *element)
-            {
-                let e = self.operations.remove(idx);
-                self.operations.insert(target_pos.try_into().unwrap(), e);
-            }
+        {
+            let e = self.operations.remove(idx);
+            self.operations.insert(target_pos.try_into().unwrap(), e);
         }
     }
 }

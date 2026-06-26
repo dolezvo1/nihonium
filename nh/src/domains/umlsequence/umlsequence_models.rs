@@ -154,9 +154,9 @@ pub fn deep_copy_diagram(
                 let model = inner.read();
                 let new_model = UmlSequenceCombinedFragment {
                     uuid: new_uuid,
-                    kind: model.kind.clone(),
+                    kind: model.kind,
                     kind_argument: model.kind_argument.clone(),
-                    end_behaviour: model.end_behaviour.clone(),
+                    end_behaviour: model.end_behaviour,
                     horizontal_span: model.horizontal_span.clone(),
                     sections: model
                         .sections
@@ -249,7 +249,7 @@ pub fn deep_copy_diagram(
 
                 let source_uuid = *model.source.read().uuid();
                 if let Some(UmlSequenceElement::Comment(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone().into();
+                    model.source = s.clone();
                 }
                 let target_uuid = *model.target.uuid();
                 if let Some(t) = all_models.get(&target_uuid) {
@@ -682,7 +682,7 @@ impl ContainerModel for UmlSequenceDiagramBoard {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -691,7 +691,7 @@ impl ContainerModel for UmlSequenceDiagramBoard {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
 
     fn insert_element(
@@ -793,17 +793,16 @@ impl UmlSequenceDiagram {
                 self.vertical_elements
                     .insert(target_pos.try_into().unwrap(), e);
             }
-        } else if within == HORIZONTALS_BUCKET {
-            if let Some((idx, _e)) = self
+        } else if within == HORIZONTALS_BUCKET
+            && let Some((idx, _e)) = self
                 .horizontal_elements
                 .iter()
                 .enumerate()
                 .find(|e| *e.1.uuid() == *element)
-            {
-                let e = self.horizontal_elements.remove(idx);
-                self.horizontal_elements
-                    .insert(target_pos.try_into().unwrap(), e);
-            }
+        {
+            let e = self.horizontal_elements.remove(idx);
+            self.horizontal_elements
+                .insert(target_pos.try_into().unwrap(), e);
         }
     }
 }
@@ -837,7 +836,7 @@ impl ContainerModel for UmlSequenceDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.vertical_elements.iter().enumerate() {
@@ -850,7 +849,7 @@ impl ContainerModel for UmlSequenceDiagram {
                 return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -873,7 +872,7 @@ impl ContainerModel for UmlSequenceDiagram {
                 self.horizontal_elements.insert(pos, element);
                 Ok(pos.try_into().unwrap())
             }
-            _ => return Err(element),
+            _ => Err(element),
         }
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1057,9 +1056,9 @@ impl UmlSequenceMessage {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
             state_invariant: self.state_invariant.clone(),
-            synchronicity: self.synchronicity.clone(),
-            lifecycle: self.lifecycle.clone(),
-            is_return: self.is_return.clone(),
+            synchronicity: self.synchronicity,
+            lifecycle: self.lifecycle,
+            is_return: self.is_return,
             duration: self.duration,
             source: self.source.clone(),
             target: self.target.clone(),
@@ -1197,9 +1196,9 @@ impl UmlSequenceCombinedFragment {
     pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
-            kind: self.kind.clone(),
+            kind: self.kind,
             kind_argument: self.kind_argument.clone(),
-            end_behaviour: self.end_behaviour.clone(),
+            end_behaviour: self.end_behaviour,
             horizontal_span: self.horizontal_span.clone(),
             sections: self.sections.clone(),
             comment: self.comment.clone(),
@@ -1211,16 +1210,15 @@ impl UmlSequenceCombinedFragment {
         within: BucketNoT,
         target_pos: PositionNoT,
     ) {
-        if within == 1 {
-            if let Some((idx, _e)) = self
+        if within == 1
+            && let Some((idx, _e)) = self
                 .sections
                 .iter()
                 .enumerate()
                 .find(|e| *e.1.read().uuid() == *element)
-            {
-                let e = self.sections.remove(idx);
-                self.sections.insert(target_pos.try_into().unwrap(), e);
-            }
+        {
+            let e = self.sections.remove(idx);
+            self.sections.insert(target_pos.try_into().unwrap(), e);
         }
     }
 }
@@ -1249,7 +1247,7 @@ impl ContainerModel for UmlSequenceCombinedFragment {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.sections.iter().enumerate() {
@@ -1257,7 +1255,7 @@ impl ContainerModel for UmlSequenceCombinedFragment {
                 return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -1341,17 +1339,16 @@ impl UmlSequenceCombinedFragmentSection {
         within: BucketNoT,
         target_pos: PositionNoT,
     ) {
-        if within == 1 {
-            if let Some((idx, _e)) = self
+        if within == 1
+            && let Some((idx, _e)) = self
                 .horizontal_elements
                 .iter()
                 .enumerate()
                 .find(|e| *e.1.uuid() == *element)
-            {
-                let e = self.horizontal_elements.remove(idx);
-                self.horizontal_elements
-                    .insert(target_pos.try_into().unwrap(), e);
-            }
+        {
+            let e = self.horizontal_elements.remove(idx);
+            self.horizontal_elements
+                .insert(target_pos.try_into().unwrap(), e);
         }
     }
 }
@@ -1380,7 +1377,7 @@ impl ContainerModel for UmlSequenceCombinedFragmentSection {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.horizontal_elements.iter().enumerate() {
@@ -1388,7 +1385,7 @@ impl ContainerModel for UmlSequenceCombinedFragmentSection {
                 return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,

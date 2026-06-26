@@ -861,7 +861,7 @@ impl DiagramSettings for DemoCsdSettings {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         Ok(table.into())
     }
@@ -1007,8 +1007,8 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
                 )
             });
             new_democsd_transactor(
-                &identifier,
-                &name,
+                identifier,
+                name,
                 *internal,
                 *composite,
                 tx,
@@ -1285,7 +1285,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 },
                 _,
             ) => {
-                if let Some(source_view) = q.get_view_for(&source_uuid) {
+                if let Some(source_view) = q.get_view_for(source_uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1383,33 +1383,31 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         self.current_stage = DemoCsdToolStage::LinkEnd;
                         self.event_lock = true;
                     }
-                    (DemoCsdToolStage::Bank { .. }, PartialDemoCsdElement::None) => {
-                        if inner.read().transaction.is_some() {
-                            self.event_lock = true;
-                        }
+                    (DemoCsdToolStage::Bank { .. }, PartialDemoCsdElement::None)
+                        if inner.read().transaction.is_some() =>
+                    {
+                        self.event_lock = true;
                     }
                     _ => {}
                 }
             }
             DemoCsdElement::DemoCsdTransaction(inner) => {
-                match (&self.current_stage, &mut self.result) {
-                    (
-                        DemoCsdToolStage::LinkEnd,
-                        PartialDemoCsdElement::Link { source, dest, .. },
-                    ) => {
-                        if source
-                            .read()
-                            .transaction
-                            .as_ref()
-                            .is_some_and(|e| *e.read().uuid == *inner.read().uuid)
-                        {
-                            return;
-                        }
-
-                        *dest = Some(inner);
-                        self.event_lock = true;
+                if let (
+                    DemoCsdToolStage::LinkEnd,
+                    PartialDemoCsdElement::Link { source, dest, .. },
+                ) = (&self.current_stage, &mut self.result)
+                {
+                    if source
+                        .read()
+                        .transaction
+                        .as_ref()
+                        .is_some_and(|e| *e.read().uuid == *inner.read().uuid)
+                    {
+                        return;
                     }
-                    _ => {}
+
+                    *dest = Some(inner);
+                    self.event_lock = true;
                 }
             }
             DemoCsdElement::DemoCsdLink(..) => {}
@@ -1458,7 +1456,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                             }),
                         ..
                     } if let Some(DemoCsdElementView::Transactor(source)) =
-                        q.get_view_for(&source_uuid)
+                        q.get_view_for(source_uuid)
                         && let target = (match &element {
                             DemoCsdElementView::Transactor(inner) => {
                                 inner.read().transaction_view.clone().unwrap()
@@ -2175,7 +2173,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         if let UFOption::Some(t) = &self.transaction_view {
             let res = t
                 .write()
-                .draw_in(queryable, context, settings, canvas, &tool);
+                .draw_in(queryable, context, settings, canvas, tool);
             if res == TargettingStatus::Drawn {
                 return TargettingStatus::Drawn;
             }
@@ -2312,10 +2310,10 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                 .hold_selection
                                 .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                             {
-                                commands.push(
-                                    InsensitiveCommand::HighlightAll(false, Highlight::SELECTED)
-                                        .into(),
-                                );
+                                commands.push(InsensitiveCommand::HighlightAll(
+                                    false,
+                                    Highlight::SELECTED,
+                                ));
                                 commands.push(InsensitiveCommand::HighlightSpecific(
                                     std::iter::once(*t.uuid()).collect(),
                                     true,
@@ -2415,14 +2413,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     if self.transaction_view.as_ref().is_none() {
                         tool.add_position(*event.mouse_position());
 
-                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
-                            if ehc
+                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                            && ehc
                                 .modifier_settings
                                 .alternative_tool_mode
                                 .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                            {
-                                *element_setup_modal = esm;
-                            }
+                        {
+                            *element_setup_modal = esm;
                         }
                     }
 
@@ -2549,17 +2546,17 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 {
                     let mut w = self.model.write();
                     let mut vw = e.write();
-                    if let Some(_) =
-                        w.get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, vw.model.clone().into())
-                                        .ok()
-                                } else {
-                                    None
-                                }
-                            })
+                    if w.get_element_pos(&vw.model_uuid())
+                        .map(|e| e.1)
+                        .or_else(|| {
+                            if *into_model {
+                                w.insert_element(*bucket, *position, vw.model.clone().into())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .is_some()
                     {
                         vw.position = egui::Pos2::new(
                             self.position.x,
@@ -2748,7 +2745,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         .into();
 
         let old_model = self.model.read();
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -2770,7 +2767,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             name_buffer: self.name_buffer.clone(),
             internal_buffer: self.internal_buffer,
             composite_buffer: self.composite_buffer,
-            transaction_selfactivating_buffer: self.transaction_selfactivating_buffer.clone(),
+            transaction_selfactivating_buffer: self.transaction_selfactivating_buffer,
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
@@ -3201,9 +3198,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         >,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled;
-            }
+            e if !self.min_shape().contains(*e.mouse_position()) => EventHandlingStatus::NotHandled,
             InputEvent::MouseDown(_) => {
                 self.dragged = true;
                 EventHandlingStatus::HandledByElement
@@ -3376,7 +3371,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
         let old_model = self.model.read();
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)

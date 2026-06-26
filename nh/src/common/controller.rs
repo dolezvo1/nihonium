@@ -4071,8 +4071,8 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             }
 
             ui.input(|i| {
-                i.events.iter().for_each(|e| match e {
-                    egui::Event::MouseWheel { delta, .. } => {
+                i.events.iter().for_each(|e| {
+                    if let egui::Event::MouseWheel { delta, .. } = e {
                         let factor = if delta.y > 0.0 && self.temporaries.camera_scale < 10.0 {
                             1.5
                         } else if delta.y < 0.0 && self.temporaries.camera_scale > 0.01 {
@@ -4085,7 +4085,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                             apply_zoom!(factor, cursor_pos);
                         }
                     }
-                    _ => {}
                 })
             });
 

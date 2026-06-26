@@ -726,7 +726,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 new_umlsequence_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
                     .into()
             }
-            UmlSequenceElement::CommentLink(inner) => todo!(),
+            UmlSequenceElement::CommentLink(_inner) => todo!(),
         };
 
         Ok(v)
@@ -775,7 +775,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 };
                 Arc::new(s)
             }
-            UmlSequenceElement::CommentLink(_inner) => Arc::new(format!("Comment Link")),
+            UmlSequenceElement::CommentLink(_inner) => Arc::new("Comment Link".to_string()),
         }
     }
 
@@ -1064,12 +1064,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         .collect(),
         vec![
             (
-                combined_fragment_section1_model.into(),
-                combined_fragment_section1_view.into(),
+                combined_fragment_section1_model,
+                combined_fragment_section1_view,
             ),
             (
-                combined_fragment_section2_model.into(),
-                combined_fragment_section2_view.into(),
+                combined_fragment_section2_model,
+                combined_fragment_section2_view,
             ),
         ],
     );
@@ -1357,7 +1357,7 @@ impl DiagramSettings for UmlSequenceSettings {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         Ok(table.into())
     }
@@ -1587,7 +1587,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                     "",
                     *end_behaviour,
                     HashSet::new(),
-                    vec![section.into()],
+                    vec![section],
                 )
                 .1
             };
@@ -1934,8 +1934,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
             return;
         }
 
-        match element {
-            UmlSequenceElement::Lifeline(inner) => match (&self.current_stage, &mut self.result) {
+        if let UmlSequenceElement::Lifeline(inner) = element {
+            match (&self.current_stage, &mut self.result) {
                 (
                     UmlSequenceToolStage::LinkStart { link_type },
                     PartialUmlSequenceElement::None,
@@ -1989,8 +1989,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     self.event_lock = true;
                 }
                 _ => {}
-            },
-            _ => {}
+            }
         }
     }
 
@@ -2016,7 +2015,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     target: *preferred_container,
                     bucket: preferred_bucket,
                     position: preferred_position,
-                    element: UmlSequenceElementView::from(element).into(),
+                    element: element.into(),
                     into_model: true,
                 });
                 Ok(None)
@@ -2063,7 +2062,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let section = new_umlsequence_combinedfragmentsection("", Vec::new()).into();
+                    let section = new_umlsequence_combinedfragmentsection("", Vec::new());
                     let cf_view = new_umlsequence_combinedfragment(
                         *kind,
                         "",
@@ -2945,14 +2944,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     } else {
                         horizontal_place.and_then(|e| e.0)
                     };
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, pos, commands) {
-                        if ehc
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, pos, commands)
+                        && ehc
                             .modifier_settings
                             .alternative_tool_mode
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                    {
+                        *element_setup_modal = esm;
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -2963,26 +2961,19 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands
+                                .push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.temporaries.selected_direct_elements.contains(&k),
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -3646,7 +3637,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -3741,7 +3732,7 @@ pub fn new_umlsequence_combinedfragment(
 ) {
     let (section_models, section_views) = sections.into_iter().collect();
     let package_model = ERef::new(UmlSequenceCombinedFragment::new(
-        ModelUuid::now_v7().into(),
+        ModelUuid::now_v7(),
         kind,
         kind_argument.to_owned(),
         end_behaviour,
@@ -3827,8 +3818,8 @@ impl UmlSequenceCombinedFragmentView {
         }
     }
 
-    fn spanned_lifeline_views<'a, 'b>(
-        &'a self,
+    fn spanned_lifeline_views<'b>(
+        &self,
         lifeline_views: &'b [ERef<UmlSequenceLifelineView>],
     ) -> &'b [ERef<UmlSequenceLifelineView>] {
         let r = self.model.read();
@@ -4057,26 +4048,19 @@ impl UmlSequenceCombinedFragmentView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands
+                                .push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.temporaries.selected_direct_elements.contains(&k),
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -4091,7 +4075,7 @@ impl UmlSequenceCombinedFragmentView {
 
 impl Entity for UmlSequenceCombinedFragmentView {
     fn tagged_uuid(&self) -> EntityUuid {
-        (*self.uuid).clone().into()
+        (*self.uuid).into()
     }
 }
 
@@ -4202,7 +4186,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             UmlSequencePropChange::CombinedFragmentKindChange(
-                                self.temporaries.kind_buffer.clone(),
+                                self.temporaries.kind_buffer,
                             ),
                         ));
                     }
@@ -4236,7 +4220,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             UmlSequencePropChange::ActivationsBehaviourChange(
-                                self.temporaries.end_behaviour_buffer.clone(),
+                                self.temporaries.end_behaviour_buffer,
                             ),
                         ));
                     }
@@ -4563,11 +4547,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                         UmlSequencePropChange::CombinedFragmentKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlSequencePropChange::CombinedFragmentKindChange(
-                                    model.kind.clone(),
-                                ),
+                                UmlSequencePropChange::CombinedFragmentKindChange(model.kind),
                             ));
-                            model.kind = kind.clone();
+                            model.kind = *kind;
                         }
                         UmlSequencePropChange::CombinedFragmentKindArgumentChange(
                             kind_argument,
@@ -4584,10 +4566,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
                                 UmlSequencePropChange::ActivationsBehaviourChange(
-                                    model.end_behaviour.clone(),
+                                    model.end_behaviour,
                                 ),
                             ));
-                            model.end_behaviour = ab.clone();
+                            model.end_behaviour = *ab;
                         }
                         UmlSequencePropChange::CommentChange(comment) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -4610,9 +4592,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
 
         self.temporaries.display_text =
             combined_fragment_display_text(model.kind, &model.kind_argument);
-        self.temporaries.kind_buffer = model.kind.clone();
+        self.temporaries.kind_buffer = model.kind;
         self.temporaries.kind_argument_buffer = (*model.kind_argument).clone();
-        self.temporaries.end_behaviour_buffer = model.end_behaviour.clone();
+        self.temporaries.end_behaviour_buffer = model.end_behaviour;
         self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
@@ -4662,7 +4644,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -4696,9 +4678,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             model,
             sections: new_sections,
 
-            bounds_rect: self.bounds_rect.clone(),
-            left_top_pentagon_rect: self.left_top_pentagon_rect.clone(),
-            background_color: self.background_color.clone(),
+            bounds_rect: self.bounds_rect,
+            left_top_pentagon_rect: self.left_top_pentagon_rect,
+            background_color: self.background_color,
             temporaries: self.temporaries.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -4736,7 +4718,7 @@ pub fn new_umlsequence_combinedfragmentsection(
 ) {
     let (child_models, child_views) = horizontals.into_iter().collect();
     let section_model = ERef::new(UmlSequenceCombinedFragmentSection::new(
-        ModelUuid::now_v7().into(),
+        ModelUuid::now_v7(),
         guard.to_owned(),
         child_models,
     ));
@@ -4943,14 +4925,13 @@ impl UmlSequenceCombinedFragmentSectionView {
                     if let Some(h) = &horizontal_place {
                         tool.add_section(h.1.clone().into());
 
-                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, h.0, commands) {
-                            if ehc
+                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, h.0, commands)
+                            && ehc
                                 .modifier_settings
                                 .alternative_tool_mode
                                 .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                            {
-                                *element_setup_modal = esm;
-                            }
+                        {
+                            *element_setup_modal = esm;
                         }
                     }
 
@@ -4962,26 +4943,19 @@ impl UmlSequenceCombinedFragmentSectionView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands
+                                .push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.temporaries.selected_direct_elements.contains(&k),
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -5445,17 +5419,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
                 if uuids.contains(&self.uuid) {
                     let mut model = self.model.write();
                     affected_models.insert(*model.uuid);
-                    match property {
-                        UmlSequencePropChange::CombinedFragmentSectionGuardChange(guard) => {
-                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                std::iter::once(*self.uuid).collect(),
-                                UmlSequencePropChange::CombinedFragmentSectionGuardChange(
-                                    model.guard.clone(),
-                                ),
-                            ));
-                            model.guard = guard.clone();
-                        }
-                        _ => {}
+                    if let UmlSequencePropChange::CombinedFragmentSectionGuardChange(guard) =
+                        property
+                    {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::CombinedFragmentSectionGuardChange(
+                                model.guard.clone(),
+                            ),
+                        ));
+                        model.guard = guard.clone();
                     }
                 }
                 recurse!();
@@ -5503,7 +5476,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -5536,8 +5509,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
             model,
             horizontal_element_views,
 
-            bounds_rect: self.bounds_rect.clone(),
-            background_color: self.background_color.clone(),
+            bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
             temporaries: self.temporaries.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -6009,8 +5982,8 @@ impl ElementController<UmlSequenceElement> for UmlSequenceLifelineView {
     }
 }
 
-pub fn draw_simple_uml_class<'a>(
-    canvas: &'a mut dyn canvas::NHCanvas,
+pub fn draw_simple_uml_class(
+    canvas: &mut dyn canvas::NHCanvas,
     position: egui::Pos2,
     top_label: Option<Arc<String>>,
     main_label: &str,
@@ -6028,7 +6001,7 @@ pub fn draw_simple_uml_class<'a>(
             let r = canvas.measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_TOP,
-                &top_label,
+                top_label,
                 canvas::CLASS_TOP_FONT_SIZE,
             );
             offsets.push(r.height());
@@ -6039,7 +6012,7 @@ pub fn draw_simple_uml_class<'a>(
             let r = canvas.measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_TOP,
-                &main_label,
+                main_label,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             );
             offsets.push(r.height());
@@ -6050,7 +6023,7 @@ pub fn draw_simple_uml_class<'a>(
             let r = canvas.measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_TOP,
-                &bottom_label,
+                bottom_label,
                 canvas::CLASS_BOTTOM_FONT_SIZE,
             );
             offsets.push(r.height());
@@ -6067,13 +6040,7 @@ pub fn draw_simple_uml_class<'a>(
             position,
             egui::Vec2::new(max_width + 14.0, 2.0 * global_offset + 14.0),
         );
-        canvas.draw_rectangle(
-            rect,
-            egui::CornerRadius::ZERO,
-            fill,
-            stroke.into(),
-            highlight,
-        );
+        canvas.draw_rectangle(rect, egui::CornerRadius::ZERO, fill, stroke, highlight);
 
         (offsets, global_offset, rect)
     };
@@ -6086,7 +6053,7 @@ pub fn draw_simple_uml_class<'a>(
             canvas.draw_text(
                 position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
                 egui::Align2::CENTER_TOP,
-                &top_label,
+                top_label,
                 canvas::CLASS_TOP_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -6097,7 +6064,7 @@ pub fn draw_simple_uml_class<'a>(
             canvas.draw_text(
                 position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
                 egui::Align2::CENTER_TOP,
-                &main_label,
+                main_label,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -6108,7 +6075,7 @@ pub fn draw_simple_uml_class<'a>(
             canvas.draw_text(
                 position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
                 egui::Align2::CENTER_TOP,
-                &bottom_label,
+                bottom_label,
                 canvas::CLASS_BOTTOM_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -6387,7 +6354,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -6918,30 +6885,28 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
                     UmlSequencePropChange::SynchronicityKindChange(synchronicity) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*self.uuid).collect(),
-                            UmlSequencePropChange::SynchronicityKindChange(
-                                model.synchronicity.clone(),
-                            ),
+                            UmlSequencePropChange::SynchronicityKindChange(model.synchronicity),
                         ));
-                        model.synchronicity = synchronicity.clone();
+                        model.synchronicity = *synchronicity;
                     }
                     UmlSequencePropChange::LifecycleKindChange(lifecycle) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*self.uuid).collect(),
-                            UmlSequencePropChange::LifecycleKindChange(model.lifecycle.clone()),
+                            UmlSequencePropChange::LifecycleKindChange(model.lifecycle),
                         ));
-                        model.lifecycle = lifecycle.clone();
+                        model.lifecycle = *lifecycle;
                     }
                     UmlSequencePropChange::IsReturnChange(is_return) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*self.uuid).collect(),
-                            UmlSequencePropChange::IsReturnChange(model.is_return.clone()),
+                            UmlSequencePropChange::IsReturnChange(model.is_return),
                         ));
                         model.is_return = *is_return;
                     }
                     UmlSequencePropChange::DurationChange(duration) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*self.uuid).collect(),
-                            UmlSequencePropChange::DurationChange(model.duration.clone()),
+                            UmlSequencePropChange::DurationChange(model.duration),
                         ));
                         model.duration = *duration;
                     }
@@ -7072,7 +7037,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         c: &mut HashMap<ViewUuid, <UmlSequenceDomain as Domain>::CommonElementViewT>,
         m: &mut HashMap<ModelUuid, <UmlSequenceDomain as Domain>::CommonElementT>,
     ) {
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *self.model_uuid())
@@ -7182,8 +7147,8 @@ impl UmlSequenceRefView {
     const REF_MARGIN_BOTTOM: f32 = 10.0;
     const REF_PADDING_X: f32 = 20.0;
 
-    fn spanned_lifeline_views<'a, 'b>(
-        &'a self,
+    fn spanned_lifeline_views<'b>(
+        &self,
         lifeline_views: &'b [ERef<UmlSequenceLifelineView>],
     ) -> &'b [ERef<UmlSequenceLifelineView>] {
         let r = self.model.read();
@@ -7499,15 +7464,12 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
                 if uuids.contains(&self.uuid) {
                     let mut model = self.model.write();
                     affected_models.insert(*model.uuid);
-                    match property {
-                        UmlSequencePropChange::NameChange(name) => {
-                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                std::iter::once(*self.uuid).collect(),
-                                UmlSequencePropChange::NameChange(model.text.clone()),
-                            ));
-                            model.text = name.clone();
-                        }
-                        _ => {}
+                    if let UmlSequencePropChange::NameChange(name) = property {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::NameChange(model.text.clone()),
+                        ));
+                        model.text = name.clone();
                     }
                 }
             }
@@ -7540,7 +7502,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -7558,8 +7520,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
             uuid: view_uuid.into(),
             model,
 
-            bounds_rect: self.bounds_rect.clone(),
-            background_color: self.background_color.clone(),
+            bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
             temporaries: self.temporaries.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -7970,13 +7932,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                         coerced_delta,
                     ));
                 } else {
-                    commands.push(
-                        InsensitiveCommand::MovePositional(
-                            std::iter::once(*self.uuid).collect(),
-                            coerced_delta,
-                        )
-                        .into(),
-                    );
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(*self.uuid).collect(),
+                        coerced_delta,
+                    ));
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -8098,7 +8057,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)

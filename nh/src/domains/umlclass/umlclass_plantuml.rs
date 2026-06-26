@@ -69,7 +69,7 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             self.plantuml_structures
                 .push_str(&format!(" <<{}>>", instance.stereotype));
         }
-        self.plantuml_structures.push_str("\n");
+        self.plantuml_structures.push('\n');
         for e in instance.instance_slots.lines().filter(|e| !e.is_empty()) {
             self.plantuml_structures
                 .push_str(&format!("{} : {}\n", id, e,));
@@ -133,7 +133,7 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
                 self.plantuml_links.push_str(&source);
                 self.plantuml_links.push_str(" --|> ");
                 self.plantuml_links.push_str(&target);
-                self.plantuml_links.push_str("\n");
+                self.plantuml_links.push('\n');
             }
         }
     }
@@ -152,7 +152,7 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             self.plantuml_links
                 .push_str(&format!(": <<{}>>", link.stereotype));
         }
-        self.plantuml_links.push_str("\n");
+        self.plantuml_links.push('\n');
     }
     fn visit_association(&mut self, link: &UmlClassAssociation) {
         let source = Self::stringify_uuid(&link.source.uuid());
@@ -198,7 +198,7 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             self.plantuml_links
                 .push_str(&format!(": <<{}>>", link.stereotype));
         }
-        self.plantuml_links.push_str("\n");
+        self.plantuml_links.push('\n');
     }
     fn visit_comment(&mut self, comment: &UmlClassComment) {
         let s = {
@@ -253,7 +253,7 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
                 self.plantuml_links.push_str(&source);
                 self.plantuml_links.push_str(" --|> ");
                 self.plantuml_links.push_str(&target);
-                self.plantuml_links.push_str("\n");
+                self.plantuml_links.push('\n');
             }
         }
     }

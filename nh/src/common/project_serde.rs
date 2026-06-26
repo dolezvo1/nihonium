@@ -384,7 +384,7 @@ impl NHProjectSerialization {
             l(e, &mut deserializer)?;
         }
         for e in &self.controllers {
-            deserializer.load_sources((*e).uuid.into())?;
+            deserializer.load_sources(e.uuid.into())?;
         }
 
         // Instantiate all entities
@@ -634,7 +634,7 @@ impl<'a> NHDeserializer<'a> {
                         depends_on,
                         main,
                         other,
-                    } = toml::from_str(&content)?;
+                    } = toml::from_str(content)?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_model) = main else {
@@ -657,7 +657,7 @@ impl<'a> NHDeserializer<'a> {
                         depends_on,
                         main,
                         other,
-                    } = toml::from_str(&content)?;
+                    } = toml::from_str(content)?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_view) = main else {
@@ -680,7 +680,7 @@ impl<'a> NHDeserializer<'a> {
                         depends_on,
                         main,
                         other,
-                    } = toml::from_str(&content)?;
+                    } = toml::from_str(content)?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_controller) = main else {

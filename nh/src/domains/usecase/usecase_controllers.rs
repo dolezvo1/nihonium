@@ -195,7 +195,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         let mut w = boundary_view.write();
         let boundary_uuid = *w.uuid();
         let (mut u, mut a) = Default::default();
-        for e in [usecase_view.into()] {
+        {
+            let e = usecase_view.into();
             w.apply_command(
                 &InsensitiveCommand::AddDependency {
                     target: boundary_uuid,

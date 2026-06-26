@@ -398,7 +398,7 @@ where
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
         self.owned_views.draw_order_foreach_mut(|v| {
-            if v.draw_in(q, context, settings, canvas, &tool) == TargettingStatus::Drawn {
+            if v.draw_in(q, context, settings, canvas, tool) == TargettingStatus::Drawn {
                 drawn_child_targetting = TargettingStatus::Drawn;
             }
         });
@@ -434,7 +434,7 @@ where
                     );
 
                     self.owned_views.draw_order_foreach_mut(|v| {
-                        v.draw_in(q, context, settings, canvas, &tool);
+                        v.draw_in(q, context, settings, canvas, tool);
                     });
 
                     TargettingStatus::Drawn
@@ -539,14 +539,13 @@ where
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.adapter.model_section());
 
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
-                        if ehc
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
                             .modifier_settings
                             .alternative_tool_mode
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                    {
+                        *element_setup_modal = esm;
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -557,26 +556,19 @@ where
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands
+                                .push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.selected_direct_elements.contains(&k),
-                                    Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.selected_direct_elements.contains(&k),
+                                Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -844,32 +836,32 @@ where
                 element,
                 into_model,
             } => {
-                if *target == *self.uuid && *bucket == 0 {
-                    if let Ok(mut view) = element.clone().try_into()
-                        && (!*into_model
-                            || self.adapter.insert_element(*position, view.model()).is_ok())
-                    {
-                        let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            element: uuid,
-                            including_model: *into_model,
-                        });
+                if *target == *self.uuid
+                    && *bucket == 0
+                    && let Ok(mut view) = element.clone().try_into()
+                    && (!*into_model
+                        || self.adapter.insert_element(*position, view.model()).is_ok())
+                {
+                    let uuid = *view.uuid();
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        element: uuid,
+                        including_model: *into_model,
+                    });
 
-                        if *into_model {
-                            affected_models.insert(*self.adapter.model_uuid());
-                        }
-                        let mut model_transitives = HashMap::new();
-                        view.head_count(
-                            &mut HashMap::new(),
-                            &mut HashMap::new(),
-                            &mut model_transitives,
-                        );
-                        affected_models.extend(model_transitives.into_keys());
-
-                        self.owned_views.push(uuid, view);
+                    if *into_model {
+                        affected_models.insert(*self.adapter.model_uuid());
                     }
+                    let mut model_transitives = HashMap::new();
+                    view.head_count(
+                        &mut HashMap::new(),
+                        &mut HashMap::new(),
+                        &mut model_transitives,
+                    );
+                    affected_models.extend(model_transitives.into_keys());
+
+                    self.owned_views.push(uuid, view);
                 }
 
                 recurse!();
@@ -880,24 +872,24 @@ where
                 element,
                 including_model,
             } => {
-                if *target == *self.uuid && *bucket == 0 {
-                    if let Some(view) = self.owned_views.get(element)
-                        && let Some(pos) = self.adapter.delete_element(&view.model_uuid())
-                    {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            position: Some(pos),
-                            element: view.clone().into(),
-                            into_model: *including_model,
-                        });
+                if *target == *self.uuid
+                    && *bucket == 0
+                    && let Some(view) = self.owned_views.get(element)
+                    && let Some(pos) = self.adapter.delete_element(&view.model_uuid())
+                {
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        position: Some(pos),
+                        element: view.clone().into(),
+                        into_model: *including_model,
+                    });
 
-                        if *including_model {
-                            affected_models.insert(*self.adapter.model_uuid());
-                        }
-
-                        self.owned_views.retain(|k, _v| *k != *element);
+                    if *including_model {
+                        affected_models.insert(*self.adapter.model_uuid());
                     }
+
+                    self.owned_views.retain(|k, _v| *k != *element);
                 }
                 recurse!();
             }
@@ -976,7 +968,7 @@ where
         c: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
         m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *self.model_uuid())

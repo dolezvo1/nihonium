@@ -7,8 +7,9 @@ pub const PERFORMA_DETAIL: egui::Color32 = egui::Color32::RED;
 pub const INFORMA_DETAIL: egui::Color32 = egui::Color32::from_rgb(0, 175, 0);
 pub const FORMA_DETAIL: egui::Color32 = egui::Color32::BLUE;
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum DemoTransactionKind {
+    #[default]
     Performa,
     Informa,
     Forma,
@@ -23,11 +24,5 @@ impl DemoTransactionKind {
             Self::Informa => "Informa",
             Self::Forma => "Forma",
         }
-    }
-}
-
-impl Default for DemoTransactionKind {
-    fn default() -> Self {
-        Self::Performa
     }
 }

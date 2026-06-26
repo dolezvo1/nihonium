@@ -173,7 +173,7 @@ pub fn deep_copy_diagram(
 
                 let source_uuid = *model.source.read().uuid();
                 if let Some(UmlActivityElement::Comment(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone().into();
+                    model.source = s.clone();
                 }
                 let target_uuid = *model.target.uuid();
                 if let Some(t) = all_models.get(&target_uuid) {
@@ -759,7 +759,7 @@ impl ContainerModel for UmlActivityDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -767,7 +767,7 @@ impl ContainerModel for UmlActivityDiagram {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -878,7 +878,7 @@ impl ContainerModel for UmlActivity {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -887,7 +887,7 @@ impl ContainerModel for UmlActivity {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
 
     fn insert_element(
@@ -998,7 +998,7 @@ impl ContainerModel for UmlActivityInterruptibleRegion {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1007,7 +1007,7 @@ impl ContainerModel for UmlActivityInterruptibleRegion {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
 
     fn insert_element(
@@ -1085,16 +1085,15 @@ impl UmlActivityPartition {
         within: BucketNoT,
         target_pos: PositionNoT,
     ) {
-        if within == 0 {
-            if let Some((idx, _e)) = self
+        if within == 0
+            && let Some((idx, _e)) = self
                 .sections
                 .iter()
                 .enumerate()
                 .find(|e| *e.1.read().uuid() == *element)
-            {
-                let e = self.sections.remove(idx);
-                self.sections.insert(target_pos.try_into().unwrap(), e);
-            }
+        {
+            let e = self.sections.remove(idx);
+            self.sections.insert(target_pos.try_into().unwrap(), e);
         }
     }
 }
@@ -1123,7 +1122,7 @@ impl ContainerModel for UmlActivityPartition {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1132,7 +1131,7 @@ impl ContainerModel for UmlActivityPartition {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
 
     fn insert_element(
@@ -1234,7 +1233,7 @@ impl ContainerModel for UmlActivityPartitionSection {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1243,7 +1242,7 @@ impl ContainerModel for UmlActivityPartitionSection {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
 
     fn insert_element(

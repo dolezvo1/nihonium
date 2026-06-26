@@ -148,7 +148,7 @@ pub fn deep_copy_diagram(
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e, &mut all_models);
+        let new_model = walk(e, &mut all_models);
         all_models.insert(*e.uuid(), new_model.clone());
         new_contained_elements.push(new_model);
     }
@@ -335,7 +335,7 @@ impl ContainerModel for DemoCsdDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -343,7 +343,7 @@ impl ContainerModel for DemoCsdDiagram {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -358,7 +358,7 @@ impl ContainerModel for DemoCsdDiagram {
         let pos = position
             .map(|e| e.try_into().unwrap())
             .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos.into(), element);
+        self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -441,7 +441,7 @@ impl ContainerModel for DemoCsdPackage {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -449,7 +449,7 @@ impl ContainerModel for DemoCsdPackage {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -667,7 +667,7 @@ impl DemoCsdTransaction {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
 
-            kind: self.kind.clone(),
+            kind: self.kind,
             identifier: self.identifier.clone(),
             name: self.name.clone(),
             multiple: self.multiple,
@@ -691,8 +691,9 @@ impl Model for DemoCsdTransaction {
 
 // ---
 
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub enum DemoCsdLinkType {
+    #[default]
     InitiatorLink,
     AccessLink,
     WaitLink,
@@ -715,12 +716,6 @@ impl DemoCsdLinkType {
             Self::AccessLink => canvas::LineType::Dashed,
             Self::WaitLink => canvas::LineType::Dashed,
         }
-    }
-}
-
-impl Default for DemoCsdLinkType {
-    fn default() -> Self {
-        Self::InitiatorLink
     }
 }
 

@@ -231,7 +231,7 @@ pub fn deep_copy_diagram(
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e, &mut all_models);
+        let new_model = walk(e, &mut all_models);
         all_models.insert(*e.uuid(), new_model.clone());
         new_contained_elements.push(new_model);
     }
@@ -474,7 +474,7 @@ impl ContainerModel for DemoOfdDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -482,7 +482,7 @@ impl ContainerModel for DemoOfdDiagram {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -578,7 +578,7 @@ impl ContainerModel for DemoOfdPackage {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -586,7 +586,7 @@ impl ContainerModel for DemoOfdPackage {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,

@@ -236,9 +236,9 @@ pub enum DemoPsdElementTargettingSection {
     Link(ERef<DemoPsdLink>),
 }
 
-impl Into<DemoPsdElement> for DemoPsdElementTargettingSection {
-    fn into(self) -> DemoPsdElement {
-        match self {
+impl From<DemoPsdElementTargettingSection> for DemoPsdElement {
+    fn from(val: DemoPsdElementTargettingSection) -> Self {
+        match val {
             DemoPsdElementTargettingSection::Package(inner) => inner.into(),
             DemoPsdElementTargettingSection::Transaction(inner, ..) => inner.into(),
             DemoPsdElementTargettingSection::Fact(inner) => inner.into(),
@@ -525,29 +525,29 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                 if !r.name.is_empty() {
                     l.push_str(" (");
                     l.push_str(&r.name);
-                    l.push_str(&")");
+                    l.push_str(")");
                 }
 
                 Arc::new(l)
             }
             DemoPsdElement::DemoPsdFact(inner) => {
                 let r = inner.read();
-                let mut l = format!("Fact");
+                let mut l = "Fact".to_string();
                 if !r.identifier.is_empty() {
                     l.push_str(" (");
                     l.push_str(&r.identifier);
-                    l.push_str(&")");
+                    l.push_str(")");
                 }
 
                 Arc::new(l)
             }
             DemoPsdElement::DemoPsdAct(inner) => {
                 let r = inner.read();
-                let mut l = format!("Act");
+                let mut l = "Act".to_string();
                 if !r.identifier.is_empty() {
                     l.push_str(" (");
                     l.push_str(&r.identifier);
-                    l.push_str(&")");
+                    l.push_str(")");
                 }
 
                 Arc::new(l)
@@ -964,7 +964,7 @@ impl DiagramSettings for DemoPsdSettings {
                     }
 
                     if modified {
-                        *view = view_for_stage(&tool);
+                        *view = view_for_stage(tool);
                         w.set_from_buffer(buffer.clone());
                     }
                 }
@@ -985,7 +985,7 @@ impl DiagramSettings for DemoPsdSettings {
         let mut table = toml::Table::new();
         table.insert(
             "palette".to_owned(),
-            self.palette.read().unwrap().serialize()?.into(),
+            self.palette.read().unwrap().serialize()?,
         );
         Ok(table.into())
     }
@@ -2559,14 +2559,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
                         if let Ok(esm) =
                             tool.try_flush(q, &self.uuid, quadrant_no, Some(pos), commands)
-                        {
-                            if ehc
+                            && ehc
                                 .modifier_settings
                                 .alternative_tool_mode
                                 .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                            {
-                                *element_setup_modal = esm;
-                            }
+                        {
+                            *element_setup_modal = esm;
                         }
                     }
 
@@ -2833,8 +2831,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         }
                     } else if let DemoPsdElementOrVertex::Element(e) = element
                         && let Some(e) = e.clone().as_state_view()
-                    {
-                        if let Some(model_pos) =
+                        && let Some(model_pos) =
                             w.get_element_pos(&e.model_uuid()).map(|e| e.1).or_else(|| {
                                 if *into_model {
                                     w.insert_element(*bucket, *position, e.model()).ok()
@@ -2842,63 +2839,62 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     None
                                 }
                             })
-                        {
-                            let after = match *bucket {
-                                0
-                                | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
-                                | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET => false,
-                                DemoPsdTransaction::AFTER_EXECUTOR_BUCKET
-                                | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => true,
-                                _ => return,
-                            };
-                            let executor = match *bucket {
-                                0
-                                | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
-                                | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => false,
-                                DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET
-                                | DemoPsdTransaction::AFTER_EXECUTOR_BUCKET => true,
-                                _ => unreachable!(),
-                            };
+                    {
+                        let after = match *bucket {
+                            0
+                            | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
+                            | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET => false,
+                            DemoPsdTransaction::AFTER_EXECUTOR_BUCKET
+                            | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => true,
+                            _ => return,
+                        };
+                        let executor = match *bucket {
+                            0
+                            | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
+                            | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => false,
+                            DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET
+                            | DemoPsdTransaction::AFTER_EXECUTOR_BUCKET => true,
+                            _ => unreachable!(),
+                        };
 
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                                target: *target,
-                                bucket: *bucket,
-                                element: *e.uuid(),
-                                including_model: *into_model,
-                            });
-                            if *into_model {
-                                affected_models.insert(*e.model_uuid());
-                            }
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                            target: *target,
+                            bucket: *bucket,
+                            element: *e.uuid(),
+                            including_model: *into_model,
+                        });
+                        if *into_model {
+                            affected_models.insert(*e.model_uuid());
+                        }
 
-                            let view_pos = |arr: &Vec<DemoPsdStateViewInfo>| {
-                                let mut view_pos: PositionNoT = 0;
-                                for e in arr {
-                                    let Some((_b, pos)) = w.get_element_pos(&e.view.model_uuid())
-                                    else {
-                                        unreachable!()
-                                    };
-                                    if pos < model_pos {
-                                        view_pos += 1;
-                                    } else {
-                                        break;
-                                    }
+                        let view_pos = |arr: &Vec<DemoPsdStateViewInfo>| {
+                            let mut view_pos: PositionNoT = 0;
+                            for e in arr {
+                                let Some((_b, pos)) = w.get_element_pos(&e.view.model_uuid())
+                                else {
+                                    unreachable!()
+                                };
+                                if pos < model_pos {
+                                    view_pos += 1;
+                                } else {
+                                    break;
                                 }
-                                view_pos
-                            };
-
-                            if !after {
-                                let view_pos = view_pos(&self.before_views);
-                                self.before_views.insert(
-                                    view_pos.try_into().unwrap(),
-                                    DemoPsdStateViewInfo { view: e, executor },
-                                );
-                            } else {
-                                let view_pos = view_pos(&self.after_views);
-                                self.after_views.insert(
-                                    view_pos.try_into().unwrap(),
-                                    DemoPsdStateViewInfo { view: e, executor },
-                                );
                             }
+                            view_pos
+                        };
+
+                        if !after {
+                            let view_pos = view_pos(&self.before_views);
+                            self.before_views.insert(
+                                view_pos.try_into().unwrap(),
+                                DemoPsdStateViewInfo { view: e, executor },
+                            );
+                        } else {
+                            let view_pos = view_pos(&self.after_views);
+                            self.after_views.insert(
+                                view_pos.try_into().unwrap(),
+                                DemoPsdStateViewInfo { view: e, executor },
+                            );
                         }
                     }
                 }
@@ -2912,23 +2908,22 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if matches!(*bucket, 0 | DemoPsdTransaction::CENTER_BUCKET) {
-                        if let Some(e) = self.p_act_view.as_ref()
-                            && *element == *e.read().uuid
-                        {
-                            undo_accumulator.push(InsensitiveCommand::AddDependency {
-                                target: *target,
-                                bucket: *bucket,
-                                position: None,
-                                element: DemoPsdElementOrVertex::Element(e.clone().into()),
-                                into_model: *including_model,
-                            });
-                            if *including_model {
-                                w.p_act = UFOption::None;
-                            }
-
-                            self.p_act_view = UFOption::None;
+                    if matches!(*bucket, 0 | DemoPsdTransaction::CENTER_BUCKET)
+                        && let Some(e) = self.p_act_view.as_ref()
+                        && *element == *e.read().uuid
+                    {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *target,
+                            bucket: *bucket,
+                            position: None,
+                            element: DemoPsdElementOrVertex::Element(e.clone().into()),
+                            into_model: *including_model,
+                        });
+                        if *including_model {
+                            w.p_act = UFOption::None;
                         }
+
+                        self.p_act_view = UFOption::None;
                     }
                     let mut closure = |e: &DemoPsdStateViewInfo| {
                         if *e.view.uuid() == *element
@@ -3259,7 +3254,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         m: &mut HashMap<ModelUuid, DemoPsdElement>,
     ) {
         let old_model = self.model.read();
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -3677,9 +3672,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                 }
                 EventHandlingStatus::NotHandled
             }
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled;
-            }
+            e if !self.min_shape().contains(*e.mouse_position()) => EventHandlingStatus::NotHandled,
             InputEvent::MouseDown(_) => {
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
@@ -3813,7 +3806,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         m: &mut HashMap<ModelUuid, DemoPsdElement>,
     ) {
         let old_model = self.model.read();
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -4152,9 +4145,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 }
                 EventHandlingStatus::NotHandled
             }
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled;
-            }
+            e if !self.min_shape().contains(*e.mouse_position()) => EventHandlingStatus::NotHandled,
             InputEvent::MouseDown(_) => {
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
@@ -4288,7 +4279,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         m: &mut HashMap<ModelUuid, DemoPsdElement>,
     ) {
         let old_model = self.model.read();
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)

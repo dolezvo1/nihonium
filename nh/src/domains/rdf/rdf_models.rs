@@ -198,7 +198,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
 
                 let source_uuid = *model.source.read().uuid();
                 if let Some(RdfElement::RdfNode(n)) = all_models.get(&source_uuid) {
-                    model.source = n.clone().into();
+                    model.source = n.clone();
                 }
                 let target_uuid = *model.target.uuid();
                 if let Some(t) = all_models
@@ -214,7 +214,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e, &mut all_models);
+        let new_model = walk(e, &mut all_models);
         all_models.insert(*e.uuid(), new_model.clone());
         new_contained_elements.push(new_model);
     }
@@ -473,7 +473,7 @@ impl ContainerModel for RdfDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -481,7 +481,7 @@ impl ContainerModel for RdfDiagram {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
@@ -577,7 +577,7 @@ impl ContainerModel for RdfGraph {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -585,7 +585,7 @@ impl ContainerModel for RdfGraph {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
     fn insert_element(
         &mut self,
