@@ -794,6 +794,7 @@ impl DiagramSettings for DemoCsdSettings {
                             identifier,
                             name,
                             kind,
+                            with_edge_from: _,
                         }) => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Identifier", identifier)
@@ -913,6 +914,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             identifier: "TK01".to_owned(),
                             name: "Bank".to_owned(),
                             kind: DemoTransactionKind::Performa,
+                            with_edge_from: None,
                         }),
                     },
                     "Actor Role",
@@ -922,6 +924,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         identifier: "TK01".to_owned(),
                         name: "Bank".to_owned(),
                         kind: DemoTransactionKind::Performa,
+                        with_edge_from: None,
                     }),
                     "Transaction Bank",
                 ),
@@ -1094,6 +1097,7 @@ pub struct TransactionStageData {
     identifier: String,
     name: String,
     kind: DemoTransactionKind,
+    with_edge_from: Option<ModelUuid>,
 }
 
 #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1238,10 +1242,13 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         canvas: &mut dyn canvas::NHCanvas,
         pos: egui::Pos2,
     ) {
-        match &self.result {
-            PartialDemoCsdElement::Link {
-                source, link_type, ..
-            } => {
+        match (&self.current_stage, &self.result) {
+            (
+                _,
+                PartialDemoCsdElement::Link {
+                    source, link_type, ..
+                },
+            ) => {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1254,7 +1261,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     );
                 }
             }
-            PartialDemoCsdElement::Package { a, .. } => {
+            (_, PartialDemoCsdElement::Package { a, .. }) => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(*a, pos),
                     egui::CornerRadius::ZERO,
@@ -1262,6 +1269,29 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
+            }
+            (
+                DemoCsdToolStage::Bank(TransactionStageData {
+                    with_edge_from: Some(source_uuid),
+                    ..
+                })
+                | DemoCsdToolStage::Transactor {
+                    transaction:
+                        Some(TransactionStageData {
+                            with_edge_from: Some(source_uuid),
+                            ..
+                        }),
+                    ..
+                },
+                _,
+            ) => {
+                if let Some(source_view) = q.get_view_for(&source_uuid) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
             _ => {}
         }
@@ -1304,6 +1334,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     identifier,
                     name,
                     kind,
+                    with_edge_from: _,
                 }),
                 _,
             ) => {
@@ -1402,7 +1433,6 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         match &self.result {
             PartialDemoCsdElement::Some(element) => {
                 let element = element.clone();
-                self.try_spend();
                 let esm: Option<Box<dyn CustomModal>> = match &element {
                     DemoCsdElementView::Transactor(eref) => Some(Box::new(
                         DemoCsdTransactorSetupModal::from(&eref.read().model),
@@ -1414,6 +1444,50 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         unreachable!()
                     }
                 };
+
+                let additional_edge = match &self.initial_stage {
+                    DemoCsdToolStage::Bank(TransactionStageData {
+                        with_edge_from: Some(source_uuid),
+                        ..
+                    })
+                    | DemoCsdToolStage::Transactor {
+                        transaction:
+                            Some(TransactionStageData {
+                                with_edge_from: Some(source_uuid),
+                                ..
+                            }),
+                        ..
+                    } if let Some(DemoCsdElementView::Transactor(source)) =
+                        q.get_view_for(&source_uuid)
+                        && let target = (match &element {
+                            DemoCsdElementView::Transactor(inner) => {
+                                inner.read().transaction_view.clone().unwrap()
+                            }
+                            DemoCsdElementView::Transaction(inner) => inner.clone(),
+                            DemoCsdElementView::Package(_) | DemoCsdElementView::Link(_) => {
+                                unreachable!()
+                            }
+                        })
+                        && let nearest_common_container = q
+                            .find_container(&source.read().uuid(), |uuid, _| {
+                                uuid == preferred_container
+                                    || q.is_contained(preferred_container, uuid)
+                            })
+                            .map(|e| e.0)
+                            .unwrap_or_else(|| q.get_root()) =>
+                    {
+                        let edge_view = new_democsd_link(
+                            DemoCsdLinkType::InitiatorLink,
+                            "",
+                            (source.read().model.clone(), source.clone().into()),
+                            (target.read().model.clone(), target.clone().into()),
+                        )
+                        .1;
+                        Some((nearest_common_container, edge_view))
+                    }
+                    _ => None,
+                };
+                self.try_spend();
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1421,6 +1495,15 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     element: element.into(),
                     into_model: true,
                 });
+                if let Some((parent, e)) = additional_edge {
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: parent,
+                        bucket: 0,
+                        position: None,
+                        element: DemoCsdElementView::from(e).into(),
+                        into_model: true,
+                    });
+                }
                 Ok(esm)
             }
             PartialDemoCsdElement::Link {
@@ -1795,10 +1878,36 @@ pub struct DemoCsdTransactorView {
 }
 
 impl DemoCsdTransactorView {
+    const BUTTON_RADIUS: f32 = 8.0;
     fn initiation_button_rect(&self, ui_scale: f32) -> egui::Rect {
-        let b_radius = 8.0;
-        let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
-        egui::Rect::from_center_size(b_center, egui::Vec2::splat(2.0 * b_radius / ui_scale))
+        let b_center =
+            self.bounds_rect.right_top() + egui::Vec2::splat(Self::BUTTON_RADIUS / ui_scale);
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn bank_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::new(
+                Self::BUTTON_RADIUS / ui_scale,
+                3.0 * Self::BUTTON_RADIUS / ui_scale,
+            );
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn transactor_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::new(
+                3.0 * Self::BUTTON_RADIUS / ui_scale,
+                3.0 * Self::BUTTON_RADIUS / ui_scale,
+            );
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
     }
 }
 
@@ -2076,18 +2185,50 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            let b_rect = self.initiation_button_rect(ui_scale);
+            let b1_rect = self.initiation_button_rect(ui_scale);
             canvas.draw_rectangle(
-                b_rect,
+                b1_rect,
                 egui::CornerRadius::ZERO,
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
             canvas.draw_text(
-                b_rect.center(),
+                b1_rect.center(),
                 egui::Align2::CENTER_CENTER,
                 "↘",
+                14.0 / ui_scale,
+                egui::Color32::BLACK,
+            );
+
+            let b2_rect = self.bank_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b2_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(
+                b2_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "O",
+                14.0 / ui_scale,
+                egui::Color32::BLACK,
+            );
+
+            let b3_rect = self.transactor_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b3_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(
+                b3_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "▣",
                 14.0 / ui_scale,
                 egui::Color32::BLACK,
             );
@@ -2212,6 +2353,51 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             source: self.model.clone(),
                             dest: None,
                         },
+                        event_lock: true,
+                        is_spent: Some(false),
+                    });
+
+                    return EventHandlingStatus::HandledByElement;
+                }
+                if self.highlight.selected && self.bank_button_rect(ehc.ui_scale).contains(pos) {
+                    let stage = DemoCsdToolStage::Bank(TransactionStageData {
+                        identifier: "TK01".to_owned(),
+                        name: "Bank".to_owned(),
+                        kind: DemoTransactionKind::Performa,
+                        with_edge_from: Some(*self.model.read().uuid),
+                    });
+                    *tool = Some(NaiveDemoCsdTool {
+                        uuid: uuid::Uuid::nil(),
+                        initial_stage: stage.clone(),
+                        current_stage: stage,
+                        result: PartialDemoCsdElement::None,
+                        event_lock: true,
+                        is_spent: Some(false),
+                    });
+
+                    return EventHandlingStatus::HandledByElement;
+                }
+                if self.highlight.selected
+                    && self.transactor_button_rect(ehc.ui_scale).contains(pos)
+                {
+                    let stage = DemoCsdToolStage::Transactor {
+                        identifier: "AR01".to_owned(),
+                        name: "Transaction".to_owned(),
+                        internal: true,
+                        composite: false,
+                        self_activating: false,
+                        transaction: Some(TransactionStageData {
+                            identifier: "TK01".to_owned(),
+                            name: "Bank".to_owned(),
+                            kind: DemoTransactionKind::Performa,
+                            with_edge_from: Some(*self.model.read().uuid),
+                        }),
+                    };
+                    *tool = Some(NaiveDemoCsdTool {
+                        uuid: uuid::Uuid::nil(),
+                        initial_stage: stage.clone(),
+                        current_stage: stage,
+                        result: PartialDemoCsdElement::None,
                         event_lock: true,
                         is_spent: Some(false),
                     });
