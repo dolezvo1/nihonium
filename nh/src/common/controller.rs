@@ -8,7 +8,7 @@ use crate::common::search::FullTextSearchable;
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::ControllerUuid;
 use crate::common::views::ordered_views::OrderedViewRefs;
-use crate::{CustomModal, CustomTab, NHTab};
+use crate::{CustomModal, CustomTab, NHTab, SetShortcut};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
 use fluent_bundle::FluentMessage;
@@ -1603,7 +1603,20 @@ pub fn show_shortcut(
     .inner
 }
 
+pub enum ShowSettingsResult {
+    None,
+    SetShortcut(uuid::Uuid),
+    CancelShortcutSetting,
+}
+
 pub trait DiagramSettings: Any {
+    fn show(
+        &mut self,
+        gdc: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        shortcut_being_set: &Option<SetShortcut>,
+    ) -> ShowSettingsResult;
+    fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut);
     fn serialize(&self) -> Result<toml::Value, ()>;
 }
 pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {

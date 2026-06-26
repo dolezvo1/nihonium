@@ -30,7 +30,8 @@ mod domains;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{
     ColorBundle, DeleteKind, DiagramCommand, DiagramController, DiagramSettings, LabelProvider,
-    ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT,
+    ModifierKeys, ModifierSettings, ShowSettingsResult, TOOL_PALETTE_MAX_HEIGHT,
+    TOOL_PALETTE_MIN_HEIGHT,
 };
 use crate::common::eref::ERef;
 use crate::common::project_serde::{
@@ -252,7 +253,7 @@ enum FileIOOperation {
 }
 
 #[derive(Clone, PartialEq)]
-enum SetShortcut {
+pub enum SetShortcut {
     Global(SimpleProjectCommand),
     Diagram(&'static str, uuid::Uuid),
 }
@@ -271,21 +272,8 @@ impl SetShortcut {
     }
 }
 
-enum ShowSettingsResult {
-    None,
-    SetShortcut(uuid::Uuid),
-    CancelShortcutSetting,
-}
-
 type DefaultSettingsF = fn() -> Box<dyn DiagramSettings>;
 type DeserializeSettingsF = fn(toml::Value) -> Result<Box<dyn DiagramSettings>, ()>;
-type ShowSettingsF = fn(
-    &mut GlobalDrawingContext,
-    &mut egui::Ui,
-    &mut Box<dyn DiagramSettings>,
-    &Option<SetShortcut>,
-) -> ShowSettingsResult;
-type TrySetShortcutF = fn(&mut Box<dyn DiagramSettings>, uuid::Uuid, egui::KeyboardShortcut);
 type DiagramConstructorF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
 type DeserializeControllerF = fn(
     ControllerUuid,
@@ -335,14 +323,7 @@ struct NHContext {
     zoom_with_keyboard: bool,
     diagram_type_hierarchy: DiagramTypeHierarchyNode,
     diagram_settings: HashMap<&'static str, Box<dyn DiagramSettings>>,
-    diagram_settings_functions: HashMap<
-        &'static str,
-        (
-            &'static ShowSettingsF,
-            &'static DefaultSettingsF,
-            &'static TrySetShortcutF,
-        ),
-    >,
+    diagram_settings_functions: HashMap<&'static str, &'static DefaultSettingsF>,
     shades_profiles: Vec<ShadesProfile>,
     selected_shades_profile: usize,
     selected_language: usize,
@@ -1958,12 +1939,13 @@ impl NHContext {
 
         ui.collapsing("Diagram specific settings", |ui| {
             for (ctype, ctypename) in self.diagram_type_hierarchy.iter_diagrams() {
-                if let (Some(s), Some((ctype, (f, d, _)))) = (
+                if let (Some(settings), Some((ctype, d))) = (
                     self.diagram_settings.get_mut(ctype),
                     self.diagram_settings_functions.get_key_value(ctype),
                 ) {
                     ui.collapsing(ctypename, |ui| {
-                        match f(&mut self.drawing_context, ui, s, &self.shortcut_being_set) {
+                        match settings.show(&mut self.drawing_context, ui, &self.shortcut_being_set)
+                        {
                             ShowSettingsResult::None => {}
                             ShowSettingsResult::SetShortcut(uuid) => {
                                 self.shortcut_being_set = Some(SetShortcut::Diagram(ctype, uuid));
@@ -1974,7 +1956,7 @@ impl NHContext {
                         }
 
                         if ui.button("Reset").clicked() {
-                            *s = d();
+                            *settings = d();
                         }
                     });
                 }
@@ -2281,9 +2263,7 @@ struct DiagramInfo {
     type_indentifier: &'static str,
     pretty_name: &'static str,
     default_settings: &'static DefaultSettingsF,
-    try_set_shortcut: &'static TrySetShortcutF,
     settings_deserializer: &'static DeserializeSettingsF,
-    show_settings_function: &'static ShowSettingsF,
     diagram_creation_data: DiagramCreationData,
     deserializer: &'static DeserializeControllerF,
 }
@@ -2583,16 +2563,7 @@ impl NHApp {
 
         let diagram_settings_functions = diagram_infos
             .iter()
-            .map(|e| {
-                (
-                    e.type_indentifier,
-                    (
-                        e.show_settings_function,
-                        e.default_settings,
-                        e.try_set_shortcut,
-                    ),
-                )
-            })
+            .map(|e| (e.type_indentifier, e.default_settings))
             .collect();
         let diagram_deserializers = diagram_infos
             .iter()
@@ -3046,10 +3017,9 @@ impl eframe::App for NHApp {
                                         self.context.sort_shortcuts();
                                     }
                                     SetShortcut::Diagram(t, id) => {
-                                        let s = self.context.diagram_settings.get_mut(t).unwrap();
-                                        let f =
-                                            self.context.diagram_settings_functions.get(t).unwrap();
-                                        f.2(s, *id, nsc);
+                                        let settings =
+                                            self.context.diagram_settings.get_mut(t).unwrap();
+                                        settings.try_set_shortcut(*id, nsc);
                                     }
                                 }
                                 self.context.shortcut_being_set = None;

@@ -13,7 +13,8 @@ use crate::common::controller::{
     ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
     GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model,
     MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus,
-    Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View,
+    Queryable, SelectionStatus, ShowSettingsResult, SnapManager, TargettingStatus, Tool,
+    ToolPalette, TryMerge, View,
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
@@ -31,11 +32,9 @@ use crate::domains::demoofd::demoofd_models::{
 };
 use crate::{
     CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
-    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut, ShowSettingsF,
-    ShowSettingsResult, TrySetShortcutF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
-use std::any::Any;
 use std::collections::HashSet;
 use std::sync::RwLock;
 use std::{
@@ -769,6 +768,159 @@ pub struct DemoOfdSettings {
     palette_edit_buffer: RwLock<PaletteEditBuffer<DemoOfdToolStage, DemoOfdElementView>>,
 }
 impl DiagramSettings for DemoOfdSettings {
+    fn show(
+        &mut self,
+        gdc: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        shortcut_being_set: &Option<SetShortcut>,
+    ) -> ShowSettingsResult {
+        let mut w = self.palette.write().unwrap();
+        let mut buffer = self.palette_edit_buffer.write().unwrap();
+        let mut ret = ShowSettingsResult::None;
+
+        ui.columns(2, |columns| {
+            w.show_treeview(gdc, &mut columns[0]);
+
+            let selected = w.get_selected();
+            if selected.uuid() != buffer.uuid() {
+                *buffer = w.get_buffer(selected.uuid().cloned());
+            }
+            match &mut *buffer {
+                PaletteEditBuffer::None => {}
+                PaletteEditBuffer::Group(_uuid, name) => {
+                    if columns[1]
+                        .labeled_text_edit_singleline("Label", name)
+                        .changed()
+                    {
+                        w.set_from_buffer(buffer.clone());
+                    }
+                }
+                PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
+                    let mut modified = false;
+                    modified |= columns[1]
+                        .labeled_text_edit_singleline("Label", name)
+                        .changed();
+
+                    match crate::common::controller::show_shortcut(
+                        &mut columns[1],
+                        ksc,
+                        shortcut_being_set
+                            .as_ref()
+                            .is_some_and(|e| e.is_diagram(uuid)),
+                    ) {
+                        crate::common::controller::ShortCutStatus::NoChange => {}
+                        crate::common::controller::ShortCutStatus::Cleared => modified = true,
+                        crate::common::controller::ShortCutStatus::Set => {
+                            ret = ShowSettingsResult::SetShortcut(*uuid);
+                        }
+                        crate::common::controller::ShortCutStatus::CancelSet => {
+                            ret = ShowSettingsResult::CancelShortcutSetting;
+                        }
+                    }
+
+                    match tool {
+                        DemoOfdToolStage::Entity(EntityStageData {
+                            name,
+                            properties,
+                            internal,
+                        }) => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Properties", properties)
+                                .changed();
+                            modified |= columns[1].checkbox(internal, "internal").changed();
+                        }
+                        DemoOfdToolStage::EventStart {
+                            identifier,
+                            name,
+                            transaction_kind,
+                            specialization,
+                        } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Identifier", identifier)
+                                .changed();
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+
+                            columns[1].label("Kind");
+                            egui::ComboBox::from_id_salt("transaction kind")
+                                .selected_text(transaction_kind.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in DemoTransactionKind::VARIANTS {
+                                        modified |= ui
+                                            .selectable_value(transaction_kind, e, e.as_str())
+                                            .clicked();
+                                    }
+                                });
+
+                            if let Some(s) = specialization {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", &mut s.name)
+                                    .changed();
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Properties", &mut s.properties)
+                                    .changed();
+                                modified |=
+                                    columns[1].checkbox(&mut s.internal, "internal").changed();
+                            }
+                        }
+                        DemoOfdToolStage::LinkStart {
+                            link_type:
+                                LinkType::PropertyType {
+                                    name,
+                                    domain_multiplicity,
+                                    range_multiplicity,
+                                },
+                        } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline(
+                                    "Domain multiplicity",
+                                    domain_multiplicity,
+                                )
+                                .changed();
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline(
+                                    "Range multiplicity",
+                                    range_multiplicity,
+                                )
+                                .changed();
+                        }
+                        DemoOfdToolStage::LinkStart { .. } => {}
+                        DemoOfdToolStage::PackageStart { name } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+                        }
+                        DemoOfdToolStage::EventEnd
+                        | DemoOfdToolStage::LinkEnd
+                        | DemoOfdToolStage::LinkAddEnding { .. }
+                        | DemoOfdToolStage::PackageEnd => unreachable!(),
+                    }
+
+                    if modified {
+                        *view = view_for_stage(&tool);
+                        w.set_from_buffer(buffer.clone());
+                    }
+                }
+            }
+        });
+
+        ret
+    }
+
+    fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut) {
+        let mut wp = self.palette.write().unwrap();
+        wp.set_shortcut(tool, Some(shortcut));
+        let mut wb = self.palette_edit_buffer.write().unwrap();
+        *wb = wp.get_buffer(wb.uuid().cloned());
+    }
+
     fn serialize(&self) -> Result<toml::Value, ()> {
         let mut table = toml::Table::new();
         table.insert(
@@ -1019,21 +1171,6 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
     }
 }
 
-pub fn try_set_shortcut(
-    settings: &mut Box<dyn DiagramSettings>,
-    tool: uuid::Uuid,
-    shortcut: egui::KeyboardShortcut,
-) {
-    let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DemoOfdSettings>() else {
-        return;
-    };
-
-    let mut wp = settings.palette.write().unwrap();
-    wp.set_shortcut(tool, Some(shortcut));
-    let mut wb = settings.palette_edit_buffer.write().unwrap();
-    *wb = wp.get_buffer(wb.uuid().cloned());
-}
-
 pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
     let toml::Value::Table(value) = value else {
         return Err(());
@@ -1045,159 +1182,11 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
     }))
 }
 
-pub fn settings_function(
-    gdc: &mut GlobalDrawingContext,
-    ui: &mut egui::Ui,
-    s: &mut Box<dyn DiagramSettings>,
-    shortcut_being_set: &Option<SetShortcut>,
-) -> ShowSettingsResult {
-    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<DemoOfdSettings>() else {
-        return ShowSettingsResult::None;
-    };
-
-    let mut w = s.palette.write().unwrap();
-    let mut buffer = s.palette_edit_buffer.write().unwrap();
-    let mut ret = ShowSettingsResult::None;
-
-    ui.columns(2, |columns| {
-        w.show_treeview(gdc, &mut columns[0]);
-
-        let selected = w.get_selected();
-        if selected.uuid() != buffer.uuid() {
-            *buffer = w.get_buffer(selected.uuid().cloned());
-        }
-        match &mut *buffer {
-            PaletteEditBuffer::None => {}
-            PaletteEditBuffer::Group(_uuid, name) => {
-                if columns[1]
-                    .labeled_text_edit_singleline("Label", name)
-                    .changed()
-                {
-                    w.set_from_buffer(buffer.clone());
-                }
-            }
-            PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
-                let mut modified = false;
-                modified |= columns[1]
-                    .labeled_text_edit_singleline("Label", name)
-                    .changed();
-
-                match crate::common::controller::show_shortcut(
-                    &mut columns[1],
-                    ksc,
-                    shortcut_being_set
-                        .as_ref()
-                        .is_some_and(|e| e.is_diagram(uuid)),
-                ) {
-                    crate::common::controller::ShortCutStatus::NoChange => {}
-                    crate::common::controller::ShortCutStatus::Cleared => modified = true,
-                    crate::common::controller::ShortCutStatus::Set => {
-                        ret = ShowSettingsResult::SetShortcut(*uuid);
-                    }
-                    crate::common::controller::ShortCutStatus::CancelSet => {
-                        ret = ShowSettingsResult::CancelShortcutSetting;
-                    }
-                }
-
-                match tool {
-                    DemoOfdToolStage::Entity(EntityStageData {
-                        name,
-                        properties,
-                        internal,
-                    }) => {
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline("Name", name)
-                            .changed();
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline("Properties", properties)
-                            .changed();
-                        modified |= columns[1].checkbox(internal, "internal").changed();
-                    }
-                    DemoOfdToolStage::EventStart {
-                        identifier,
-                        name,
-                        transaction_kind,
-                        specialization,
-                    } => {
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline("Identifier", identifier)
-                            .changed();
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline("Name", name)
-                            .changed();
-
-                        columns[1].label("Kind");
-                        egui::ComboBox::from_id_salt("transaction kind")
-                            .selected_text(transaction_kind.as_str())
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in DemoTransactionKind::VARIANTS {
-                                    modified |= ui
-                                        .selectable_value(transaction_kind, e, e.as_str())
-                                        .clicked();
-                                }
-                            });
-
-                        if let Some(s) = specialization {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", &mut s.name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Properties", &mut s.properties)
-                                .changed();
-                            modified |= columns[1].checkbox(&mut s.internal, "internal").changed();
-                        }
-                    }
-                    DemoOfdToolStage::LinkStart {
-                        link_type:
-                            LinkType::PropertyType {
-                                name,
-                                domain_multiplicity,
-                                range_multiplicity,
-                            },
-                    } => {
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline("Name", name)
-                            .changed();
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline(
-                                "Domain multiplicity",
-                                domain_multiplicity,
-                            )
-                            .changed();
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline("Range multiplicity", range_multiplicity)
-                            .changed();
-                    }
-                    DemoOfdToolStage::LinkStart { .. } => {}
-                    DemoOfdToolStage::PackageStart { name } => {
-                        modified |= columns[1]
-                            .labeled_text_edit_singleline("Name", name)
-                            .changed();
-                    }
-                    DemoOfdToolStage::EventEnd
-                    | DemoOfdToolStage::LinkEnd
-                    | DemoOfdToolStage::LinkAddEnding { .. }
-                    | DemoOfdToolStage::PackageEnd => unreachable!(),
-                }
-
-                if modified {
-                    *view = view_for_stage(&tool);
-                    w.set_from_buffer(buffer.clone());
-                }
-            }
-        }
-    });
-
-    ret
-}
-
 inventory::submit! {DiagramInfo {
     type_indentifier: "demoofd",
     pretty_name: "Object Fact Diagram",
     default_settings: &(default_settings as DefaultSettingsF),
-    try_set_shortcut: &(try_set_shortcut as TrySetShortcutF),
     settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
-    show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Design & Engineering Methodology for Organizations",
         description: "Object Fact Diagram (entity types, event types, etc.)",

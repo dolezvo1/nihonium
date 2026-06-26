@@ -8,7 +8,7 @@ use super::super::umlclass::{
 };
 use crate::{
     DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF,
-    DiagramCreationData, DiagramInfo, ShowSettingsF, TrySetShortcutF,
+    DiagramCreationData, DiagramInfo,
     common::{
         controller::{
             BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2,
@@ -23,7 +23,7 @@ use crate::{
         umlclass::{
             umlclass_controllers::{
                 PartialUmlClassElement, UmlClassElementOrVertex, UmlClassRenderStyle,
-                new_uml_usecase, settings_function_helper, try_set_shortcut_helper,
+                new_uml_usecase,
             },
             umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind},
         },
@@ -500,9 +500,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "umlclass-usecase",
     pretty_name: "Use Case diagram",
     default_settings: &(default_settings as DefaultSettingsF),
-    try_set_shortcut: &(try_set_shortcut_helper::<UseCaseProfile> as TrySetShortcutF),
     settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
-    show_settings_function: &(settings_function_helper::<UseCaseProfile> as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Unified Modeling Language",
         description: "Use Case diagram (users, use cases, etc.)",

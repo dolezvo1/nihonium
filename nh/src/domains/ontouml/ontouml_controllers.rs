@@ -8,7 +8,7 @@ use super::super::umlclass::{
 };
 use crate::{
     DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF,
-    DiagramCreationData, DiagramInfo, ShowSettingsF, TrySetShortcutF,
+    DiagramCreationData, DiagramInfo,
     common::{
         controller::{
             BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2,
@@ -23,10 +23,7 @@ use crate::{
     domains::{
         ontouml::ontouml_models,
         umlclass::{
-            umlclass_controllers::{
-                PartialUmlClassElement, UmlClassRenderStyle, UmlClassView,
-                settings_function_helper, try_set_shortcut_helper,
-            },
+            umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, UmlClassView},
             umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind},
         },
     },
@@ -626,9 +623,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "umlclass-ontouml",
     pretty_name: "OntoUML UFO-A diagram",
     default_settings: &(default_settings as DefaultSettingsF),
-    try_set_shortcut: &(try_set_shortcut_helper::<OntoUmlProfile> as TrySetShortcutF),
     settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
-    show_settings_function: &(settings_function_helper::<OntoUmlProfile> as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "",
         description: "OntoUML UFO-A diagram (UML Class diagram profile for modelling of ontological concepts)",

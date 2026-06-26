@@ -5,8 +5,8 @@ use crate::common::controller::{
     ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
     GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider,
     MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand,
-    PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette,
-    TryMerge, View,
+    PropertiesStatus, Queryable, SelectionStatus, ShowSettingsResult, SnapManager,
+    TargettingStatus, Tool, ToolPalette, TryMerge, View,
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
@@ -25,11 +25,9 @@ use crate::domains::network::network_models::{
 };
 use crate::{
     CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
-    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut, ShowSettingsF,
-    ShowSettingsResult, TrySetShortcutF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
-use std::any::Any;
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
@@ -677,6 +675,233 @@ pub struct NetworkSettings {
     palette_edit_buffer: RwLock<PaletteEditBuffer<NetworkToolStage, NetworkElementView>>,
 }
 impl DiagramSettings for NetworkSettings {
+    fn show(
+        &mut self,
+        gdc: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        shortcut_being_set: &Option<SetShortcut>,
+    ) -> ShowSettingsResult {
+        let mut w = self.palette.write().unwrap();
+        let mut buffer = self.palette_edit_buffer.write().unwrap();
+        let mut ret = ShowSettingsResult::None;
+
+        ui.columns(2, |columns| {
+            w.show_treeview(gdc, &mut columns[0]);
+
+            let selected = w.get_selected();
+            if selected.uuid() != buffer.uuid() {
+                *buffer = w.get_buffer(selected.uuid().cloned());
+            }
+            match &mut *buffer {
+                PaletteEditBuffer::None => {}
+                PaletteEditBuffer::Group(_uuid, name) => {
+                    if columns[1]
+                        .labeled_text_edit_singleline("Label", name)
+                        .changed()
+                    {
+                        w.set_from_buffer(buffer.clone());
+                    }
+                }
+                PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
+                    let mut modified = false;
+                    modified |= columns[1]
+                        .labeled_text_edit_singleline("Label", name)
+                        .changed();
+
+                    match crate::common::controller::show_shortcut(
+                        &mut columns[1],
+                        ksc,
+                        shortcut_being_set
+                            .as_ref()
+                            .is_some_and(|e| e.is_diagram(uuid)),
+                    ) {
+                        crate::common::controller::ShortCutStatus::NoChange => {}
+                        crate::common::controller::ShortCutStatus::Cleared => modified = true,
+                        crate::common::controller::ShortCutStatus::Set => {
+                            ret = ShowSettingsResult::SetShortcut(*uuid);
+                        }
+                        crate::common::controller::ShortCutStatus::CancelSet => {
+                            ret = ShowSettingsResult::CancelShortcutSetting;
+                        }
+                    }
+
+                    match tool {
+                        NetworkToolStage::Node { name, kind } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+
+                            columns[1].label("Kind");
+                            egui::ComboBox::from_id_salt("kind")
+                                .selected_text(kind.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in NetworkNodeKind::VARIANTS {
+                                        modified |=
+                                            ui.selectable_value(kind, e, e.as_str()).clicked();
+                                    }
+                                });
+                        }
+                        NetworkToolStage::User {
+                            name,
+                            kind,
+                            background_color,
+                        } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+
+                            columns[1].label("Kind");
+                            egui::ComboBox::from_id_salt("kind")
+                                .selected_text(kind.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in NetworkUserKind::VARIANTS {
+                                        modified |=
+                                            ui.selectable_value(kind, e, e.as_str()).clicked();
+                                    }
+                                });
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
+                        }
+                        NetworkToolStage::File {
+                            name,
+                            kind,
+                            background_color,
+                        } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+
+                            columns[1].label("Kind");
+                            egui::ComboBox::from_id_salt("kind")
+                                .selected_text(kind.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in NetworkFileKind::VARIANTS {
+                                        modified |=
+                                            ui.selectable_value(kind, e, e.as_str()).clicked();
+                                    }
+                                });
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
+                        }
+                        NetworkToolStage::AssociationStart {
+                            line_type,
+                            source_arrowhead,
+                            target_arrowhead,
+                        } => {
+                            columns[1].label("Line type");
+                            egui::ComboBox::from_id_salt("line type")
+                                .selected_text(line_type.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in NetworkAssociationLineType::VARIANTS {
+                                        modified |=
+                                            ui.selectable_value(line_type, e, e.as_str()).clicked();
+                                    }
+                                });
+
+                            columns[1].label("Source arrowhead");
+                            egui::ComboBox::from_id_salt("source arrowhead")
+                                .selected_text(source_arrowhead.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in NetworkAssociationArrowheadType::VARIANTS {
+                                        modified |= ui
+                                            .selectable_value(source_arrowhead, e, e.as_str())
+                                            .clicked();
+                                    }
+                                });
+
+                            columns[1].label("Target arrowhead");
+                            egui::ComboBox::from_id_salt("target arrowhead")
+                                .selected_text(target_arrowhead.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in NetworkAssociationArrowheadType::VARIANTS {
+                                        modified |= ui
+                                            .selectable_value(target_arrowhead, e, e.as_str())
+                                            .clicked();
+                                    }
+                                });
+                        }
+                        NetworkToolStage::ContainerStart { name } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+                        }
+                        NetworkToolStage::Comment { text, align } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Text", text)
+                                .changed();
+
+                            egui::ComboBox::new("horizontal align", "Horizontal align")
+                                .selected_text(format!("{:?}", align.x()))
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in
+                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
+                                    {
+                                        modified |= ui
+                                            .selectable_value(
+                                                &mut align.0[0],
+                                                e,
+                                                format!("{:?}", e),
+                                            )
+                                            .changed();
+                                    }
+                                });
+                            egui::ComboBox::new("vertical align", "Vertical align")
+                                .selected_text(format!("{:?}", align.y()))
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in
+                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
+                                    {
+                                        modified |= ui
+                                            .selectable_value(
+                                                &mut align.0[1],
+                                                e,
+                                                format!("{:?}", e),
+                                            )
+                                            .changed();
+                                    }
+                                });
+                        }
+                        NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => {
+                            unreachable!()
+                        }
+                    }
+
+                    if modified {
+                        *view = view_for_stage(tool);
+                        w.set_from_buffer(buffer.clone());
+                    }
+                }
+            }
+        });
+
+        ret
+    }
+
+    fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut) {
+        let mut wp = self.palette.write().unwrap();
+        wp.set_shortcut(tool, Some(shortcut));
+        let mut wb = self.palette_edit_buffer.write().unwrap();
+        *wb = wp.get_buffer(wb.uuid().cloned());
+    }
+
     fn serialize(&self) -> Result<toml::Value, ()> {
         let mut table = toml::Table::new();
         table.insert(
@@ -967,21 +1192,6 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
     }
 }
 
-pub fn try_set_shortcut(
-    settings: &mut Box<dyn DiagramSettings>,
-    tool: uuid::Uuid,
-    shortcut: egui::KeyboardShortcut,
-) {
-    let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<NetworkSettings>() else {
-        return;
-    };
-
-    let mut wp = settings.palette.write().unwrap();
-    wp.set_shortcut(tool, Some(shortcut));
-    let mut wb = settings.palette_edit_buffer.write().unwrap();
-    *wb = wp.get_buffer(wb.uuid().cloned());
-}
-
 pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
     let toml::Value::Table(value) = value else {
         return Err(());
@@ -993,179 +1203,11 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
     }))
 }
 
-pub fn settings_function(
-    gdc: &mut GlobalDrawingContext,
-    ui: &mut egui::Ui,
-    s: &mut Box<dyn DiagramSettings>,
-    shortcut_being_set: &Option<SetShortcut>,
-) -> ShowSettingsResult {
-    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<NetworkSettings>() else {
-        return ShowSettingsResult::None;
-    };
-
-    let mut w = s.palette.write().unwrap();
-    let mut buffer = s.palette_edit_buffer.write().unwrap();
-    let mut ret = ShowSettingsResult::None;
-
-    ui.columns(2, |columns| {
-        w.show_treeview(gdc, &mut columns[0]);
-
-        let selected = w.get_selected();
-        if selected.uuid() != buffer.uuid() {
-            *buffer = w.get_buffer(selected.uuid().cloned());
-        }
-        match &mut *buffer {
-            PaletteEditBuffer::None => {},
-            PaletteEditBuffer::Group(_uuid, name) => {
-                if columns[1].labeled_text_edit_singleline("Label", name).changed() {
-                    w.set_from_buffer(buffer.clone());
-                }
-            },
-            PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
-                let mut modified = false;
-                modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
-
-                match crate::common::controller::show_shortcut(
-                    &mut columns[1],
-                    ksc,
-                    shortcut_being_set.as_ref().is_some_and(|e| e.is_diagram(uuid)),
-                ) {
-                    crate::common::controller::ShortCutStatus::NoChange => {},
-                    crate::common::controller::ShortCutStatus::Cleared => modified = true,
-                    crate::common::controller::ShortCutStatus::Set => {
-                        ret = ShowSettingsResult::SetShortcut(*uuid);
-                    },
-                    crate::common::controller::ShortCutStatus::CancelSet => {
-                        ret = ShowSettingsResult::CancelShortcutSetting;
-                    },
-                }
-
-                match tool {
-                    NetworkToolStage::Node { name, kind } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        columns[1].label("Kind");
-                        egui::ComboBox::from_id_salt("kind")
-                            .selected_text(kind.as_str())
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in NetworkNodeKind::VARIANTS {
-                                    modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
-                                }
-                            });
-                    },
-                    NetworkToolStage::User { name, kind, background_color } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        columns[1].label("Kind");
-                        egui::ComboBox::from_id_salt("kind")
-                            .selected_text(kind.as_str())
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in NetworkUserKind::VARIANTS {
-                                    modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
-                                }
-                            });
-
-                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
-                            gdc,
-                            &mut columns[1],
-                            background_color,
-                        ) {
-                            *background_color = new_color;
-                            modified = true;
-                        }
-                    },
-                    NetworkToolStage::File { name, kind, background_color } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        columns[1].label("Kind");
-                        egui::ComboBox::from_id_salt("kind")
-                            .selected_text(kind.as_str())
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in NetworkFileKind::VARIANTS {
-                                    modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
-                                }
-                            });
-
-                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
-                            gdc,
-                            &mut columns[1],
-                            background_color,
-                        ) {
-                            *background_color = new_color;
-                            modified = true;
-                        }
-                    },
-                    NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
-                        columns[1].label("Line type");
-                        egui::ComboBox::from_id_salt("line type")
-                            .selected_text(line_type.as_str())
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in NetworkAssociationLineType::VARIANTS {
-                                    modified |= ui.selectable_value(line_type, e, e.as_str()).clicked();
-                                }
-                            });
-
-                        columns[1].label("Source arrowhead");
-                        egui::ComboBox::from_id_salt("source arrowhead")
-                            .selected_text(source_arrowhead.as_str())
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in NetworkAssociationArrowheadType::VARIANTS {
-                                    modified |= ui.selectable_value(source_arrowhead, e, e.as_str()).clicked();
-                                }
-                            });
-
-                        columns[1].label("Target arrowhead");
-                        egui::ComboBox::from_id_salt("target arrowhead")
-                            .selected_text(target_arrowhead.as_str())
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in NetworkAssociationArrowheadType::VARIANTS {
-                                    modified |= ui.selectable_value(target_arrowhead, e, e.as_str()).clicked();
-                                }
-                            });
-                    },
-                    NetworkToolStage::ContainerStart { name } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-                    },
-                    NetworkToolStage::Comment { text, align } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
-
-                        egui::ComboBox::new("horizontal align", "Horizontal align")
-                            .selected_text(format!("{:?}", align.x()))
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                                    modified |= ui.selectable_value(&mut align.0[0], e, format!("{:?}", e)).changed();
-                                }
-                            });
-                        egui::ComboBox::new("vertical align", "Vertical align")
-                            .selected_text(format!("{:?}", align.y()))
-                            .show_ui(&mut columns[1], |ui| {
-                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                                    modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
-                                }
-                            });
-                    },
-                    NetworkToolStage::AssociationEnd
-                    | NetworkToolStage::ContainerEnd => unreachable!(),
-                }
-
-                if modified {
-                    *view = view_for_stage(tool);
-                    w.set_from_buffer(buffer.clone());
-                }
-            },
-        }
-    });
-
-    ret
-}
-
 inventory::submit! {DiagramInfo {
     type_indentifier: "network",
     pretty_name: "Network diagram",
     default_settings: &(default_settings as DefaultSettingsF),
-    try_set_shortcut: &(try_set_shortcut as TrySetShortcutF),
     settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
-    show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "",
         description: "Network diagram (network nodes, users, etc.)",
