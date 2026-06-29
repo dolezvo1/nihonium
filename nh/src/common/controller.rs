@@ -203,7 +203,9 @@ pub enum DiagramCommand {
     HighlightAllElements(/*set: */ bool, Highlight),
     HighlightElement(EntityUuid, /*set: */ bool, Highlight),
     PanToElement(EntityUuid, /*force:*/ bool),
+    PanCamera(i64, i64),
     ResetPosition,
+    AddZoomPercent(i64),
     ResetScale,
     ZoomToFit { selected_only: bool },
     CreateViewFor(ModelUuid),
@@ -3368,6 +3370,9 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
         self.adapter.model()
     }
 
+    const MIN_ZOOM_FACTOR: f32 = 0.01;
+    const MAX_ZOOM_FACTOR: f32 = 10.0;
+
     fn handle_event(
         &mut self,
         event: InputEvent,
@@ -4072,9 +4077,13 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             ui.input(|i| {
                 i.events.iter().for_each(|e| {
                     if let egui::Event::MouseWheel { delta, .. } = e {
-                        let factor = if delta.y > 0.0 && self.temporaries.camera_scale < 10.0 {
+                        let factor = if delta.y > 0.0
+                            && self.temporaries.camera_scale < Self::MAX_ZOOM_FACTOR
+                        {
                             1.5
-                        } else if delta.y < 0.0 && self.temporaries.camera_scale > 0.01 {
+                        } else if delta.y < 0.0
+                            && self.temporaries.camera_scale > Self::MIN_ZOOM_FACTOR
+                        {
                             0.66
                         } else {
                             0.0
@@ -4842,8 +4851,17 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     }
                 }
             }
+            DiagramCommand::PanCamera(x, y) => {
+                self.temporaries.camera_offset += -10.0 * egui::Vec2::new(x as f32, y as f32);
+            }
             DiagramCommand::ResetPosition => {
                 self.temporaries.camera_offset = egui::Pos2::ZERO;
+            }
+            DiagramCommand::AddZoomPercent(d) => {
+                let new_value = self.temporaries.camera_scale + d as f32 / 100.0;
+                if (Self::MIN_ZOOM_FACTOR..=Self::MAX_ZOOM_FACTOR).contains(&new_value) {
+                    self.temporaries.camera_scale = new_value;
+                }
             }
             DiagramCommand::ResetScale => {
                 self.temporaries.camera_offset =

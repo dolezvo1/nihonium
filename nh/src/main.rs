@@ -2114,10 +2114,8 @@ impl NHContext {
                         "Arrange - Send to Back:",
                         DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(),
                     ),
-                    (
-                        "Reset Diagram Position:",
-                        DiagramCommand::ResetPosition.into(),
-                    ),
+                    ("Zoom 10 %:", DiagramCommand::AddZoomPercent(10).into()),
+                    ("Zoom -10 %:", DiagramCommand::AddZoomPercent(-10).into()),
                     ("Reset Diagram Scale:", DiagramCommand::ResetScale.into()),
                     (
                         "Zoom Diagram To Fit:",
@@ -2133,6 +2131,30 @@ impl NHContext {
                         }
                         .into(),
                     ),
+                    (
+                        "Reset Diagram Position:",
+                        DiagramCommand::ResetPosition.into(),
+                    ),
+                    ("Pan Camera Left:", DiagramCommand::PanCamera(-1, 0).into()),
+                    (
+                        "Pan Camera Left (Faster):",
+                        DiagramCommand::PanCamera(-5, 0).into(),
+                    ),
+                    ("Pan Camera Right:", DiagramCommand::PanCamera(1, 0).into()),
+                    (
+                        "Pan Camera Right (Faster):",
+                        DiagramCommand::PanCamera(5, 0).into(),
+                    ),
+                    ("Pan Camera Up:", DiagramCommand::PanCamera(0, -1).into()),
+                    (
+                        "Pan Camera Up (Faster):",
+                        DiagramCommand::PanCamera(0, -5).into(),
+                    ),
+                    ("Pan Camera Down:", DiagramCommand::PanCamera(0, 1).into()),
+                    (
+                        "Pan Camera Down (Faster):",
+                        DiagramCommand::PanCamera(0, 5).into(),
+                    ),
                 ] {
                     ui.label(*l);
                     let sc = self.drawing_context.shortcuts.get(c);
@@ -2145,7 +2167,7 @@ impl NHContext {
                     if self
                         .shortcut_being_set
                         .as_ref()
-                        .is_none_or(|e| e.is_global(c))
+                        .is_none_or(|e| !e.is_global(c))
                     {
                         if ui.button("Set").clicked() {
                             self.shortcut_being_set = Some(SetShortcut::Global(*c));
@@ -2461,6 +2483,22 @@ impl NHApp {
             }
             .into(),
             egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::J),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(-1, 0).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowLeft),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(1, 0).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowRight),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(0, -1).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowUp),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(0, 1).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowDown),
         );
 
         let shades_profiles = vec![
