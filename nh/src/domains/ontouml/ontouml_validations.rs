@@ -10,10 +10,9 @@ use crate::{
     CustomTab,
     common::{
         canvas::Highlight,
-        controller::{
-            DiagramCommand, GlobalDrawingContext, Model, ProjectCommand, SimpleProjectCommand,
-        },
+        controller::{DiagramCommand, GlobalDrawingContext, ProjectCommand, SimpleProjectCommand},
         eref::ERef,
+        model::Model,
         uuid::{ModelUuid, ViewUuid},
     },
     domains::{

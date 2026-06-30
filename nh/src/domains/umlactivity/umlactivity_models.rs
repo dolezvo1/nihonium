@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::common::controller::{
+use crate::common::entity::{Entity, EntityUuid};
+use crate::common::eref::ERef;
+use crate::common::model::{
     BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
     VisitableDiagram, VisitableElement,
 };
-use crate::common::entity::{Entity, EntityUuid};
-use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
 use crate::common::uuid::ModelUuid;
 

@@ -9,13 +9,14 @@ use crate::{
     common::{
         canvas::{self, Highlight},
         controller::{
-            BucketNoT, DeleteKind, Domain, ElementController, ElementControllerGen2,
-            EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
-            InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable,
-            SelectionStatus, SnapManager, TargettingStatus, View,
+            DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
+            EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand,
+            LabelProvider, PropertiesStatus, Queryable, SelectionStatus, SnapManager,
+            TargettingStatus, View,
         },
         entity::{Entity, EntityUuid},
         eref::ERef,
+        model::{BucketNoT, PositionNoT},
         project_serde::{NHContextDeserialize, NHContextSerialize},
         ufoption::UFOption,
         uuid::{ModelUuid, ViewUuid},

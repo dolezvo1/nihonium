@@ -116,7 +116,7 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(crate::common::controller::BucketNoT, crate::common::controller::PositionNoT)> {
+            fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(crate::common::model::BucketNoT, crate::common::model::PositionNoT)> {
                 match self {
                     #(#arms_get_element_pos),*
                 }
@@ -124,16 +124,16 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
 
             fn insert_element(
                 &mut self,
-                bucket: crate::common::controller::BucketNoT,
-                position: Option<crate::common::controller::PositionNoT>,
+                bucket: crate::common::model::BucketNoT,
+                position: Option<crate::common::model::PositionNoT>,
                 element: Self::ElementT,
-            ) -> Result<crate::common::controller::PositionNoT, Self::ElementT> {
+            ) -> Result<crate::common::model::PositionNoT, Self::ElementT> {
                 match self {
                     #(#arms_insert_element),*
                 }
             }
 
-            fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(crate::common::controller::BucketNoT, crate::common::controller::PositionNoT)> {
+            fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(crate::common::model::BucketNoT, crate::common::model::PositionNoT)> {
                 match self {
                     #(#arms_remove_element),*
                 }

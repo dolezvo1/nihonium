@@ -6,12 +6,12 @@ use std::{
 use crate::{
     common::{
         canvas,
-        controller::{
+        entity::{Entity, EntityUuid},
+        eref::ERef,
+        model::{
             BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
             VisitableDiagram, VisitableElement,
         },
-        entity::{Entity, EntityUuid},
-        eref::ERef,
         search::FullTextSearchable,
         ufoption::UFOption,
         uuid::ModelUuid,

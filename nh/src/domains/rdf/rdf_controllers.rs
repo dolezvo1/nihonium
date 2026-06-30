@@ -3,16 +3,16 @@ use super::rdf_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter,
-    DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain,
-    ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
-    GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model,
-    MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus,
-    Queryable, SelectionStatus, ShowSettingsResult, SnapManager, TargettingStatus, Tool,
-    ToolPalette, TryMerge, View,
+    ColorBundle, ColorChangeData, ControllerAdapter, DiagramAdapter, DiagramController,
+    DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController,
+    ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable,
+    GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, MultiDiagramController,
+    PaletteEditBuffer, ProjectCommand, PropertiesStatus, Queryable, SelectionStatus,
+    ShowSettingsResult, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View,
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
+use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};

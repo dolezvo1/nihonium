@@ -11,11 +11,12 @@ use crate::{
     DiagramCreationData, DiagramInfo,
     common::{
         controller::{
-            BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2,
-            DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand,
-            MGlobalColor, MultiDiagramController, PositionNoT, ProjectCommand, View,
+            ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings,
+            ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MGlobalColor,
+            MultiDiagramController, ProjectCommand, View,
         },
         eref::ERef,
+        model::{BucketNoT, PositionNoT},
         project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
         uuid::{ControllerUuid, ModelUuid, ViewUuid},
         views::multiconnection_view::MULTICONNECTION_SOURCE_BUCKET,

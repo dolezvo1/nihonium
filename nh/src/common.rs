@@ -3,6 +3,7 @@ pub mod controller;
 pub mod entity;
 pub mod eref;
 pub mod fluent;
+pub mod model;
 pub mod project_serde;
 pub mod search;
 pub mod ufoption;

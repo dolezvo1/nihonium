@@ -1,5 +1,5 @@
 use crate::{
-    common::{controller::Model, uuid::ModelUuid},
+    common::{model::Model, uuid::ModelUuid},
     domains::umlclass::umlclass_models::{
         UmlClass, UmlClassAssociation, UmlClassAssociationAggregation,
         UmlClassAssociationNavigability, UmlClassComment, UmlClassCommentLink, UmlClassDependency,

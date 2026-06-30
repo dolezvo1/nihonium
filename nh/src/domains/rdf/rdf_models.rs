@@ -1,9 +1,9 @@
-use crate::common::controller::{
+use crate::common::entity::{Entity, EntityUuid};
+use crate::common::eref::ERef;
+use crate::common::model::{
     BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
     VisitableDiagram, VisitableElement,
 };
-use crate::common::entity::{Entity, EntityUuid};
-use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
 use crate::common::uuid::ModelUuid;
 use std::collections::HashSet;
