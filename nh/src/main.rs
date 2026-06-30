@@ -370,6 +370,137 @@ struct NHContext {
     show_window_collapse: bool,
 }
 
+impl NHContext {
+    const DEFAULT_TOOL_ITEM_HEIGHT: u32 = 60;
+
+    fn default_shades_profiles() -> Vec<ShadesProfile> {
+        vec![
+            ShadesProfile::new("Light", egui::Color32::TRANSPARENT),
+            ShadesProfile::new("Medium", egui::Color32::BLACK.gamma_multiply(0.4)),
+            ShadesProfile::new("Dark", egui::Color32::BLACK.gamma_multiply(0.6)),
+        ]
+    }
+
+    fn default_modifier_settings() -> ModifierSettings {
+        Default::default()
+    }
+
+    fn default_shortcuts() -> HashMap<SimpleProjectCommand, egui::KeyboardShortcut> {
+        let mut shortcuts = HashMap::new();
+        shortcuts.insert(
+            SimpleProjectCommand::SwapTopLanguages,
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L),
+        );
+        shortcuts.insert(
+            SimpleProjectCommand::CycleShadesProfiles,
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::K),
+        );
+        shortcuts.insert(
+            SimpleProjectCommand::OpenProject(false),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O),
+        );
+        shortcuts.insert(
+            SimpleProjectCommand::SaveProject,
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S),
+        );
+        shortcuts.insert(
+            SimpleProjectCommand::SaveProjectAs,
+            egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::S,
+            ),
+        );
+        shortcuts.insert(
+            DiagramCommand::UndoImmediate.into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
+        );
+        shortcuts.insert(
+            DiagramCommand::RedoImmediate.into(),
+            egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::Z,
+            ),
+        );
+        shortcuts.insert(
+            DiagramCommand::HighlightAllElements(true, Highlight::SELECTED).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A),
+        );
+        shortcuts.insert(
+            DiagramCommand::HighlightAllElements(false, Highlight::SELECTED).into(),
+            egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::A,
+            ),
+        );
+        shortcuts.insert(
+            DiagramCommand::InvertSelection.into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::I),
+        );
+        shortcuts.insert(
+            DiagramCommand::CutSelectedElements.into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X),
+        );
+        shortcuts.insert(
+            DiagramCommand::CopySelectedElements.into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C),
+        );
+        shortcuts.insert(
+            DiagramCommand::PasteClipboardElements(None, None).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V),
+        );
+        shortcuts.insert(
+            DiagramCommand::DeleteSelectedElements(None).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
+        );
+        shortcuts.insert(
+            DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(),
+            egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::Plus,
+            ),
+        );
+        shortcuts.insert(
+            DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus),
+        );
+        shortcuts.insert(
+            DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus),
+        );
+        shortcuts.insert(
+            DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(),
+            egui::KeyboardShortcut::new(
+                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+                egui::Key::Minus,
+            ),
+        );
+        shortcuts.insert(
+            DiagramCommand::ZoomToFit {
+                selected_only: false,
+            }
+            .into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::J),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(-1, 0).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowLeft),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(1, 0).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowRight),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(0, -1).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowUp),
+        );
+        shortcuts.insert(
+            DiagramCommand::PanCamera(0, 1).into(),
+            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowDown),
+        );
+        shortcuts
+    }
+}
+
 impl TabViewer for NHContext {
     type Tab = NHTab;
 
@@ -1485,7 +1616,7 @@ impl NHContext {
     fn show_settings_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Settings");
 
-        egui::CollapsingHeader::new("Visuals")
+        let visuals_response = egui::CollapsingHeader::new("Visuals")
             .default_open(true)
             .show(ui, |ui| {
                 if ui.button("Switch light/dark theme").clicked() {
@@ -1908,8 +2039,14 @@ impl NHContext {
                     });
                 });
             });
+        visuals_response.header_response.context_menu(|ui| {
+            if ui.button("Reset 'Visuals' settings").clicked() {
+                self.zoom_factor = 1.0;
+                self.style = Some(Style::from_egui(&ui.global_style()));
+            }
+        });
 
-        ui.collapsing("Diagram shades profiles", |ui| {
+        let shades_response = ui.collapsing("Diagram shades profiles", |ui| {
             for (idx, e) in self.shades_profiles.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
                     let l = if idx == self.selected_shades_profile {
@@ -1926,6 +2063,15 @@ impl NHContext {
                         egui::widgets::color_picker::Alpha::OnlyBlend,
                     );
                 });
+            }
+        });
+        shades_response.header_response.context_menu(|ui| {
+            if ui
+                .button("Reset 'Diagram shades profiles' settings")
+                .clicked()
+            {
+                self.shades_profiles = Self::default_shades_profiles();
+                self.selected_shades_profile = 0;
             }
         });
 
@@ -1946,8 +2092,13 @@ impl NHContext {
                                 self.shortcut_being_set = None;
                             }
                         }
-
-                        if ui.button("Reset").clicked() {
+                    })
+                    .header_response
+                    .context_menu(|ui| {
+                        if ui
+                            .button(format!("Reset '{}' settings", ctypename))
+                            .clicked()
+                        {
                             *settings = d();
                         }
                     });
@@ -1996,7 +2147,7 @@ impl NHContext {
             }
         });
 
-        ui.collapsing("Keys and Shortcuts", |ui| {
+        let keys_and_shortcuts_response = ui.collapsing("Keys and Shortcuts", |ui| {
             ui.label("Tool palette item height");
             ui.add(egui::Slider::new(
                 &mut self.drawing_context.tool_palette_item_height,
@@ -2186,6 +2337,16 @@ impl NHContext {
                 }
             });
         });
+        keys_and_shortcuts_response
+            .header_response
+            .context_menu(|ui| {
+                if ui.button("Reset 'Keys and Shortcuts' settings").clicked() {
+                    self.shortcut_being_set = None;
+                    self.drawing_context.tool_palette_item_height = Self::DEFAULT_TOOL_ITEM_HEIGHT;
+                    self.modifier_settings = Self::default_modifier_settings();
+                    self.drawing_context.shortcuts = Self::default_shortcuts();
+                }
+            });
     }
 
     // In general it should draw first and handle input second, right?
@@ -2389,124 +2550,6 @@ impl NHApp {
             );
         }
 
-        let mut shortcuts = HashMap::new();
-        shortcuts.insert(
-            SimpleProjectCommand::SwapTopLanguages,
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L),
-        );
-        shortcuts.insert(
-            SimpleProjectCommand::CycleShadesProfiles,
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::K),
-        );
-        shortcuts.insert(
-            SimpleProjectCommand::OpenProject(false),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O),
-        );
-        shortcuts.insert(
-            SimpleProjectCommand::SaveProject,
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S),
-        );
-        shortcuts.insert(
-            SimpleProjectCommand::SaveProjectAs,
-            egui::KeyboardShortcut::new(
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                egui::Key::S,
-            ),
-        );
-        shortcuts.insert(
-            DiagramCommand::UndoImmediate.into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
-        );
-        shortcuts.insert(
-            DiagramCommand::RedoImmediate.into(),
-            egui::KeyboardShortcut::new(
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                egui::Key::Z,
-            ),
-        );
-        shortcuts.insert(
-            DiagramCommand::HighlightAllElements(true, Highlight::SELECTED).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A),
-        );
-        shortcuts.insert(
-            DiagramCommand::HighlightAllElements(false, Highlight::SELECTED).into(),
-            egui::KeyboardShortcut::new(
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                egui::Key::A,
-            ),
-        );
-        shortcuts.insert(
-            DiagramCommand::InvertSelection.into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::I),
-        );
-        shortcuts.insert(
-            DiagramCommand::CutSelectedElements.into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X),
-        );
-        shortcuts.insert(
-            DiagramCommand::CopySelectedElements.into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C),
-        );
-        shortcuts.insert(
-            DiagramCommand::PasteClipboardElements(None, None).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V),
-        );
-        shortcuts.insert(
-            DiagramCommand::DeleteSelectedElements(None).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
-        );
-        shortcuts.insert(
-            DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(),
-            egui::KeyboardShortcut::new(
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                egui::Key::Plus,
-            ),
-        );
-        shortcuts.insert(
-            DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus),
-        );
-        shortcuts.insert(
-            DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus),
-        );
-        shortcuts.insert(
-            DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(),
-            egui::KeyboardShortcut::new(
-                egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-                egui::Key::Minus,
-            ),
-        );
-        shortcuts.insert(
-            DiagramCommand::ZoomToFit {
-                selected_only: false,
-            }
-            .into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::J),
-        );
-        shortcuts.insert(
-            DiagramCommand::PanCamera(-1, 0).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowLeft),
-        );
-        shortcuts.insert(
-            DiagramCommand::PanCamera(1, 0).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowRight),
-        );
-        shortcuts.insert(
-            DiagramCommand::PanCamera(0, -1).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowUp),
-        );
-        shortcuts.insert(
-            DiagramCommand::PanCamera(0, 1).into(),
-            egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::ArrowDown),
-        );
-
-        let shades_profiles = vec![
-            ShadesProfile::new("Light", egui::Color32::TRANSPARENT),
-            ShadesProfile::new("Medium", egui::Color32::BLACK.gamma_multiply(0.4)),
-            ShadesProfile::new("Dark", egui::Color32::BLACK.gamma_multiply(0.6)),
-        ];
-
         let mut tree = DockState::new(vec![NHTab::NewDiagram, NHTab::Settings]);
         "Undock".clone_into(&mut tree.translations.tab_context_menu.eject_button);
         let [a, b] = tree.main_surface_mut().split_left(
@@ -2530,7 +2573,14 @@ impl NHApp {
             .main_surface_mut()
             .split_below(c, 0.5, vec![NHTab::Outline]);
 
-        Self::new(1.0, shortcuts, 0, shades_profiles, HashMap::new(), tree)
+        Self::new(
+            1.0,
+            NHContext::default_shortcuts(),
+            0,
+            NHContext::default_shades_profiles(),
+            HashMap::new(),
+            tree,
+        )
     }
 
     fn new(
@@ -2634,12 +2684,12 @@ impl NHApp {
             selected_shades_profile,
             selected_language: 0,
             languages_order,
-            modifier_settings: Default::default(),
+            modifier_settings: NHContext::default_modifier_settings(),
             drawing_context: GlobalDrawingContext {
                 global_colors: ColorBundle::new(),
                 fluent_bundle,
                 shortcuts,
-                tool_palette_item_height: 60,
+                tool_palette_item_height: NHContext::DEFAULT_TOOL_ITEM_HEIGHT,
                 model_labels: LabelProvider::new(),
             },
 
