@@ -2345,6 +2345,7 @@ impl NHContext {
                     self.drawing_context.tool_palette_item_height = Self::DEFAULT_TOOL_ITEM_HEIGHT;
                     self.modifier_settings = Self::default_modifier_settings();
                     self.drawing_context.shortcuts = Self::default_shortcuts();
+                    self.sort_shortcuts();
                 }
             });
     }
