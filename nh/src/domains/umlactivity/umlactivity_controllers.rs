@@ -1,12 +1,14 @@
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ColorBundle, ColorChangeData, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController,
-    DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController,
-    ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable,
-    GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor,
-    MultiDiagramController, PaletteEditBuffer, ProjectCommand, PropertiesStatus, Queryable,
-    SelectionStatus, ShowSettingsResult, SnapManager, TargettingStatus, Tool, ToolPalette,
-    TryMerge, View,
+    DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
+    EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand,
+    LabelProvider, MGlobalColor, MultiDiagramController, ProjectCommand, PropertiesStatus,
+    Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View,
+};
+use crate::common::diagram_settings::{
+    DiagramSettings, DiagramSettings2, PaletteEditBuffer, ShortCutStatus, ShowSettingsResult,
+    ToolPalette,
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
@@ -920,19 +922,19 @@ impl DiagramSettings for UmlActivitySettings {
                         .labeled_text_edit_singleline("Label", name)
                         .changed();
 
-                    match crate::common::controller::show_shortcut(
+                    match crate::common::diagram_settings::show_shortcut(
                         &mut columns[1],
                         ksc,
                         shortcut_being_set
                             .as_ref()
                             .is_some_and(|e| e.is_diagram(uuid)),
                     ) {
-                        crate::common::controller::ShortCutStatus::NoChange => {}
-                        crate::common::controller::ShortCutStatus::Cleared => modified = true,
-                        crate::common::controller::ShortCutStatus::Set => {
+                        ShortCutStatus::NoChange => {}
+                        ShortCutStatus::Cleared => modified = true,
+                        ShortCutStatus::Set => {
                             ret = ShowSettingsResult::SetShortcut(*uuid);
                         }
-                        crate::common::controller::ShortCutStatus::CancelSet => {
+                        ShortCutStatus::CancelSet => {
                             ret = ShowSettingsResult::CancelShortcutSetting;
                         }
                     }

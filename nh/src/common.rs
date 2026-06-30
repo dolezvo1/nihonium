@@ -1,5 +1,6 @@
 pub mod canvas;
 pub mod controller;
+pub mod diagram_settings;
 pub mod entity;
 pub mod eref;
 pub mod fluent;

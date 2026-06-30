@@ -29,10 +29,10 @@ mod domains;
 
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{
-    ColorBundle, DeleteKind, DiagramCommand, DiagramController, DiagramSettings, LabelProvider,
-    ModifierKeys, ModifierSettings, ShowSettingsResult, TOOL_PALETTE_MAX_HEIGHT,
-    TOOL_PALETTE_MIN_HEIGHT,
+    ColorBundle, DeleteKind, DiagramCommand, DiagramController, LabelProvider, ModifierKeys,
+    ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT,
 };
+use crate::common::diagram_settings::{DiagramSettings, ShowSettingsResult};
 use crate::common::eref::ERef;
 use crate::common::project_serde::{
     FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter,
