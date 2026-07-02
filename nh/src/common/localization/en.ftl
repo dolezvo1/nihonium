@@ -105,8 +105,11 @@ nh-tab-document = Document
 nh-tab-customtab = Custom Tab
 nh-tab-outline = Outline
 
-nh-tab-globalcolors = Global Colors
-nh-tab-globalcolors-addnew = Add new
+nh-tab-projectsettings = Project Settings
+nh-tab-projectsettings-general = General
+nh-tab-projectsettings-general-projectname = Project Name
+nh-tab-projectsettings-globalcolors = Global Colors
+nh-tab-projectsettings-globalcolors-addnew = Add new
 
 nh-modal-colorpicker-nooveridebrackets = [no override]
 nh-modal-colorpicker-notfoundbrackets = [not found]

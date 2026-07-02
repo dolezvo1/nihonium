@@ -105,8 +105,11 @@ nh-tab-document = Dokument
 nh-tab-customtab = Zvláštní karta
 nh-tab-outline = Obrys
 
-nh-tab-globalcolors = Globální barvy
-nh-tab-globalcolors-addnew = Přidat novou
+nh-tab-projectsettings = Nastavení projektu
+nh-tab-projectsettings-general = Obecné
+nh-tab-projectsettings-general-projectname = Jméno projektu
+nh-tab-projectsettings-globalcolors = Globální barvy
+nh-tab-projectsettings-globalcolors-addnew = Přidat novou
 
 nh-modal-colorpicker-nooveridebrackets = [beze změn]
 nh-modal-colorpicker-notfoundbrackets = [nenalezeno]

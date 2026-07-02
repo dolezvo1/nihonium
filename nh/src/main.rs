@@ -37,6 +37,7 @@ use crate::common::eref::ERef;
 use crate::common::project_serde::{
     FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter,
 };
+use crate::common::ui_ext::UiExt;
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
 macro_rules! labeled_widget {
@@ -150,7 +151,7 @@ pub enum NHTab {
     Search,
     Toolbar,
     Properties,
-    GlobalColors,
+    ProjectSettings,
     Outline,
 
     Diagram { uuid: ViewUuid },
@@ -171,7 +172,7 @@ impl NHTab {
             NHTab::Search => gdc.translate_0("nh-tab-search"),
             NHTab::Toolbar => gdc.translate_0("nh-tab-toolbar"),
             NHTab::Properties => gdc.translate_0("nh-tab-properties"),
-            NHTab::GlobalColors => gdc.translate_0("nh-tab-globalcolors"),
+            NHTab::ProjectSettings => gdc.translate_0("nh-tab-projectsettings"),
             NHTab::Outline => gdc.translate_0("nh-tab-outline"),
 
             NHTab::Diagram { .. } => gdc.translate_0("nh-tab-diagram"),
@@ -543,7 +544,7 @@ impl TabViewer for NHContext {
             NHTab::Search => self.show_search(ui),
             NHTab::Toolbar => self.show_toolbar(ui),
             NHTab::Properties => self.show_properties(ui),
-            NHTab::GlobalColors => self.show_global_colors(ui),
+            NHTab::ProjectSettings => self.show_project_settings(ui),
             NHTab::Outline => self.show_outline(ui),
 
             NHTab::Diagram { uuid } => self.show_diagram_tab(uuid, ui),
@@ -862,6 +863,13 @@ impl NHContext {
                 HierarchyNode::Folder(uuid, name, children) => {
                     builder.node(NodeBuilder::dir(*uuid).label(&**name).context_menu(|ui| {
                         ui.set_min_width(MIN_MENU_WIDTH);
+
+                        if uuid.is_nil() && ui.button(gdc.translate_0("nh-edit")).clicked() {
+                            commands.push(ProjectCommand::OpenAndFocusTab(
+                                NHTab::ProjectSettings,
+                                None,
+                            ));
+                        }
 
                         if ui
                             .button(gdc.translate_0("nh-tab-projecthierarchy-togglecollapse"))
@@ -1434,56 +1442,88 @@ impl NHContext {
         }
     }
 
-    fn show_global_colors(&mut self, ui: &mut egui::Ui) {
-        macro_rules! gc {
-            () => {
-                self.drawing_context.global_colors
+    fn show_project_settings(&mut self, ui: &mut egui::Ui) {
+        ui.heading(self.drawing_context.translate_0("nh-tab-projectsettings"));
+
+        egui::CollapsingHeader::new(
+            self.drawing_context
+                .translate_0("nh-tab-projectsettings-general"),
+        )
+        .id_salt("General")
+        .default_open(true)
+        .show(ui, |ui| {
+            let HierarchyNode::Folder(_, s, _) = &mut self.project_hierarchy else {
+                return;
             };
-        }
-        let mut color_to_remove = None;
-        for (idx, id) in gc!().colors_order.iter().enumerate() {
-            ui.horizontal(|ui| {
-                if let Some(c) = gc!().colors.get_mut(id) {
-                    egui::widgets::color_picker::color_edit_button_srgba(
-                        ui,
-                        &mut c.1,
-                        egui::widgets::color_picker::Alpha::OnlyBlend,
-                    );
+            let mut buffer = (**s).clone();
+            if ui
+                .labeled_text_edit_singleline(
+                    self.drawing_context
+                        .translate_0("nh-tab-projectsettings-general-projectname"),
+                    &mut buffer,
+                )
+                .changed()
+            {
+                *s = buffer.into();
+            }
+        });
 
-                    ui.text_edit_singleline(&mut c.0);
+        egui::CollapsingHeader::new(
+            self.drawing_context
+                .translate_0("nh-tab-projectsettings-globalcolors"),
+        )
+        .id_salt("Global Colors")
+        .show(ui, |ui| {
+            macro_rules! gc {
+                () => {
+                    self.drawing_context.global_colors
+                };
+            }
+            let mut color_to_remove = None;
+            for (idx, id) in gc!().colors_order.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    if let Some(c) = gc!().colors.get_mut(id) {
+                        egui::widgets::color_picker::color_edit_button_srgba(
+                            ui,
+                            &mut c.1,
+                            egui::widgets::color_picker::Alpha::OnlyBlend,
+                        );
 
-                    if ui.button("X").clicked() {
-                        color_to_remove = Some(idx);
+                        ui.text_edit_singleline(&mut c.0);
+
+                        if ui.button("X").clicked() {
+                            color_to_remove = Some(idx);
+                        }
                     }
+                });
+            }
+            if let Some(idx) = color_to_remove {
+                let id = gc!().colors_order.remove(idx);
+                gc!().colors.remove(&id);
+            }
+
+            ui.horizontal(|ui| {
+                let r = ui.text_edit_singleline(&mut self.new_global_color_name);
+
+                if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    || ui
+                        .button(
+                            self.drawing_context
+                                .translate_0("nh-tab-projectsettings-globalcolors-addnew"),
+                        )
+                        .clicked()
+                {
+                    let new_uuid = uuid::Uuid::now_v7();
+                    gc!().colors_order.push(new_uuid);
+                    gc!().colors.insert(
+                        new_uuid,
+                        (
+                            std::mem::take(&mut self.new_global_color_name),
+                            egui::Color32::WHITE,
+                        ),
+                    );
                 }
             });
-        }
-        if let Some(idx) = color_to_remove {
-            let id = gc!().colors_order.remove(idx);
-            gc!().colors.remove(&id);
-        }
-
-        ui.horizontal(|ui| {
-            let r = ui.text_edit_singleline(&mut self.new_global_color_name);
-
-            if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                || ui
-                    .button(
-                        self.drawing_context
-                            .translate_0("nh-tab-globalcolors-addnew"),
-                    )
-                    .clicked()
-            {
-                let new_uuid = uuid::Uuid::now_v7();
-                gc!().colors_order.push(new_uuid);
-                gc!().colors.insert(
-                    new_uuid,
-                    (
-                        std::mem::take(&mut self.new_global_color_name),
-                        egui::Color32::WHITE,
-                    ),
-                );
-            }
         });
     }
 
@@ -1614,7 +1654,7 @@ impl NHContext {
     }
 
     fn show_settings_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Settings");
+        ui.heading(self.drawing_context.translate_0("nh-tab-settings"));
 
         let visuals_response = egui::CollapsingHeader::new("Visuals")
             .default_open(true)
@@ -2551,7 +2591,11 @@ impl NHApp {
             );
         }
 
-        let mut tree = DockState::new(vec![NHTab::NewDiagram, NHTab::Settings]);
+        let mut tree = DockState::new(vec![
+            NHTab::NewDiagram,
+            NHTab::Settings,
+            NHTab::ProjectSettings,
+        ]);
         "Undock".clone_into(&mut tree.translations.tab_context_menu.eject_button);
         let [a, b] = tree.main_surface_mut().split_left(
             NodeIndex::root(),
@@ -2562,11 +2606,9 @@ impl NHApp {
                 NHTab::Search,
             ],
         );
-        let [_, c] = tree.main_surface_mut().split_right(
-            a,
-            0.7,
-            vec![NHTab::Properties, NHTab::GlobalColors],
-        );
+        let [_, c] = tree
+            .main_surface_mut()
+            .split_right(a, 0.7, vec![NHTab::Properties]);
         let [_, _] = tree
             .main_surface_mut()
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
@@ -3449,7 +3491,7 @@ impl eframe::App for NHApp {
                         NHTab::Search,
                         NHTab::Toolbar,
                         NHTab::Properties,
-                        NHTab::GlobalColors,
+                        NHTab::ProjectSettings,
                         NHTab::Outline,
                     ] {
                         if ui
