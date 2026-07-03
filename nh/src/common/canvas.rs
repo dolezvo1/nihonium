@@ -776,7 +776,7 @@ pub trait NHCanvas {
         text_color: egui::Color32,
     );
 
-    fn draw_header_text(
+    fn open_header(
         &mut self,
         _text: &str,
         _location: HeaderLocation,
@@ -784,6 +784,7 @@ pub trait NHCanvas {
         _draw_cell: bool,
     ) {
     }
+    fn close_header(&mut self, _location: HeaderLocation, _object_rect: egui::Rect) {}
 }
 
 pub struct UiCanvas {
@@ -800,8 +801,11 @@ pub struct UiCanvas {
     ui_scale: Option<f32>,
     cursor: Option<egui::Pos2>,
     highlight_filter: Highlight,
-    header_horizontal: bool,
-    header_vertical: bool,
+
+    current_horizontal_header_row: u8,
+    current_vertical_header_row: u8,
+    max_horizontal_header_rows: u8,
+    max_vertical_header_rows: u8,
 }
 
 impl UiCanvas {
@@ -817,29 +821,32 @@ impl UiCanvas {
         ui_scale: Option<f32>,
         cursor: Option<egui::Pos2>,
         highlight_filter: Highlight,
-        enable_headers: (bool, bool),
+        requested_headers: (u8, u8),
     ) -> Self {
+        let (horizontal_header_rows, vertical_header_rows) = requested_headers;
         let (top_clip_rect, left_clip_rect, remainder) = {
             let mut remainder = canvas;
-            let top_clip = if enable_headers.0 {
+            let top_clip = {
                 let r = egui::Rect::from_min_size(
                     remainder.min,
-                    egui::Vec2::new(remainder.width(), Self::HEADER_SIZE),
+                    egui::Vec2::new(
+                        remainder.width(),
+                        horizontal_header_rows as f32 * Self::HEADER_SIZE,
+                    ),
                 );
-                remainder.min.y += Self::HEADER_SIZE;
+                remainder.min.y += horizontal_header_rows as f32 * Self::HEADER_SIZE;
                 r
-            } else {
-                egui::Rect::NOTHING
             };
-            let left_clip = if enable_headers.1 {
+            let left_clip = {
                 let r = egui::Rect::from_min_size(
                     remainder.min,
-                    egui::Vec2::new(Self::HEADER_SIZE, remainder.height()),
+                    egui::Vec2::new(
+                        vertical_header_rows as f32 * Self::HEADER_SIZE,
+                        remainder.height(),
+                    ),
                 );
-                remainder.min.x += Self::HEADER_SIZE;
+                remainder.min.x += vertical_header_rows as f32 * Self::HEADER_SIZE;
                 r
-            } else {
-                egui::Rect::NOTHING
             };
             (top_clip, left_clip, remainder)
         };
@@ -877,8 +884,11 @@ impl UiCanvas {
             ui_scale,
             cursor,
             highlight_filter,
-            header_horizontal: enable_headers.0,
-            header_vertical: enable_headers.1,
+
+            current_horizontal_header_row: 0,
+            current_vertical_header_row: 0,
+            max_horizontal_header_rows: 0,
+            max_vertical_header_rows: 0,
         }
     }
 
@@ -1152,26 +1162,28 @@ impl NHCanvas for UiCanvas {
         }
     }
 
-    fn draw_header_text(
+    fn open_header(
         &mut self,
         text: &str,
         location: HeaderLocation,
         object_rect: egui::Rect,
         draw_cell: bool,
     ) {
-        let rect =
+        let screen_rect =
             egui::Rect::from_min_max(self.sc_tr(object_rect.min), self.sc_tr(object_rect.max));
-        if !rect.intersects(self.canvas) {
+        if !screen_rect.intersects(self.canvas) {
             return;
         }
 
         match location {
-            HeaderLocation::Horizontal if self.header_horizontal => {
+            HeaderLocation::Horizontal => {
+                let row_offset = self.current_horizontal_header_row as f32 * Self::HEADER_SIZE;
                 if draw_cell {
+                    let row_top = self.canvas.top() + row_offset;
                     self.top_header_painter.rect(
                         egui::Rect::from_x_y_ranges(
-                            rect.x_range(),
-                            self.canvas.top()..=(self.canvas.top() + Self::HEADER_SIZE),
+                            screen_rect.x_range(),
+                            row_top..=(row_top + Self::HEADER_SIZE),
                         ),
                         egui::CornerRadius::ZERO,
                         egui::Color32::TRANSPARENT,
@@ -1184,19 +1196,25 @@ impl NHCanvas for UiCanvas {
                     self.camera_offset.y / -self.camera_scale,
                 );
                 self.top_header_painter.text(
-                    self.sc_tr(p),
+                    self.sc_tr(p) + egui::Vec2::new(0.0, row_offset),
                     egui::Align2::CENTER_TOP,
                     text,
                     egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
+                self.current_horizontal_header_row += 1;
+                self.max_horizontal_header_rows = self
+                    .max_horizontal_header_rows
+                    .max(self.current_horizontal_header_row);
             }
-            HeaderLocation::Vertical if self.header_vertical => {
+            HeaderLocation::Vertical => {
+                let row_offset = self.current_vertical_header_row as f32 * Self::HEADER_SIZE;
                 if draw_cell {
-                    self.top_header_painter.rect(
+                    let row_left = self.canvas.left() + row_offset;
+                    self.left_header_painter.rect(
                         egui::Rect::from_x_y_ranges(
-                            self.canvas.left()..=(self.canvas.left() + Self::HEADER_SIZE),
-                            rect.y_range(),
+                            row_left..=(row_left + Self::HEADER_SIZE),
+                            screen_rect.y_range(),
                         ),
                         egui::CornerRadius::ZERO,
                         egui::Color32::TRANSPARENT,
@@ -1209,14 +1227,33 @@ impl NHCanvas for UiCanvas {
                     object_rect.y_range().center(),
                 );
                 self.left_header_painter.text(
-                    self.sc_tr(p),
+                    self.sc_tr(p) + egui::Vec2::new(row_offset, 0.0),
                     egui::Align2::LEFT_CENTER,
                     text,
                     egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
+                self.current_vertical_header_row += 1;
+                self.max_vertical_header_rows = self
+                    .max_vertical_header_rows
+                    .max(self.current_vertical_header_row);
             }
-            _ => {}
+        }
+    }
+    fn close_header(&mut self, location: HeaderLocation, object_rect: egui::Rect) {
+        let screen_rect =
+            egui::Rect::from_min_max(self.sc_tr(object_rect.min), self.sc_tr(object_rect.max));
+        if !screen_rect.intersects(self.canvas) {
+            return;
+        }
+
+        match location {
+            HeaderLocation::Horizontal => {
+                self.current_horizontal_header_row -= 1;
+            }
+            HeaderLocation::Vertical => {
+                self.current_vertical_header_row -= 1;
+            }
         }
     }
 }

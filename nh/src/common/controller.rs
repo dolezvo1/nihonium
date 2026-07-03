@@ -2627,8 +2627,8 @@ pub trait DiagramAdapter<DomainT: Domain>:
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
-    fn enable_headers(&self) -> (bool, bool) {
-        (false, false)
+    fn requested_headers(&self) -> (u8, u8) {
+        (0, 0)
     }
     fn show_view_props_fun(
         &mut self,
@@ -3335,7 +3335,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     .to_pos2()
             }),
             Highlight::ALL,
-            self.adapter.enable_headers(),
+            self.adapter.requested_headers(),
         );
         ui_canvas.clear(self.adapter.background_color(&context.global_colors));
         ui_canvas.draw_gridlines(
@@ -3843,7 +3843,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                             None,
                             None,
                             Highlight::NONE,
-                            (false, false),
+                            (0, 0),
                         );
                         c.clear(egui::Color32::GRAY);
                         view.draw_in(&empty_q, gdc, settings, &mut c, &None);
@@ -3942,7 +3942,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             None,
             None,
             crate::common::canvas::Highlight::NONE,
-            (false, false),
+            (0, 0),
         );
         self.draw_in(context, settings, &mut ui_canvas, None);
 

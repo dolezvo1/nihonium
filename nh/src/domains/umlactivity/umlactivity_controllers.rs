@@ -508,8 +508,8 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
-    fn enable_headers(&self) -> (bool, bool) {
-        (true, false)
+    fn requested_headers(&self) -> (u8, u8) {
+        (2, 0)
     }
     fn show_view_props_fun(
         &mut self,
@@ -4242,25 +4242,28 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             );
         }
 
-        canvas.draw_header_text(
-            &self.temporaries.name_buffer,
-            canvas::HeaderLocation::Horizontal,
-            self.bounds_rect,
-            true,
-        );
-
-        macro_rules! draw_children {
+        macro_rules! draw_header_and_children {
             () => {{
+                canvas.open_header(
+                    &self.temporaries.name_buffer,
+                    canvas::HeaderLocation::Horizontal,
+                    self.bounds_rect,
+                    true,
+                );
+
                 let mut targetting_drawn = false;
                 self.contained_elements.draw_order_foreach_mut(|e| {
                     targetting_drawn |=
                         e.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
                 });
+
+                canvas.close_header(canvas::HeaderLocation::Horizontal, self.bounds_rect);
+
                 targetting_drawn
             }};
         }
 
-        if draw_children!() {
+        if draw_header_and_children!() {
             return TargettingStatus::Drawn;
         }
 
@@ -4275,7 +4278,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.temporaries.highlight,
         );
-        draw_children!();
+        draw_header_and_children!();
         TargettingStatus::Drawn
     }
 
