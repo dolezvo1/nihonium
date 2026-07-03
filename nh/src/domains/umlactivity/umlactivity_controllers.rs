@@ -508,6 +508,9 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
+    fn enable_headers(&self) -> (bool, bool) {
+        (true, false)
+    }
     fn show_view_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -4238,6 +4241,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 canvas::Highlight::NONE,
             );
         }
+
+        canvas.draw_header_text(
+            &self.temporaries.name_buffer,
+            canvas::HeaderLocation::Horizontal,
+            self.bounds_rect,
+            true,
+        );
 
         macro_rules! draw_children {
             () => {{

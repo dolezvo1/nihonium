@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use std::io::Write;
-use std::ops::{BitAnd, BitOr, RangeInclusive};
+use std::ops::{BitAnd, BitOr};
 
 // find unique intersection between segments (s1a, s1b) and (s2a, s2b)
 // based on https://stackoverflow.com/a/1968345
@@ -715,8 +715,8 @@ pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
 pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
 pub enum HeaderLocation {
-    Horizontal(RangeInclusive<f32>),
-    Vertical(RangeInclusive<f32>),
+    Horizontal,
+    Vertical,
 }
 
 pub const MULTICONNECTION_HANDLE_PROXIMITY: f32 = 20.0;
@@ -776,7 +776,14 @@ pub trait NHCanvas {
         text_color: egui::Color32,
     );
 
-    fn draw_header_text(&mut self, _pos: HeaderLocation, _text: &str) {}
+    fn draw_header_text(
+        &mut self,
+        _text: &str,
+        _location: HeaderLocation,
+        _object_rect: egui::Rect,
+        _draw_cell: bool,
+    ) {
+    }
 }
 
 pub struct UiCanvas {
@@ -1145,11 +1152,35 @@ impl NHCanvas for UiCanvas {
         }
     }
 
-    fn draw_header_text(&mut self, pos: HeaderLocation, text: &str) {
-        match pos {
-            HeaderLocation::Horizontal(pos) if self.header_horizontal => {
+    fn draw_header_text(
+        &mut self,
+        text: &str,
+        location: HeaderLocation,
+        object_rect: egui::Rect,
+        draw_cell: bool,
+    ) {
+        let rect =
+            egui::Rect::from_min_max(self.sc_tr(object_rect.min), self.sc_tr(object_rect.max));
+        if !rect.intersects(self.canvas) {
+            return;
+        }
+
+        match location {
+            HeaderLocation::Horizontal if self.header_horizontal => {
+                if draw_cell {
+                    self.top_header_painter.rect(
+                        egui::Rect::from_x_y_ranges(
+                            rect.x_range(),
+                            self.canvas.top()..=(self.canvas.top() + Self::HEADER_SIZE),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::TRANSPARENT,
+                        (1.0, egui::Color32::BLACK),
+                        egui::StrokeKind::Middle,
+                    );
+                }
                 let p = egui::Pos2::new(
-                    (pos.start() + pos.end()) / 2.0,
+                    object_rect.x_range().center(),
                     self.camera_offset.y / -self.camera_scale,
                 );
                 self.top_header_painter.text(
@@ -1160,10 +1191,22 @@ impl NHCanvas for UiCanvas {
                     egui::Color32::BLACK,
                 );
             }
-            HeaderLocation::Vertical(pos) if self.header_vertical => {
+            HeaderLocation::Vertical if self.header_vertical => {
+                if draw_cell {
+                    self.top_header_painter.rect(
+                        egui::Rect::from_x_y_ranges(
+                            self.canvas.left()..=(self.canvas.left() + Self::HEADER_SIZE),
+                            rect.y_range(),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::TRANSPARENT,
+                        (1.0, egui::Color32::BLACK),
+                        egui::StrokeKind::Middle,
+                    );
+                }
                 let p = egui::Pos2::new(
                     self.camera_offset.x / -self.camera_scale,
-                    (pos.start() + pos.end()) / 2.0,
+                    object_rect.y_range().center(),
                 );
                 self.left_header_painter.text(
                     self.sc_tr(p),

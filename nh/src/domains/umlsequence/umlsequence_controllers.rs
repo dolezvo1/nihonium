@@ -5925,9 +5925,12 @@ impl UmlSequenceLifelineView {
             }
         }
 
+        let center_x = self.bounds_rect.center().x;
         canvas.draw_header_text(
-            canvas::HeaderLocation::Horizontal(self.bounds_rect.min.x..=self.bounds_rect.max.x),
             &self.name_buffer,
+            canvas::HeaderLocation::Horizontal,
+            egui::Rect::from_x_y_ranges(center_x..=center_x, ..),
+            false,
         );
 
         if canvas.ui_scale().is_some() {
