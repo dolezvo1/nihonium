@@ -1191,12 +1191,11 @@ impl NHCanvas for UiCanvas {
                         egui::StrokeKind::Middle,
                     );
                 }
-                let p = egui::Pos2::new(
-                    object_rect.x_range().center(),
-                    self.camera_offset.y / -self.camera_scale,
-                );
                 self.top_header_painter.text(
-                    self.sc_tr(p) + egui::Vec2::new(0.0, row_offset),
+                    egui::Pos2::new(
+                        screen_rect.x_range().center(),
+                        self.canvas.min.y + row_offset,
+                    ),
                     egui::Align2::CENTER_TOP,
                     text,
                     egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
@@ -1222,17 +1221,21 @@ impl NHCanvas for UiCanvas {
                         egui::StrokeKind::Middle,
                     );
                 }
+
                 let p = egui::Pos2::new(
-                    self.camera_offset.x / -self.camera_scale,
-                    object_rect.y_range().center(),
+                    self.canvas.min.x + row_offset,
+                    screen_rect.y_range().center(),
                 );
-                self.left_header_painter.text(
-                    self.sc_tr(p) + egui::Vec2::new(row_offset, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    text,
+                let galley = self.left_header_painter.layout_no_wrap(
+                    text.to_string(),
                     egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
+                self.left_header_painter.add(
+                    egui::epaint::TextShape::new(p, galley, egui::Color32::BLACK)
+                        .with_angle(std::f32::consts::PI * 3.0 / 2.0),
+                );
+
                 self.current_vertical_header_row += 1;
                 self.max_vertical_header_rows = self
                     .max_vertical_header_rows
