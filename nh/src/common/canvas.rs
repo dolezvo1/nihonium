@@ -785,6 +785,9 @@ pub trait NHCanvas {
     ) {
     }
     fn close_header(&mut self, _location: HeaderLocation, _object_rect: egui::Rect) {}
+    fn max_headers(&self) -> Option<(u8, u8)> {
+        None
+    }
 }
 
 pub struct UiCanvas {
@@ -1258,6 +1261,12 @@ impl NHCanvas for UiCanvas {
                 self.current_vertical_header_row -= 1;
             }
         }
+    }
+    fn max_headers(&self) -> Option<(u8, u8)> {
+        Some((
+            self.max_horizontal_header_rows,
+            self.max_vertical_header_rows,
+        ))
     }
 }
 

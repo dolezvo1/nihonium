@@ -508,8 +508,8 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
-    fn requested_headers(&self) -> (u8, u8) {
-        (2, 0)
+    fn requested_headers(&self, (last_h, _): (u8, u8)) -> (u8, u8) {
+        (1.max(last_h), 0)
     }
     fn show_view_props_fun(
         &mut self,

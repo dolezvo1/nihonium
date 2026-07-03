@@ -2627,7 +2627,7 @@ pub trait DiagramAdapter<DomainT: Domain>:
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
-    fn requested_headers(&self) -> (u8, u8) {
+    fn requested_headers(&self, _last_max_headers: (u8, u8)) -> (u8, u8) {
         (0, 0)
     }
     fn show_view_props_fun(
@@ -2717,6 +2717,7 @@ struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
     last_interactive_canvas_rect: egui::Rect,
+    last_max_headers: (u8, u8),
     snap_manager: SnapManager,
     current_tool: Option<DomainT::ToolT>,
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
@@ -2737,6 +2738,7 @@ impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
             camera_scale: 1.0,
             last_unhandled_mouse_pos: Default::default(),
             last_interactive_canvas_rect: egui::Rect::ZERO,
+            last_max_headers: (0, 0),
             snap_manager: Default::default(),
             current_tool: Default::default(),
             select_by_drag: Default::default(),
@@ -3335,7 +3337,8 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     .to_pos2()
             }),
             Highlight::ALL,
-            self.adapter.requested_headers(),
+            self.adapter
+                .requested_headers(self.temporaries.last_max_headers),
         );
         ui_canvas.clear(self.adapter.background_color(&context.global_colors));
         ui_canvas.draw_gridlines(
@@ -4466,6 +4469,12 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                 egui::Color32::BLUE,
                 self.temporaries.last_interactive_canvas_rect,
             );
+        }
+
+        if canvas.ui_scale().is_some()
+            && let Some(max_headers) = canvas.max_headers()
+        {
+            self.temporaries.last_max_headers = max_headers;
         }
     }
 
