@@ -3090,7 +3090,7 @@ impl eframe::App for NHApp {
         }
 
         // Show ui
-        egui::Panel::top("egui_dock::MenuBar").show_inside(ui, |ui| {
+        egui::Panel::top("egui_dock::MenuBar").show(ui, |ui| {
             // Check diagram-handled shortcuts
             let interact_pos = ui.ctx().pointer_interact_pos();
             let input_probably_blocked =
@@ -4162,7 +4162,7 @@ impl eframe::App for NHApp {
             // When displaying a DockArea in another UI, it looks better
             // to set inner margins to 0.
             .frame(Frame::central_panel(ui.style()).inner_margin(0.))
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 let style = self
                     .context
                     .style

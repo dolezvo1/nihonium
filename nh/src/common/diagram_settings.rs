@@ -118,7 +118,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     }
 
     pub fn show_treeview(&mut self, _gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui) {
-        #[derive(Clone, Eq, Hash, PartialEq)]
+        #[derive(Clone, Eq, Hash, PartialEq, Debug)]
         enum TreeElement {
             Root,
             Group(uuid::Uuid),

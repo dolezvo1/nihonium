@@ -667,6 +667,7 @@ impl RdfLiteral {
             SimpleTerm::LiteralLanguage(
                 MownStr::from((*self.content).clone()),
                 LanguageTag::new(MownStr::from((*self.langtag).clone())).unwrap(),
+                None,
             )
         } else {
             let datatype = if !self.datatype.is_empty() {

@@ -13,33 +13,33 @@ lalrpop = "0.23"
 lalrpop-util = "0.23"
 
 derive_more = { version = "2.1", features = [ "from", "try_into", "not" ] }
-eframe = { version = "0.34", features = [ "persistence" ] }
-egui_extras = { version = "0.34", features = [ "serde" ] }
-egui_dock = { version = "0.19", features = [ "serde" ] }
-egui_ltreeview = "0.7.1"
+eframe = { version = "0.35", features = [ "persistence" ] }
+egui_extras = { version = "0.35", features = [ "serde" ] }
+egui_dock = { version = "0.20", features = [ "serde" ] }
+egui_ltreeview = "0.8"
 rfd = "0.17"
 serde = { version = "1.0", features = [ "derive", "rc" ] }
 toml = "1.1"
 uuid = { version = "1.23", features = [ "std", "v7", "serde" ] }
-zip = { version = "8.5", default-features = false }
+zip = { version = "8.6", default-features = false }
 
 # Fluent
 fluent-bundle = "0.16"
 unic-langid = { version = "0.9", features = [ "macros" ] }
 unic-langid-macros = "0.9"
-inventory = "0.3.24"
+inventory = "0.3"
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 futures = "0.3"
 # RDF
-sophia = { version = "0.9", features = [ "jsonld", "xml" ] }
-sophia_sparql = "0.9"
+sophia = { version = "0.10", features = [ "jsonld", "xml" ] }
+sophia_sparql = "0.10"
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 uuid = { version = "1.23", features = [ "std", "v7", "serde", "js" ] }
 
-wasm-bindgen-futures = "0.4.50"
-web-sys = "0.3.70"
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3"
