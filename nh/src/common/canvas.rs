@@ -714,6 +714,7 @@ pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
 pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
 pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
+#[derive(Clone, PartialEq, Debug)]
 pub enum HeaderLocation {
     Horizontal,
     Vertical,
@@ -790,6 +791,29 @@ pub trait NHCanvas {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum HeaderMode {
+    Compact,
+    Expanding(u8),
+}
+
+impl HeaderMode {
+    pub fn as_str(&self) -> &str {
+        match self {
+            HeaderMode::Compact => "Compact",
+            HeaderMode::Expanding(0) => "Off",
+            HeaderMode::Expanding(_) => "Full",
+        }
+    }
+
+    fn rows(&self) -> u8 {
+        match self {
+            HeaderMode::Compact => 1,
+            HeaderMode::Expanding(rows) => *rows,
+        }
+    }
+}
+
 pub struct UiCanvas {
     highlight_colors: [egui::Color32; 4],
 
@@ -805,6 +829,8 @@ pub struct UiCanvas {
     cursor: Option<egui::Pos2>,
     highlight_filter: Highlight,
 
+    horizontal_header: HeaderMode,
+    vertical_header: HeaderMode,
     current_horizontal_header_row: u8,
     current_vertical_header_row: u8,
     max_horizontal_header_rows: u8,
@@ -815,6 +841,7 @@ impl UiCanvas {
     const HEADER_TEXT_SIZE: f32 = CLASS_MIDDLE_FONT_SIZE;
     const HEADER_SIZE: f32 = CLASS_MIDDLE_FONT_SIZE + 2.0;
     const HEADER_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
+    const HEADER_CELL_BACKGROUND: egui::Color32 = egui::Color32::from_rgb(190, 190, 190);
 
     pub fn new(
         main_area_painter: egui::Painter,
@@ -824,9 +851,10 @@ impl UiCanvas {
         ui_scale: Option<f32>,
         cursor: Option<egui::Pos2>,
         highlight_filter: Highlight,
-        requested_headers: (u8, u8),
+        (horizontal_header, vertical_header): (HeaderMode, HeaderMode),
     ) -> Self {
-        let (horizontal_header_rows, vertical_header_rows) = requested_headers;
+        let horizontal_header_rows = horizontal_header.rows();
+        let vertical_header_rows = vertical_header.rows();
         let (top_clip_rect, left_clip_rect, remainder) = {
             let mut remainder = canvas;
             let top_clip = {
@@ -888,6 +916,8 @@ impl UiCanvas {
             cursor,
             highlight_filter,
 
+            horizontal_header,
+            vertical_header,
             current_horizontal_header_row: 0,
             current_vertical_header_row: 0,
             max_horizontal_header_rows: 0,
@@ -1189,7 +1219,7 @@ impl NHCanvas for UiCanvas {
                             row_top..=(row_top + Self::HEADER_SIZE),
                         ),
                         egui::CornerRadius::ZERO,
-                        egui::Color32::TRANSPARENT,
+                        Self::HEADER_CELL_BACKGROUND,
                         (1.0, egui::Color32::BLACK),
                         egui::StrokeKind::Middle,
                     );
@@ -1204,10 +1234,12 @@ impl NHCanvas for UiCanvas {
                     egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
-                self.current_horizontal_header_row += 1;
-                self.max_horizontal_header_rows = self
-                    .max_horizontal_header_rows
-                    .max(self.current_horizontal_header_row);
+                if self.horizontal_header != HeaderMode::Compact {
+                    self.current_horizontal_header_row += 1;
+                    self.max_horizontal_header_rows = self
+                        .max_horizontal_header_rows
+                        .max(self.current_horizontal_header_row);
+                }
             }
             HeaderLocation::Vertical => {
                 let row_offset = self.current_vertical_header_row as f32 * Self::HEADER_SIZE;
@@ -1219,7 +1251,7 @@ impl NHCanvas for UiCanvas {
                             screen_rect.y_range(),
                         ),
                         egui::CornerRadius::ZERO,
-                        egui::Color32::TRANSPARENT,
+                        Self::HEADER_CELL_BACKGROUND,
                         (1.0, egui::Color32::BLACK),
                         egui::StrokeKind::Middle,
                     );
@@ -1239,14 +1271,22 @@ impl NHCanvas for UiCanvas {
                         .with_angle(std::f32::consts::PI * 3.0 / 2.0),
                 );
 
-                self.current_vertical_header_row += 1;
-                self.max_vertical_header_rows = self
-                    .max_vertical_header_rows
-                    .max(self.current_vertical_header_row);
+                if self.vertical_header != HeaderMode::Compact {
+                    self.current_vertical_header_row += 1;
+                    self.max_vertical_header_rows = self
+                        .max_vertical_header_rows
+                        .max(self.current_vertical_header_row);
+                }
             }
         }
     }
     fn close_header(&mut self, location: HeaderLocation, object_rect: egui::Rect) {
+        if (location == HeaderLocation::Horizontal && self.horizontal_header == HeaderMode::Compact)
+            || (location == HeaderLocation::Vertical && self.vertical_header == HeaderMode::Compact)
+        {
+            return;
+        }
+
         let screen_rect =
             egui::Rect::from_min_max(self.sc_tr(object_rect.min), self.sc_tr(object_rect.max));
         if !screen_rect.intersects(self.canvas) {

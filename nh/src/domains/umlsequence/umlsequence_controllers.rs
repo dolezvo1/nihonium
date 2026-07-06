@@ -790,8 +790,15 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
-    fn requested_headers(&self, _last_max_headers: (u8, u8)) -> (u8, u8) {
-        (1, 0)
+    fn requested_headers(
+        &self,
+        _settings: &UmlSequenceSettings,
+        _last_max_headers: (u8, u8),
+    ) -> (canvas::HeaderMode, canvas::HeaderMode) {
+        (
+            canvas::HeaderMode::Expanding(1),
+            canvas::HeaderMode::Expanding(0),
+        )
     }
     fn show_view_props_fun(
         &mut self,

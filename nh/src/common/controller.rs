@@ -684,6 +684,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn new_ui_canvas(
         &mut self,
         context: &GlobalDrawingContext,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
@@ -835,6 +836,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
@@ -2272,11 +2274,12 @@ where
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let view = self.views.get(uuid).unwrap();
-        view.write().new_ui_canvas(context, ui, ui_scale)
+        view.write().new_ui_canvas(context, settings, ui, ui_scale)
     }
 
     fn draw_in(
@@ -2627,8 +2630,15 @@ pub trait DiagramAdapter<DomainT: Domain>:
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
-    fn requested_headers(&self, _last_max_headers: (u8, u8)) -> (u8, u8) {
-        (0, 0)
+    fn requested_headers(
+        &self,
+        _settings: &DomainT::SettingsT,
+        _last_max_headers: (u8, u8),
+    ) -> (canvas::HeaderMode, canvas::HeaderMode) {
+        (
+            canvas::HeaderMode::Expanding(0),
+            canvas::HeaderMode::Expanding(0),
+        )
     }
     fn show_view_props_fun(
         &mut self,
@@ -3316,9 +3326,14 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     fn new_ui_canvas(
         &mut self,
         context: &GlobalDrawingContext,
+        settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
+        let Some(settings) = (settings as &dyn Any).downcast_ref::<DomainT::SettingsT>() else {
+            panic!("received invalid settings object")
+        };
+
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
         let canvas_rect = egui::Rect::from_min_size(canvas_pos, canvas_size);
@@ -3338,7 +3353,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             }),
             Highlight::ALL,
             self.adapter
-                .requested_headers(self.temporaries.last_max_headers),
+                .requested_headers(settings, self.temporaries.last_max_headers),
         );
         ui_canvas.clear(self.adapter.background_color(&context.global_colors));
         ui_canvas.draw_gridlines(
@@ -3846,7 +3861,10 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                             None,
                             None,
                             Highlight::NONE,
-                            (0, 0),
+                            (
+                                canvas::HeaderMode::Expanding(0),
+                                canvas::HeaderMode::Expanding(0),
+                            ),
                         );
                         c.clear(egui::Color32::GRAY);
                         view.draw_in(&empty_q, gdc, settings, &mut c, &None);
@@ -3945,7 +3963,10 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             None,
             None,
             crate::common::canvas::Highlight::NONE,
-            (0, 0),
+            (
+                canvas::HeaderMode::Expanding(0),
+                canvas::HeaderMode::Expanding(0),
+            ),
         );
         self.draw_in(context, settings, &mut ui_canvas, None);
 

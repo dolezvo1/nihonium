@@ -508,8 +508,18 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
-    fn requested_headers(&self, (last_h, _): (u8, u8)) -> (u8, u8) {
-        (1.max(last_h), 0)
+    fn requested_headers(
+        &self,
+        settings: &UmlActivitySettings,
+        (last_h, _): (u8, u8),
+    ) -> (canvas::HeaderMode, canvas::HeaderMode) {
+        let h = match settings.horizontal_header {
+            e @ (canvas::HeaderMode::Expanding(0) | canvas::HeaderMode::Compact) => e,
+            canvas::HeaderMode::Expanding(max) => {
+                canvas::HeaderMode::Expanding(last_h.clamp(1, max))
+            }
+        };
+        (h, canvas::HeaderMode::Expanding(0))
     }
     fn show_view_props_fun(
         &mut self,
@@ -889,6 +899,7 @@ pub struct UmlActivitySettings {
     palette: RwLock<ToolPalette<UmlActivityToolStage, UmlActivityDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlActivityToolStage, UmlActivityElementView>>,
     nonfinal_buttons: Vec<(usize, usize, &'static str, &'static NonFinalNodeButtonF)>,
+    horizontal_header: canvas::HeaderMode,
 }
 
 impl DiagramSettings for UmlActivitySettings {
@@ -1110,6 +1121,19 @@ impl DiagramSettings for UmlActivitySettings {
             }
         });
 
+        ui.label("Horizontal header style:");
+        egui::ComboBox::from_id_salt("horizontal header style")
+            .selected_text(self.horizontal_header.as_str())
+            .show_ui(ui, |ui| {
+                for e in [
+                    canvas::HeaderMode::Expanding(0),
+                    canvas::HeaderMode::Compact,
+                    canvas::HeaderMode::Expanding(u8::max_value()),
+                ] {
+                    ui.selectable_value(&mut self.horizontal_header, e, e.as_str());
+                }
+            });
+
         ret
     }
 
@@ -1125,6 +1149,10 @@ impl DiagramSettings for UmlActivitySettings {
         table.insert(
             "palette".to_owned(),
             self.palette.read().unwrap().serialize()?,
+        );
+        table.insert(
+            "horizontal_header".to_owned(),
+            toml::Value::try_from(self.horizontal_header).map_err(|_| ())?,
         );
         Ok(table.into())
     }
@@ -1539,6 +1567,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
         nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
+        horizontal_header: canvas::HeaderMode::Compact,
     })
 }
 
@@ -1714,6 +1743,11 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
             .into(),
         palette_edit_buffer: PaletteEditBuffer::None.into(),
         nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
+        horizontal_header: value
+            .get("horizontal_header")
+            .cloned()
+            .ok_or(())
+            .and_then(|e| e.try_into().map_err(|_| ()))?,
     }))
 }
 

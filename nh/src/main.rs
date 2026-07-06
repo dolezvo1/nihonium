@@ -27,7 +27,7 @@ use rfd::FileHandle;
 mod common;
 mod domains;
 
-use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
+use crate::common::canvas::{HeaderMode, Highlight, MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{
     ColorBundle, DeleteKind, DiagramCommand, DiagramController, LabelProvider, ModifierKeys,
     ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT,
@@ -2407,8 +2407,13 @@ impl NHContext {
             true => None,
             false => Some(self.zoom_factor),
         };
-        let (mut ui_canvas, response, pos) =
-            diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui, ui_scale);
+        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(
+            tab_uuid,
+            &self.drawing_context,
+            settings.as_ref(),
+            ui,
+            ui_scale,
+        );
 
         response.context_menu(|ui| {
             diagram_controller.show_context_menu(
@@ -3677,7 +3682,7 @@ impl eframe::App for NHApp {
                         None,
                         None,
                         *highlight,
-                        (0, 0),
+                        (HeaderMode::Expanding(0), HeaderMode::Expanding(0)),
                     );
                     if *gridlines {
                         ui_canvas.draw_gridlines(
