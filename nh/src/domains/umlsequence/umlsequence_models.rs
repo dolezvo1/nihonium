@@ -54,6 +54,19 @@ impl UmlSequenceElement {
         }
     }
 
+    pub fn as_nondiagram_standalone(&self) -> Option<UmlSequenceNonDiagramStandaloneElement> {
+        match &self {
+            UmlSequenceElement::Comment(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::Diagram(..)
+            | UmlSequenceElement::CombinedFragment(..)
+            | UmlSequenceElement::CombinedFragmentSection(..)
+            | UmlSequenceElement::Lifeline(..)
+            | UmlSequenceElement::Message(..)
+            | UmlSequenceElement::Ref(..)
+            | UmlSequenceElement::CommentLink(..) => None,
+        }
+    }
+
     pub fn as_horizontal(&self) -> Option<UmlSequenceHorizontalElement> {
         match &self {
             UmlSequenceElement::CombinedFragment(inner) => Some(inner.clone().into()),
@@ -80,6 +93,9 @@ impl VisitableElement for UmlSequenceElement {
                     UmlSequenceElement::from(e.clone()).accept(v);
                 }
                 for e in &inner.read().horizontal_elements {
+                    e.clone().to_element().accept(v);
+                }
+                for e in &inner.read().standalone_elements {
                     e.clone().to_element().accept(v);
                 }
                 v.close_complex(self);
@@ -139,6 +155,19 @@ pub fn deep_copy_diagram(
                         .map(|e| {
                             let new_model = walk(&e.clone().to_element(), into);
                             if let Some(new_model) = new_model.as_horizontal() {
+                                into.insert(*e.uuid(), new_model.clone().to_element());
+                                new_model
+                            } else {
+                                e.clone()
+                            }
+                        })
+                        .collect(),
+                    standalone_elements: model
+                        .standalone_elements
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(&e.clone().to_element(), into);
+                            if let Some(new_model) = new_model.as_nondiagram_standalone() {
                                 into.insert(*e.uuid(), new_model.clone().to_element());
                                 new_model
                             } else {
@@ -214,6 +243,9 @@ pub fn deep_copy_diagram(
                     relink(&mut e.clone().into(), all_models);
                 }
                 for e in model.horizontal_elements.iter_mut() {
+                    relink(&mut e.clone().to_element(), all_models);
+                }
+                for e in model.standalone_elements.iter_mut() {
                     relink(&mut e.clone().to_element(), all_models);
                 }
             }
@@ -301,6 +333,9 @@ fn enumerate_elements(e: &UmlSequenceElement, into: &mut HashMap<ModelUuid, UmlS
             for e in &r.horizontal_elements {
                 enumerate_elements(&e.clone().to_element(), into);
             }
+            for e in &r.standalone_elements {
+                enumerate_elements(&e.clone().to_element(), into);
+            }
         }
         UmlSequenceElement::CombinedFragment(inner) => {
             for s in &inner.read().sections {
@@ -337,6 +372,9 @@ pub fn transitive_closure(
                         walk(&e.clone().into(), when_deleting);
                     }
                     for e in &r.horizontal_elements {
+                        walk(&e.clone().to_element(), when_deleting);
+                    }
+                    for e in &r.standalone_elements {
                         walk(&e.clone().to_element(), when_deleting);
                     }
                 }
@@ -386,10 +424,14 @@ pub fn transitive_closure(
         ) {
             match e {
                 UmlSequenceElement::Diagram(inner) => {
-                    for e in &inner.read().vertical_elements {
+                    let r = inner.read();
+                    for e in &r.vertical_elements {
                         walk(&e.clone().into(), when_deleting, also_delete);
                     }
-                    for e in &inner.read().horizontal_elements {
+                    for e in &r.horizontal_elements {
+                        walk(&e.clone().to_element(), when_deleting, also_delete);
+                    }
+                    for e in &r.standalone_elements {
                         walk(&e.clone().to_element(), when_deleting, also_delete);
                     }
                 }
@@ -439,6 +481,7 @@ pub fn transitive_closure(
 
 pub const VERTICALS_BUCKET: BucketNoT = 1;
 pub const HORIZONTALS_BUCKET: BucketNoT = 2;
+pub const NONDIAGRAM_STANDALONE_BUCKET: BucketNoT = 3;
 
 #[derive(
     Clone,
@@ -463,6 +506,30 @@ impl UmlSequenceStandaloneElement {
         match self {
             UmlSequenceStandaloneElement::Diagram(inner) => inner.into(),
             UmlSequenceStandaloneElement::Comment(inner) => inner.into(),
+        }
+    }
+}
+
+#[derive(
+    Clone,
+    derive_more::From,
+    nh_derive::Model,
+    nh_derive::ContainerModel,
+    nh_derive::FullTextSearchable,
+    nh_derive::NHContextSerDeTag,
+)]
+#[model(default_passthrough = "eref")]
+#[container_model(element_type = UmlSequenceElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum UmlSequenceNonDiagramStandaloneElement {
+    Comment(ERef<UmlSequenceComment>),
+}
+
+impl UmlSequenceNonDiagramStandaloneElement {
+    pub fn to_element(self) -> UmlSequenceElement {
+        match self {
+            UmlSequenceNonDiagramStandaloneElement::Comment(inner) => inner.into(),
         }
     }
 }
@@ -591,6 +658,20 @@ impl UmlSequenceDiagramBoard {
                         }
                     }
                     w.horizontal_elements.retain(|e| !uuids.contains(&e.uuid()));
+
+                    for (idx, e) in w.standalone_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((
+                                *w.uuid,
+                                e.clone().to_element(),
+                                NONDIAGRAM_STANDALONE_BUCKET,
+                                idx.try_into().unwrap(),
+                            ));
+                        } else {
+                            r(&e.clone().to_element(), uuids, undo);
+                        }
+                    }
+                    w.standalone_elements.retain(|e| !uuids.contains(&e.uuid()));
                 }
                 UmlSequenceElement::CombinedFragment(inner) => {
                     let mut w = inner.write();
@@ -748,6 +829,8 @@ pub struct UmlSequenceDiagram {
     pub vertical_elements: Vec<ERef<UmlSequenceLifeline>>,
     #[nh_context_serde(entity)]
     pub horizontal_elements: Vec<UmlSequenceHorizontalElement>,
+    #[nh_context_serde(entity)]
+    pub standalone_elements: Vec<UmlSequenceNonDiagramStandaloneElement>,
 
     pub comment: Arc<String>,
 }
@@ -758,12 +841,14 @@ impl UmlSequenceDiagram {
         name: String,
         vertical_elements: Vec<ERef<UmlSequenceLifeline>>,
         horizontal_elements: Vec<UmlSequenceHorizontalElement>,
+        standalone_elements: Vec<UmlSequenceNonDiagramStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
             vertical_elements,
             horizontal_elements,
+            standalone_elements,
             comment: Arc::new("".to_owned()),
         }
     }
@@ -773,6 +858,7 @@ impl UmlSequenceDiagram {
             name: self.name.clone(),
             vertical_elements: self.vertical_elements.clone(),
             horizontal_elements: self.horizontal_elements.clone(),
+            standalone_elements: self.standalone_elements.clone(),
             comment: self.comment.clone(),
         })
     }
@@ -836,6 +922,14 @@ impl ContainerModel for UmlSequenceDiagram {
                 return Some(e);
             }
         }
+        for e in &self.standalone_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone().to_element(), *self.uuid));
+            }
+            if let Some(e) = e.find_element(uuid) {
+                return Some(e);
+            }
+        }
         None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -847,6 +941,11 @@ impl ContainerModel for UmlSequenceDiagram {
         for (idx, e) in self.horizontal_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
                 return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.standalone_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((NONDIAGRAM_STANDALONE_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
@@ -872,6 +971,15 @@ impl ContainerModel for UmlSequenceDiagram {
                 self.horizontal_elements.insert(pos, element);
                 Ok(pos.try_into().unwrap())
             }
+            0 | NONDIAGRAM_STANDALONE_BUCKET
+                if let Some(element) = element.clone().as_nondiagram_standalone() =>
+            {
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.standalone_elements.len());
+                self.standalone_elements.insert(pos, element);
+                Ok(pos.try_into().unwrap())
+            }
             _ => Err(element),
         }
     }
@@ -886,6 +994,12 @@ impl ContainerModel for UmlSequenceDiagram {
             if *e.uuid() == *uuid {
                 self.horizontal_elements.remove(idx);
                 return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.standalone_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.standalone_elements.remove(idx);
+                return Some((NONDIAGRAM_STANDALONE_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
@@ -903,6 +1017,9 @@ impl FullTextSearchable for UmlSequenceDiagram {
             e.read().full_text_search(acc);
         }
         for e in &self.horizontal_elements {
+            e.clone().to_element().full_text_search(acc);
+        }
+        for e in &self.standalone_elements {
             e.clone().to_element().full_text_search(acc);
         }
     }

@@ -26,9 +26,10 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::package_view::PackageDragType;
 use crate::domains::umlsequence::umlsequence_models::{
-    HORIZONTALS_BUCKET, UmlSequenceActivationBehaviour, UmlSequenceCombinedFragmentKind,
-    UmlSequenceCombinedFragmentSection, UmlSequenceDiagramBoard, UmlSequenceMessageLifecycleKind,
-    UmlSequenceMessageSynchronicityKind, UmlSequenceRef, VERTICALS_BUCKET,
+    HORIZONTALS_BUCKET, NONDIAGRAM_STANDALONE_BUCKET, UmlSequenceActivationBehaviour,
+    UmlSequenceCombinedFragmentKind, UmlSequenceCombinedFragmentSection, UmlSequenceDiagramBoard,
+    UmlSequenceMessageLifecycleKind, UmlSequenceMessageSynchronicityKind,
+    UmlSequenceNonDiagramStandaloneElement, UmlSequenceRef, VERTICALS_BUCKET,
 };
 use crate::{
     CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -664,6 +665,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                     inner.clone(),
                     Vec::new(),
                     Vec::new(),
+                    Vec::new(),
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
                     true,
                 )
@@ -1098,6 +1100,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
                 combined_fragment_view.into(),
             ),
         ],
+        Vec::new(),
         egui::Rect::from_min_size(egui::Pos2::new(100.0, 100.0), egui::Vec2::splat(500.0)),
         true,
     );
@@ -1578,6 +1581,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                 "Diagram",
                 Vec::new(),
                 Vec::new(),
+                Vec::new(),
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(100.0, 75.0)),
                 true,
             )
@@ -1827,7 +1831,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 _ => NON_TARGETTABLE_COLOR,
             },
             Some(UmlSequenceElement::Diagram(_)) => match self.current_stage {
-                UmlSequenceToolStage::Lifeline { .. }
+                UmlSequenceToolStage::Comment { .. }
+                | UmlSequenceToolStage::Lifeline { .. }
                 | UmlSequenceToolStage::LinkStart { .. }
                 | UmlSequenceToolStage::LinkEnd
                 | UmlSequenceToolStage::CombinedFragmentStart { .. }
@@ -2037,6 +2042,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     "Diagram",
                     Vec::new(),
                     Vec::new(),
+                    Vec::new(),
                     egui::Rect::from_two_pos(*a, *b),
                     true,
                 );
@@ -2234,21 +2240,28 @@ pub fn new_umlsequence_diagram(
         UmlSequenceHorizontalElement,
         UmlSequenceHorizontalElementView,
     )>,
+    standalone: Vec<(
+        UmlSequenceNonDiagramStandaloneElement,
+        UmlSequenceElementView,
+    )>,
     bounds_rect: egui::Rect,
     show_activations: bool,
 ) -> (ERef<UmlSequenceDiagram>, ERef<UmlSequenceDiagramView>) {
     let (lifeline_models, lifeline_views) = lifelines.into_iter().collect();
     let (horizontal_models, horizontal_views) = horizontals.into_iter().collect();
+    let (standalone_models, standalone_views) = standalone.into_iter().collect();
     let diagram_model = ERef::new(UmlSequenceDiagram::new(
         ModelUuid::now_v7(),
         name.to_owned(),
         lifeline_models,
         horizontal_models,
+        standalone_models,
     ));
     let package_view = new_umlsequence_diagram_view(
         diagram_model.clone(),
         lifeline_views,
         horizontal_views,
+        standalone_views,
         bounds_rect,
         show_activations,
     );
@@ -2259,6 +2272,7 @@ pub fn new_umlsequence_diagram_view(
     model: ERef<UmlSequenceDiagram>,
     lifeline_views: Vec<ERef<UmlSequenceLifelineView>>,
     horizontal_element_views: Vec<UmlSequenceHorizontalElementView>,
+    standalone_views: Vec<UmlSequenceElementView>,
     bounds_rect: egui::Rect,
     show_activations: bool,
 ) -> ERef<UmlSequenceDiagramView> {
@@ -2267,6 +2281,7 @@ pub fn new_umlsequence_diagram_view(
         model,
         lifeline_views,
         horizontal_element_views,
+        standalone_views,
         temporaries: Default::default(),
         bounds_rect,
         show_activations,
@@ -2284,6 +2299,8 @@ pub struct UmlSequenceDiagramView {
     lifeline_views: Vec<ERef<UmlSequenceLifelineView>>,
     #[nh_context_serde(entity)]
     horizontal_element_views: Vec<UmlSequenceHorizontalElementView>,
+    #[nh_context_serde(entity)]
+    standalone_views: Vec<UmlSequenceElementView>,
 
     #[nh_context_serde(skip_and_default)]
     temporaries: UmlSequenceDiagramViewTemporaries,
@@ -2657,6 +2674,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             s.bounds_rect.set_bottom(
                 counter_y.max(s.bounds_rect.min.y + UmlSequenceDiagramView::MIN_SIZE.y),
             );
+
+            for v in s.standalone_views.iter_mut() {
+                let t = v.draw_in(q, context, settings, canvas, tool);
+                if t != TargettingStatus::NotDrawn {
+                    drawn_child_targetting = t;
+                };
+            }
+
             drawn_child_targetting
         }
         let drawn_child_targetting = draw_children(self, q, context, settings, canvas, tool);
@@ -2885,6 +2910,27 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         }
                     })
                     .next()
+            })
+            .or_else(|| {
+                self.standalone_views
+                    .iter_mut()
+                    .flat_map(|v| {
+                        let s = v.handle_event(
+                            event,
+                            ehc,
+                            settings,
+                            q,
+                            tool,
+                            element_setup_modal,
+                            commands,
+                        );
+                        if s != EventHandlingStatus::NotHandled {
+                            Some((*v.uuid(), s))
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
             });
 
         match event {
@@ -2948,11 +2994,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         tool.add_section(h.1.clone().into());
                     }
 
-                    let pos = if matches!(tool.initial_stage, UmlSequenceToolStage::Lifeline { .. })
-                    {
-                        Some(self.lifeline_insertion_place(pos).0)
-                    } else {
-                        horizontal_place.and_then(|e| e.0)
+                    let pos = match &tool.initial_stage {
+                        UmlSequenceToolStage::Lifeline { .. } => {
+                            Some(self.lifeline_insertion_place(pos).0)
+                        }
+                        UmlSequenceToolStage::CombinedFragmentStart { .. }
+                        | UmlSequenceToolStage::LinkStart { .. }
+                        | UmlSequenceToolStage::RefStart { .. } => {
+                            horizontal_place.and_then(|e| e.0)
+                        }
+                        _ => None,
                     };
                     if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, pos, commands)
                         && ehc
@@ -3112,6 +3163,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 self.horizontal_element_views
                     .iter_mut()
                     .for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
+                self.standalone_views
+                    .iter_mut()
+                    .for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
             };
         }
         macro_rules! resize_to {
@@ -3135,6 +3189,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             self.horizontal_element_views.iter().for_each(|v| {
                                 self.temporaries.selected_direct_elements.insert(*v.uuid());
                             });
+                            self.standalone_views.iter().for_each(|v| {
+                                self.temporaries.selected_direct_elements.insert(*v.uuid());
+                            });
                         }
                         false => self.temporaries.selected_direct_elements.clear(),
                     }
@@ -3152,6 +3209,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         .iter()
                         .map(|v| *v.read().uuid)
                         .chain(self.horizontal_element_views.iter().map(|v| *v.uuid()))
+                        .chain(self.standalone_views.iter().map(|v| *v.uuid()))
                         .filter(|k| uuids.contains(k))
                     {
                         match set {
@@ -3189,6 +3247,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     );
                 });
                 self.horizontal_element_views.iter_mut().for_each(|v| {
+                    v.apply_command(
+                        &InsensitiveCommand::MovePositionalAll(*delta),
+                        &mut void,
+                        affected_models,
+                    );
+                });
+                self.standalone_views.iter_mut().for_each(|v| {
                     v.apply_command(
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
@@ -3237,7 +3302,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     .filter(|v| uuids.contains(&v.read().uuid))
                 {
                     let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
-                        (0, None)
+                        (VERTICALS_BUCKET, None)
                     } else if let Some((b, pos)) = self
                         .model
                         .read()
@@ -3265,7 +3330,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     .filter(|v| uuids.contains(&v.uuid()))
                 {
                     let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
-                        (1, None)
+                        (HORIZONTALS_BUCKET, None)
                     } else if let Some((b, pos)) =
                         self.model.read().get_element_pos(&element.model_uuid())
                     {
@@ -3284,6 +3349,31 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 }
                 self.horizontal_element_views
                     .retain(|v| !uuids.contains(&v.uuid()));
+
+                for element in self
+                    .standalone_views
+                    .iter()
+                    .filter(|v| uuids.contains(&v.uuid()))
+                {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (NONDIAGRAM_STANDALONE_BUCKET, None)
+                    } else if let Some((b, pos)) =
+                        self.model.read().get_element_pos(&element.model_uuid())
+                    {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: element.clone().into(),
+                        into_model: false,
+                    });
+                }
+                self.standalone_views.retain(|v| !uuids.contains(&v.uuid()));
 
                 recurse!();
             }
@@ -3400,6 +3490,40 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         self.horizontal_element_views
                             .insert(view_pos.try_into().unwrap(), view);
                     }
+                    if (*bucket == 0 || *bucket == NONDIAGRAM_STANDALONE_BUCKET)
+                        && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
+                        && let Some(_) =
+                            w.get_element_pos(&view.model_uuid())
+                                .map(|e| e.1)
+                                .or_else(|| {
+                                    if *into_model {
+                                        w.insert_element(*bucket, *position, view.model()).ok()
+                                    } else {
+                                        None
+                                    }
+                                })
+                    {
+                        let uuid = *view.uuid();
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            element: uuid,
+                            including_model: *into_model,
+                        });
+
+                        if *into_model {
+                            affected_models.insert(*w.uuid);
+                        }
+                        let mut model_transitives = HashMap::new();
+                        view.head_count(
+                            &mut HashMap::new(),
+                            &mut HashMap::new(),
+                            &mut model_transitives,
+                        );
+                        affected_models.extend(model_transitives.into_keys());
+
+                        self.standalone_views.push(view);
+                    }
                 }
 
                 recurse!();
@@ -3456,6 +3580,28 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                         self.horizontal_element_views
                             .retain(|v| *v.uuid() != *element);
+                    }
+                    if (*bucket == 0 || *bucket == NONDIAGRAM_STANDALONE_BUCKET)
+                        && let Some(view) = self
+                            .standalone_views
+                            .iter()
+                            .find(|v| *v.uuid() == *element)
+                            .cloned()
+                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
+                    {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            position: Some(pos),
+                            element: view.clone().into(),
+                            into_model: *including_model,
+                        });
+
+                        if *including_model {
+                            affected_models.insert(*w.uuid);
+                        }
+
+                        self.standalone_views.retain(|v| *v.uuid() != *element);
                     }
                 }
                 recurse!();
@@ -3599,6 +3745,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 flattened_represented_models,
             )
         });
+        self.standalone_views.iter_mut().for_each(|v| {
+            v.head_count(
+                flattened_views,
+                &mut self.temporaries.all_elements,
+                flattened_represented_models,
+            )
+        });
         for e in &self.temporaries.all_elements {
             flattened_views_status.insert(
                 *e.0,
@@ -3617,6 +3770,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         self.horizontal_element_views.iter().for_each(|v| {
             flattened_views.insert(*v.uuid(), (v.clone().as_element_view(), *self.uuid));
         });
+        self.standalone_views.iter().for_each(|v| {
+            flattened_views.insert(*v.uuid(), (v.clone(), *self.uuid));
+        });
     }
 
     fn deep_copy_walk(
@@ -3634,6 +3790,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 .iter()
                 .for_each(|v| v.read().deep_copy_walk(requested, uuid_present, tlc, c, m));
             self.horizontal_element_views
+                .iter()
+                .for_each(|v| v.deep_copy_walk(requested, uuid_present, tlc, c, m));
+            self.standalone_views
                 .iter()
                 .for_each(|v| v.deep_copy_walk(requested, uuid_present, tlc, c, m));
         }
@@ -3685,6 +3844,17 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 }
             })
             .collect();
+        let standalone_views = self
+            .standalone_views
+            .iter()
+            .map(|v| {
+                v.deep_copy_clone(uuid_present, &mut inner, c, m);
+                match c.get(&v.uuid()) {
+                    Some(e) => e.clone(),
+                    _ => v.clone(),
+                }
+            })
+            .collect();
 
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
@@ -3692,6 +3862,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
             lifeline_views,
             horizontal_element_views,
+            standalone_views,
 
             temporaries: self.temporaries.clone(),
             bounds_rect: self.bounds_rect,
@@ -3711,6 +3882,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         self.horizontal_element_views
             .iter_mut()
             .for_each(|v| v.deep_copy_relink(c, m));
+        self.standalone_views
+            .iter_mut()
+            .for_each(|v| v.deep_copy_relink(c, m));
 
         let mut w = self.model.write();
         for e in w.vertical_elements.iter_mut() {
@@ -3721,6 +3895,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         }
         for e in w.horizontal_elements.iter_mut() {
             if let Some(new_model) = m.get(&*e.uuid()).and_then(|e| e.clone().as_horizontal()) {
+                *e = new_model;
+            }
+        }
+        for e in w.standalone_elements.iter_mut() {
+            if let Some(new_model) = m
+                .get(&*e.uuid())
+                .and_then(|e| e.clone().as_nondiagram_standalone())
+            {
                 *e = new_model;
             }
         }
