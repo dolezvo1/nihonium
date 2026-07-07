@@ -4282,7 +4282,10 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     &self.temporaries.name_buffer,
                     canvas::HeaderLocation::Horizontal,
                     self.bounds_rect,
-                    true,
+                    Some((
+                        canvas::UiCanvas::HEADER_CELL_BACKGROUND,
+                        egui::Color32::BLACK,
+                    )),
                 );
 
                 let mut targetting_drawn = false;

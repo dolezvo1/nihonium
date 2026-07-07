@@ -6120,7 +6120,7 @@ impl UmlSequenceLifelineView {
             &self.name_buffer,
             canvas::HeaderLocation::Horizontal,
             line,
-            false,
+            None,
         );
         canvas.close_header(canvas::HeaderLocation::Horizontal, line);
 

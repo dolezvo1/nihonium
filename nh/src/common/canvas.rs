@@ -782,7 +782,7 @@ pub trait NHCanvas {
         _text: &str,
         _location: HeaderLocation,
         _object_rect: egui::Rect,
-        _draw_cell: bool,
+        _cell: Option<(egui::Color32, egui::Color32)>,
     ) {
     }
     fn close_header(&mut self, _location: HeaderLocation, _object_rect: egui::Rect) {}
@@ -841,7 +841,7 @@ impl UiCanvas {
     const HEADER_TEXT_SIZE: f32 = CLASS_MIDDLE_FONT_SIZE;
     const HEADER_SIZE: f32 = CLASS_MIDDLE_FONT_SIZE + 2.0;
     const HEADER_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
-    const HEADER_CELL_BACKGROUND: egui::Color32 = egui::Color32::from_rgb(190, 190, 190);
+    pub const HEADER_CELL_BACKGROUND: egui::Color32 = egui::Color32::from_rgb(190, 190, 190);
 
     pub fn new(
         main_area_painter: egui::Painter,
@@ -1200,7 +1200,7 @@ impl NHCanvas for UiCanvas {
         text: &str,
         location: HeaderLocation,
         object_rect: egui::Rect,
-        draw_cell: bool,
+        cell: Option<(egui::Color32, egui::Color32)>,
     ) {
         let screen_rect =
             egui::Rect::from_min_max(self.sc_tr(object_rect.min), self.sc_tr(object_rect.max));
@@ -1211,7 +1211,7 @@ impl NHCanvas for UiCanvas {
         match location {
             HeaderLocation::Horizontal => {
                 let row_offset = self.current_horizontal_header_row as f32 * Self::HEADER_SIZE;
-                if draw_cell {
+                if let Some((background, foreground)) = cell {
                     let row_top = self.canvas.top() + row_offset;
                     self.top_header_painter.rect(
                         egui::Rect::from_x_y_ranges(
@@ -1219,8 +1219,8 @@ impl NHCanvas for UiCanvas {
                             row_top..=(row_top + Self::HEADER_SIZE),
                         ),
                         egui::CornerRadius::ZERO,
-                        Self::HEADER_CELL_BACKGROUND,
-                        (1.0, egui::Color32::BLACK),
+                        background,
+                        (1.0, foreground),
                         egui::StrokeKind::Middle,
                     );
                 }
@@ -1243,7 +1243,7 @@ impl NHCanvas for UiCanvas {
             }
             HeaderLocation::Vertical => {
                 let row_offset = self.current_vertical_header_row as f32 * Self::HEADER_SIZE;
-                if draw_cell {
+                if let Some((background, foreground)) = cell {
                     let row_left = self.canvas.left() + row_offset;
                     self.left_header_painter.rect(
                         egui::Rect::from_x_y_ranges(
@@ -1251,8 +1251,8 @@ impl NHCanvas for UiCanvas {
                             screen_rect.y_range(),
                         ),
                         egui::CornerRadius::ZERO,
-                        Self::HEADER_CELL_BACKGROUND,
-                        (1.0, egui::Color32::BLACK),
+                        background,
+                        (1.0, foreground),
                         egui::StrokeKind::Middle,
                     );
                 }
