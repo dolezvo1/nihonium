@@ -36,6 +36,7 @@ pub enum UmlSequenceElement {
     Lifeline(ERef<UmlSequenceLifeline>),
     Message(ERef<UmlSequenceMessage>),
     Ref(ERef<UmlSequenceRef>),
+    DurationConstraint(ERef<UmlSequenceDurationConstraint>),
     Comment(ERef<UmlSequenceComment>),
     CommentLink(ERef<UmlSequenceCommentLink>),
 }
@@ -45,6 +46,7 @@ impl UmlSequenceElement {
         match &self {
             UmlSequenceElement::Diagram(inner) => Some(inner.clone().into()),
             UmlSequenceElement::Comment(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::DurationConstraint(inner) => Some(inner.clone().into()),
             UmlSequenceElement::CombinedFragment(..)
             | UmlSequenceElement::CombinedFragmentSection(..)
             | UmlSequenceElement::Lifeline(..)
@@ -57,6 +59,7 @@ impl UmlSequenceElement {
     pub fn as_nondiagram_standalone(&self) -> Option<UmlSequenceNonDiagramStandaloneElement> {
         match &self {
             UmlSequenceElement::Comment(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::DurationConstraint(inner) => Some(inner.clone().into()),
             UmlSequenceElement::Diagram(..)
             | UmlSequenceElement::CombinedFragment(..)
             | UmlSequenceElement::CombinedFragmentSection(..)
@@ -75,6 +78,7 @@ impl UmlSequenceElement {
             UmlSequenceElement::Diagram(..)
             | UmlSequenceElement::CombinedFragmentSection(..)
             | UmlSequenceElement::Lifeline(..)
+            | UmlSequenceElement::DurationConstraint(..)
             | UmlSequenceElement::Comment(..)
             | UmlSequenceElement::CommentLink(..) => None,
         }
@@ -230,6 +234,9 @@ pub fn deep_copy_diagram(
             UmlSequenceElement::Lifeline(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlSequenceElement::Message(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlSequenceElement::Ref(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlSequenceElement::DurationConstraint(inner) => {
+                inner.read().clone_with(*new_uuid).into()
+            }
             UmlSequenceElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlSequenceElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
@@ -275,6 +282,18 @@ pub fn deep_copy_diagram(
                 }
             }
             UmlSequenceElement::Ref(..) => {}
+            UmlSequenceElement::DurationConstraint(inner) => {
+                let mut model = inner.write();
+
+                let source_uuid = *model.source.element.uuid();
+                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_horizontal()) {
+                    model.source.element = s;
+                }
+                let target_uuid = *model.target.element.uuid();
+                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_horizontal()) {
+                    model.target.element = t;
+                }
+            }
             UmlSequenceElement::Comment(..) => {}
             UmlSequenceElement::CommentLink(inner) => {
                 let mut model = inner.write();
@@ -350,6 +369,7 @@ fn enumerate_elements(e: &UmlSequenceElement, into: &mut HashMap<ModelUuid, UmlS
         UmlSequenceElement::Lifeline(..)
         | UmlSequenceElement::Message(..)
         | UmlSequenceElement::Ref(..)
+        | UmlSequenceElement::DurationConstraint(..)
         | UmlSequenceElement::Comment(..)
         | UmlSequenceElement::CommentLink(..) => {}
     }
@@ -406,6 +426,7 @@ pub fn transitive_closure(
             UmlSequenceElement::Lifeline(..)
             | UmlSequenceElement::Message(..)
             | UmlSequenceElement::Ref(..)
+            | UmlSequenceElement::DurationConstraint(..)
             | UmlSequenceElement::Comment(..)
             | UmlSequenceElement::CommentLink(..) => {}
         }
@@ -455,7 +476,17 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                UmlSequenceElement::Ref(..) | UmlSequenceElement::Comment(..) => {}
+                UmlSequenceElement::Ref(..) => {}
+                UmlSequenceElement::DurationConstraint(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.source.element.uuid())
+                            || when_deleting.contains(&r.target.element.uuid()))
+                    {
+                        also_delete.insert(*r.uuid);
+                    }
+                }
+                UmlSequenceElement::Comment(..) => {}
                 UmlSequenceElement::CommentLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
@@ -499,6 +530,7 @@ pub enum UmlSequenceStandaloneElement {
     #[container_model(passthrough = "eref")]
     Diagram(ERef<UmlSequenceDiagram>),
     Comment(ERef<UmlSequenceComment>),
+    DurationConstraint(ERef<UmlSequenceDurationConstraint>),
 }
 
 impl UmlSequenceStandaloneElement {
@@ -506,6 +538,7 @@ impl UmlSequenceStandaloneElement {
         match self {
             UmlSequenceStandaloneElement::Diagram(inner) => inner.into(),
             UmlSequenceStandaloneElement::Comment(inner) => inner.into(),
+            UmlSequenceStandaloneElement::DurationConstraint(inner) => inner.into(),
         }
     }
 }
@@ -524,12 +557,14 @@ impl UmlSequenceStandaloneElement {
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlSequenceNonDiagramStandaloneElement {
     Comment(ERef<UmlSequenceComment>),
+    DurationConstraint(ERef<UmlSequenceDurationConstraint>),
 }
 
 impl UmlSequenceNonDiagramStandaloneElement {
     pub fn to_element(self) -> UmlSequenceElement {
         match self {
             UmlSequenceNonDiagramStandaloneElement::Comment(inner) => inner.into(),
+            UmlSequenceNonDiagramStandaloneElement::DurationConstraint(inner) => inner.into(),
         }
     }
 }
@@ -708,6 +743,7 @@ impl UmlSequenceDiagramBoard {
                 UmlSequenceElement::Lifeline(..)
                 | UmlSequenceElement::Message(..)
                 | UmlSequenceElement::Ref(..)
+                | UmlSequenceElement::DurationConstraint(..)
                 | UmlSequenceElement::Comment(..)
                 | UmlSequenceElement::CommentLink(..) => {}
             }
@@ -1580,6 +1616,77 @@ impl Entity for UmlSequenceRef {
 }
 
 impl Model for UmlSequenceRef {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+pub struct DurationEnding {
+    #[nh_context_serde(entity)]
+    pub element: UmlSequenceHorizontalElement,
+    pub end: bool,
+}
+
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+#[nh_context_serde(is_entity)]
+pub struct UmlSequenceDurationConstraint {
+    #[full_text_searchable(search_kind = "to_string_ref")]
+    pub uuid: Arc<ModelUuid>,
+    pub text: Arc<String>,
+    #[nh_context_serde(entity)]
+    #[full_text_searchable(skip)]
+    pub source: DurationEnding,
+    #[nh_context_serde(entity)]
+    #[full_text_searchable(skip)]
+    pub target: DurationEnding,
+
+    pub comment: Arc<String>,
+}
+
+impl UmlSequenceDurationConstraint {
+    pub fn new(
+        uuid: ModelUuid,
+        text: String,
+        source: (bool, UmlSequenceHorizontalElement),
+        target: (bool, UmlSequenceHorizontalElement),
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            text: Arc::new(text),
+            source: DurationEnding {
+                element: source.1,
+                end: source.0,
+            },
+            target: DurationEnding {
+                element: target.1,
+                end: target.0,
+            },
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            text: self.text.clone(),
+            source: self.source.clone(),
+            target: self.target.clone(),
+            comment: self.comment.clone(),
+        })
+    }
+}
+
+impl Entity for UmlSequenceDurationConstraint {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for UmlSequenceDurationConstraint {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

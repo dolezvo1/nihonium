@@ -28,8 +28,9 @@ use crate::common::views::package_view::PackageDragType;
 use crate::domains::umlsequence::umlsequence_models::{
     HORIZONTALS_BUCKET, NONDIAGRAM_STANDALONE_BUCKET, UmlSequenceActivationBehaviour,
     UmlSequenceCombinedFragmentKind, UmlSequenceCombinedFragmentSection, UmlSequenceDiagramBoard,
-    UmlSequenceMessageLifecycleKind, UmlSequenceMessageSynchronicityKind,
-    UmlSequenceNonDiagramStandaloneElement, UmlSequenceRef, VERTICALS_BUCKET,
+    UmlSequenceDurationConstraint, UmlSequenceMessageLifecycleKind,
+    UmlSequenceMessageSynchronicityKind, UmlSequenceNonDiagramStandaloneElement, UmlSequenceRef,
+    VERTICALS_BUCKET,
 };
 use crate::{
     CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -49,12 +50,22 @@ impl Domain for UmlSequenceDomain {
     type CommonElementT = UmlSequenceElement;
     type DiagramModelT = UmlSequenceDiagramBoard;
     type CommonElementViewT = UmlSequenceElementView;
-    type ViewTargettingSectionT = UmlSequenceElement;
+    type ViewTargettingSectionT = UmlSequenceViewTargettingSection;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveUmlSequenceTool;
     type OrdinalMovementT = UmlSequenceOrdinalMovement;
     type AddCommandElementT = UmlSequenceElementOrVertex;
     type PropChangeT = UmlSequencePropChange;
+}
+
+pub struct UmlSequenceViewTargettingSection {
+    element: UmlSequenceElement,
+    end: bool,
+}
+impl Into<UmlSequenceElement> for UmlSequenceViewTargettingSection {
+    fn into(self) -> UmlSequenceElement {
+        self.element
+    }
 }
 
 type CommentLinkViewT = MulticonnectionView<UmlSequenceDomain, UmlSequenceCommentLinkAdapter>;
@@ -203,6 +214,7 @@ pub enum UmlSequenceElementView {
     Lifeline(ERef<UmlSequenceLifelineView>),
     Message(ERef<UmlSequenceMessageView>),
     Ref(ERef<UmlSequenceRefView>),
+    DurationConstraint(ERef<UmlSequenceDurationConstraintView>),
     Comment(ERef<UmlSequenceCommentView>),
     CommentLink(ERef<CommentLinkViewT>),
 }
@@ -727,6 +739,25 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 .into()
             }
             UmlSequenceElement::Ref(inner) => new_umlsequence_ref_view(inner.clone()).into(),
+            UmlSequenceElement::DurationConstraint(inner) => {
+                let r = inner.read();
+                let source_end = r.source.end;
+                let source_uuid = *r.source.element.uuid();
+                let target_end = r.target.end;
+                let target_uuid = *r.target.element.uuid();
+                let (Some(s), Some(t)) =
+                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
+                else {
+                    return Err([source_uuid, target_uuid].into_iter().collect());
+                };
+                new_umlsequence_durationconstraint_view(
+                    inner.clone(),
+                    0.0,
+                    (source_end, s),
+                    (target_end, t),
+                )
+                .into()
+            }
             UmlSequenceElement::Comment(inner) => {
                 new_umlsequence_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
                     .into()
@@ -768,6 +799,18 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                     "Ref".to_owned()
                 } else {
                     format!("Ref ({})", LabelProvider::filter_and_elipsis(&r.text))
+                };
+                Arc::new(s)
+            }
+            UmlSequenceElement::DurationConstraint(inner) => {
+                let r = inner.read();
+                let s = if r.text.is_empty() {
+                    "Duration Constraint".to_owned()
+                } else {
+                    format!(
+                        "Duration Constraint ({})",
+                        LabelProvider::filter_and_elipsis(&r.text)
+                    )
                 };
                 Arc::new(s)
             }
@@ -1061,7 +1104,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (combined_fragment_section2_model, combined_fragment_section2_view) =
         new_umlsequence_combinedfragmentsection(
             "token valid",
-            vec![(message2_model.into(), message2_view.into())],
+            vec![(message2_model.clone().into(), message2_view.clone().into())],
         );
     let (combined_fragment_model, combined_fragment_view) = new_umlsequence_combinedfragment(
         UmlSequenceCombinedFragmentKind::Alt,
@@ -1086,6 +1129,17 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         ],
     );
 
+    let (dc_model, dc_view) = new_umlsequence_durationconstraint(
+        "<10ms",
+        580.0,
+        (
+            false,
+            message1_model.clone().into(),
+            message1_view.clone().into(),
+        ),
+        (true, message2_model.into(), message2_view.into()),
+    );
+
     let (diagram_model, diagram_view) = new_umlsequence_diagram(
         "Diagram",
         vec![
@@ -1100,7 +1154,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
                 combined_fragment_view.into(),
             ),
         ],
-        Vec::new(),
+        vec![(dc_model.into(), dc_view.into())],
         egui::Rect::from_min_size(egui::Pos2::new(100.0, 100.0), egui::Vec2::splat(500.0)),
         true,
     );
@@ -1243,6 +1297,11 @@ impl DiagramSettings for UmlSequenceSettings {
                             }
                         }
                         UmlSequenceToolStage::RefStart { text } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Text", text)
+                                .changed();
+                        }
+                        UmlSequenceToolStage::DurationConstraintY1 { text } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
@@ -1540,6 +1599,13 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     )),
                 ),
                 (
+                    UmlSequenceToolStage::DurationConstraintY1 {
+                        text: "".to_owned(),
+                    },
+                    "Duration Constraint",
+                    None,
+                ),
+                (
                     UmlSequenceToolStage::Comment {
                         text: "a comment".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
@@ -1666,6 +1732,20 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             ref_view.write().refresh_buffers();
             ref_view.into()
         }
+        UmlSequenceToolStage::DurationConstraintY1 { text } => {
+            let d = new_umlsequence_ref("dummy", HashSet::new());
+            d.1.write().refresh_buffers();
+            d.1.write().bounds_rect = egui::Rect::from_x_y_ranges(20.0..=40.0, 0.0..=50.0);
+            let view = new_umlsequence_durationconstraint(
+                text,
+                0.0,
+                (false, d.0.clone().into(), d.1.clone().into()),
+                (true, d.0.into(), d.1.into()),
+            )
+            .1;
+            view.write().refresh_buffers();
+            view.into()
+        }
         UmlSequenceToolStage::Comment { text, align } => {
             let comment_view = new_umlsequence_comment(text, egui::Pos2::ZERO, *align).1;
             comment_view.into()
@@ -1676,6 +1756,8 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
         | UmlSequenceToolStage::CombinedFragmentEnd
         | UmlSequenceToolStage::LinkEnd
         | UmlSequenceToolStage::RefEnd
+        | UmlSequenceToolStage::DurationConstraintY2
+        | UmlSequenceToolStage::DurationConstraintX
         | UmlSequenceToolStage::CommentLinkEnd => unreachable!(),
     }
 }
@@ -1743,6 +1825,11 @@ pub enum UmlSequenceToolStage {
         text: String,
     },
     RefEnd,
+    DurationConstraintY1 {
+        text: String,
+    },
+    DurationConstraintY2,
+    DurationConstraintX,
     Comment {
         text: String,
         align: egui::Align2,
@@ -1773,6 +1860,11 @@ enum PartialUmlSequenceElement {
         text: String,
         source: ERef<UmlSequenceLifeline>,
         dest: Option<ERef<UmlSequenceLifeline>>,
+    },
+    DurationConstraint {
+        y1: (bool, UmlSequenceHorizontalElement),
+        y2: Option<(bool, UmlSequenceHorizontalElement)>,
+        x: Option<f32>,
     },
     CommentLink {
         source: ERef<UmlSequenceComment>,
@@ -1822,11 +1914,15 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<UmlSequenceElement>) -> egui::Color32 {
-        match element {
+    fn targetting_for_section(
+        &self,
+        element: Option<UmlSequenceViewTargettingSection>,
+    ) -> egui::Color32 {
+        match element.map(|e| e.element) {
             None => match self.current_stage {
                 UmlSequenceToolStage::DiagramStart
                 | UmlSequenceToolStage::DiagramEnd
+                | UmlSequenceToolStage::DurationConstraintX
                 | UmlSequenceToolStage::Comment { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
@@ -1850,6 +1946,15 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 | UmlSequenceToolStage::RefEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
+            Some(UmlSequenceElement::Message(_) | UmlSequenceElement::Ref(_))
+                if matches!(
+                    self.current_stage,
+                    UmlSequenceToolStage::DurationConstraintY1 { .. }
+                        | UmlSequenceToolStage::DurationConstraintY2
+                ) =>
+            {
+                TARGETTABLE_COLOR
+            }
             _ => NON_TARGETTABLE_COLOR,
         }
     }
@@ -1883,6 +1988,33 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
+                }
+            }
+            PartialUmlSequenceElement::DurationConstraint { y1, y2, x: _ } => {
+                fn draw(
+                    canvas: &mut dyn canvas::NHCanvas,
+                    pos: egui::Pos2,
+                    end: bool,
+                    v: &UmlSequenceElementView,
+                ) {
+                    let s = v.min_shape().bounding_box();
+                    let p = match end {
+                        false => s.center_top(),
+                        true => s.center_bottom(),
+                    };
+                    canvas.draw_line(
+                        [p, egui::Pos2::new(pos.x, p.y)],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                if let Some(y1_v) = q.get_view_for(&y1.1.uuid()) {
+                    draw(canvas, pos, y1.0, &y1_v);
+                }
+                if let Some(y2) = y2
+                    && let Some(y2_v) = q.get_view_for(&y2.1.uuid())
+                {
+                    draw(canvas, pos, y2.0, &y2_v);
                 }
             }
             PartialUmlSequenceElement::CommentLink { source, .. } => {
@@ -1936,6 +2068,13 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
+            (
+                UmlSequenceToolStage::DurationConstraintX,
+                PartialUmlSequenceElement::DurationConstraint { x, .. },
+            ) => {
+                *x = Some(pos.x);
+                self.event_lock = true;
+            }
             (UmlSequenceToolStage::Comment { text, align }, PartialUmlSequenceElement::None) => {
                 let (_comment_model, comment_view) = new_umlsequence_comment(text, pos, *align);
                 self.result = PartialUmlSequenceElement::Some(comment_view.into());
@@ -1944,12 +2083,12 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
             _ => {}
         }
     }
-    fn add_section(&mut self, element: UmlSequenceElement) {
+    fn add_section(&mut self, section: UmlSequenceViewTargettingSection) {
         if self.event_lock {
             return;
         }
 
-        if let UmlSequenceElement::Lifeline(inner) = element {
+        if let UmlSequenceElement::Lifeline(inner) = section.element {
             match (&self.current_stage, &mut self.result) {
                 (
                     UmlSequenceToolStage::LinkStart { link_type },
@@ -2001,6 +2140,30 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 }
                 (UmlSequenceToolStage::RefEnd, PartialUmlSequenceElement::Ref { dest, .. }) => {
                     *dest = Some(inner);
+                    self.event_lock = true;
+                }
+                _ => {}
+            }
+        } else {
+            match (&self.current_stage, &mut self.result) {
+                (
+                    UmlSequenceToolStage::DurationConstraintY1 { .. },
+                    PartialUmlSequenceElement::None,
+                ) if let Some(e) = section.element.as_horizontal() => {
+                    self.result = PartialUmlSequenceElement::DurationConstraint {
+                        y1: (section.end, e),
+                        y2: None,
+                        x: None,
+                    };
+                    self.current_stage = UmlSequenceToolStage::DurationConstraintY2;
+                    self.event_lock = true;
+                }
+                (
+                    UmlSequenceToolStage::DurationConstraintY2,
+                    PartialUmlSequenceElement::DurationConstraint { y1, y2, x },
+                ) if let Some(e) = section.element.as_horizontal() => {
+                    *y2 = Some((section.end, e));
+                    self.current_stage = UmlSequenceToolStage::DurationConstraintX;
                     self.event_lock = true;
                 }
                 _ => {}
@@ -2188,6 +2351,39 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         bucket: preferred_bucket,
                         position: preferred_position,
                         element: UmlSequenceElementView::from(ref_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
+                } else {
+                    Err(())
+                }
+            }
+            PartialUmlSequenceElement::DurationConstraint {
+                y1,
+                y2: Some(y2),
+                x: Some(x),
+            } => {
+                let (y1_uuid, y2_uuid) = (*y1.1.uuid(), *y2.1.uuid());
+                if let UmlSequenceToolStage::DurationConstraintY1 { text } = &self.initial_stage
+                    && let Some(y1_view) = q.get_view_for(&y1_uuid)
+                    && let Some(y2_view) = q.get_view_for(&y2_uuid)
+                {
+                    self.current_stage = self.initial_stage.clone();
+
+                    let dc_view = new_umlsequence_durationconstraint(
+                        text,
+                        *x,
+                        (y1.0, y1.1.clone(), y1_view),
+                        (y2.0, y2.1.clone(), y2_view),
+                    )
+                    .1;
+
+                    self.try_spend();
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: UmlSequenceElementView::from(dc_view).into(),
                         into_model: true,
                     });
                     Ok(None)
@@ -2805,7 +3001,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             canvas.draw_rectangle(
                                 self.lifeline_insertion_place(*pos).1,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(self.model.clone().into())),
+                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                    element: self.model.clone().into(),
+                                    end: false,
+                                })),
                                 canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                                 canvas::Highlight::NONE,
                             );
@@ -2820,14 +3019,24 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                                 canvas.draw_rectangle(
                                     lr,
                                     egui::CornerRadius::ZERO,
-                                    t.targetting_for_section(Some(self.model.clone().into())),
+                                    t.targetting_for_section(Some(
+                                        UmlSequenceViewTargettingSection {
+                                            element: self.model.clone().into(),
+                                            end: false,
+                                        },
+                                    )),
                                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                                     canvas::Highlight::NONE,
                                 );
                                 canvas.draw_rectangle(
                                     hr,
                                     egui::CornerRadius::ZERO,
-                                    t.targetting_for_section(Some(self.model.clone().into())),
+                                    t.targetting_for_section(Some(
+                                        UmlSequenceViewTargettingSection {
+                                            element: self.model.clone().into(),
+                                            end: false,
+                                        },
+                                    )),
                                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                                     canvas::Highlight::NONE,
                                 );
@@ -2837,7 +3046,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             canvas.draw_rectangle(
                                 self.bounds_rect,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(self.model.clone().into())),
+                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                    element: self.model.clone().into(),
+                                    end: false,
+                                })),
                                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                                 canvas::Highlight::NONE,
                             );
@@ -2995,9 +3207,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 if let Some(tool) = tool {
                     let horizontal_place = self.horizontal_insertion_place(pos);
                     tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_section(UmlSequenceViewTargettingSection {
+                        element: self.model.clone().into(),
+                        end: false,
+                    });
                     if let Some(h) = &horizontal_place {
-                        tool.add_section(h.1.clone().into());
+                        tool.add_section(UmlSequenceViewTargettingSection {
+                            element: h.1.clone().into(),
+                            end: false,
+                        });
                     }
 
                     let pos = match &tool.initial_stage {
@@ -5047,14 +5265,20 @@ impl UmlSequenceCombinedFragmentSectionView {
                             canvas.draw_rectangle(
                                 lr,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(self.model.clone().into())),
+                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                    element: self.model.clone().into(),
+                                    end: false,
+                                })),
                                 canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                                 canvas::Highlight::NONE,
                             );
                             canvas.draw_rectangle(
                                 hr,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(self.model.clone().into())),
+                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                    element: self.model.clone().into(),
+                                    end: false,
+                                })),
                                 canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                                 canvas::Highlight::NONE,
                             );
@@ -5064,7 +5288,10 @@ impl UmlSequenceCombinedFragmentSectionView {
                         canvas.draw_rectangle(
                             self.bounds_rect,
                             egui::CornerRadius::ZERO,
-                            t.targetting_for_section(Some(self.model.clone().into())),
+                            t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                element: self.model.clone().into(),
+                                end: false,
+                            })),
                             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                             canvas::Highlight::NONE,
                         );
@@ -5119,9 +5346,15 @@ impl UmlSequenceCombinedFragmentSectionView {
                 if let Some(tool) = tool {
                     let horizontal_place = self.horizontal_insertion_place(lifeline_views, pos);
                     tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_section(UmlSequenceViewTargettingSection {
+                        element: self.model.clone().into(),
+                        end: false,
+                    });
                     if let Some(h) = &horizontal_place {
-                        tool.add_section(h.1.clone().into());
+                        tool.add_section(UmlSequenceViewTargettingSection {
+                            element: h.1.clone().into(),
+                            end: false,
+                        });
 
                         if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, h.0, commands)
                             && ehc
@@ -6140,7 +6373,10 @@ impl UmlSequenceLifelineView {
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                        element: self.model(),
+                        end: false,
+                    })),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -6417,7 +6653,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_section(UmlSequenceViewTargettingSection {
+                        element: self.model(),
+                        end: false,
+                    });
                 } else {
                     if ehc
                         .modifier_settings
@@ -6658,7 +6897,7 @@ pub struct UmlSequenceMessageView {
     temporaries: UmlSequenceMessageTemporaries,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct UmlSequenceMessageTemporaries {
     line_type: canvas::LineType,
     target_arrow_type: canvas::ArrowheadType,
@@ -6676,7 +6915,32 @@ struct UmlSequenceMessageTemporaries {
     duration_buffer: f32,
     state_invariant_buffer: String,
     comment_buffer: String,
+    outer_rect: egui::Rect,
     highlight: canvas::Highlight,
+}
+
+impl Default for UmlSequenceMessageTemporaries {
+    fn default() -> Self {
+        Self {
+            line_type: Default::default(),
+            target_arrow_type: Default::default(),
+            source_uuids: Default::default(),
+            target_uuids: Default::default(),
+            state_invariant_in_curly_brackets: Default::default(),
+            source_y: Default::default(),
+            target_y: Default::default(),
+            display_text: Default::default(),
+            name_buffer: Default::default(),
+            synchronicity_kind_buffer: Default::default(),
+            lifecycle_kind_buffer: Default::default(),
+            is_return_buffer: Default::default(),
+            duration_buffer: Default::default(),
+            state_invariant_buffer: Default::default(),
+            comment_buffer: Default::default(),
+            outer_rect: egui::Rect::ZERO,
+            highlight: Default::default(),
+        }
+    }
 }
 
 impl UmlSequenceMessageView {
@@ -6690,7 +6954,7 @@ impl UmlSequenceMessageView {
         _context: &GlobalDrawingContext,
         _settings: &UmlSequenceSettings,
         canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
+        tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> (TargettingStatus, egui::Rect) {
         let s = canvas::Stroke {
             width: 1.0,
@@ -6801,6 +7065,42 @@ impl UmlSequenceMessageView {
             egui::Pos2::new(lifeline_min_x, pos_y),
             egui::Vec2::new(lifeline_diff_x, Self::MESSAGE_SPACING),
         );
+        self.temporaries.outer_rect = r;
+
+        if let Some((pos, t)) = tool
+            && r.contains(*pos)
+            && matches!(
+                t.current_stage,
+                UmlSequenceToolStage::DurationConstraintY1 { .. }
+                    | UmlSequenceToolStage::DurationConstraintY2
+            )
+        {
+            let targetting_rect = if source_x == target_x {
+                match pos.y > r.center().y {
+                    false => egui::Rect::from_min_max(r.left_top(), r.right_center()),
+                    true => egui::Rect::from_min_max(r.left_center(), r.right_bottom()),
+                }
+            } else {
+                match pos.x > r.center().x {
+                    false => egui::Rect::from_min_max(r.left_top(), r.center_bottom()),
+                    true => egui::Rect::from_min_max(r.center_top(), r.right_bottom()),
+                }
+            };
+
+            canvas.draw_rectangle(
+                targetting_rect,
+                egui::CornerRadius::ZERO,
+                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                    element: self.model(),
+                    end: false,
+                })),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+
+            return (TargettingStatus::Drawn, r);
+        }
+
         (TargettingStatus::NotDrawn, r)
     }
 }
@@ -7026,7 +7326,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         _ehc: &EventHandlingContext,
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
+        tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
@@ -7037,8 +7337,25 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         >,
     ) -> EventHandlingStatus {
         match event {
-            InputEvent::Click(pos) if self.bounds_rect.expand(5.0).contains(pos) => {
-                EventHandlingStatus::HandledByElement
+            InputEvent::Click(pos) if self.temporaries.outer_rect.contains(pos) => {
+                if let Some(t) = tool {
+                    let end = if self.source.uuid() == self.target.uuid() {
+                        pos.y > self.temporaries.outer_rect.center().y
+                    } else {
+                        pos.x > self.temporaries.outer_rect.center().x
+                    };
+
+                    t.add_section(UmlSequenceViewTargettingSection {
+                        element: self.model.clone().into(),
+                        end,
+                    });
+                }
+
+                if self.bounds_rect.expand(5.0).contains(pos) {
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
             }
             _ => EventHandlingStatus::NotHandled,
         }
@@ -7467,15 +7784,32 @@ impl UmlSequenceRefView {
             .with_max_y(self.bounds_rect.max.y + Self::REF_MARGIN_BOTTOM);
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
-            && let Some(t) = tool
-                .as_ref()
-                .filter(|e| self.min_shape().contains(e.0))
-                .map(|e| e.1)
+            && let Some((pos, t)) = tool.as_ref().filter(|e| self.min_shape().contains(e.0))
         {
+            let targetting_rect = match t.current_stage {
+                UmlSequenceToolStage::DurationConstraintY1 { .. }
+                | UmlSequenceToolStage::DurationConstraintY2 => {
+                    match pos.y > self.bounds_rect.center().y {
+                        false => egui::Rect::from_min_max(
+                            self.bounds_rect.left_top(),
+                            self.bounds_rect.right_center(),
+                        ),
+                        true => egui::Rect::from_min_max(
+                            self.bounds_rect.left_center(),
+                            self.bounds_rect.right_bottom(),
+                        ),
+                    }
+                }
+                _ => self.bounds_rect,
+            };
+
             canvas.draw_rectangle(
-                self.bounds_rect,
+                targetting_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                    element: self.model(),
+                    end: false,
+                })),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -7491,7 +7825,7 @@ impl UmlSequenceRefView {
         event: InputEvent,
         _ehc: &EventHandlingContext,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
+        tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
@@ -7503,6 +7837,13 @@ impl UmlSequenceRefView {
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_section(UmlSequenceViewTargettingSection {
+                        element: self.model.clone().into(),
+                        end: pos.y > self.bounds_rect.center().y,
+                    });
+                }
+
                 EventHandlingStatus::HandledByElement
             }
             _ => EventHandlingStatus::NotHandled,
@@ -7729,6 +8070,440 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
+    }
+}
+
+pub fn new_umlsequence_durationconstraint(
+    name: &str,
+    pos_x: f32,
+    source: (bool, UmlSequenceHorizontalElement, UmlSequenceElementView),
+    target: (bool, UmlSequenceHorizontalElement, UmlSequenceElementView),
+) -> (
+    ERef<UmlSequenceDurationConstraint>,
+    ERef<UmlSequenceDurationConstraintView>,
+) {
+    let link_model = ERef::new(UmlSequenceDurationConstraint::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        (source.0, source.1),
+        (target.0, target.1),
+    ));
+    let link_view = new_umlsequence_durationconstraint_view(
+        link_model.clone(),
+        pos_x,
+        (source.0, source.2),
+        (target.0, target.2),
+    );
+    (link_model, link_view)
+}
+pub fn new_umlsequence_durationconstraint_view(
+    model: ERef<UmlSequenceDurationConstraint>,
+    pos_x: f32,
+    source: (bool, UmlSequenceElementView),
+    target: (bool, UmlSequenceElementView),
+) -> ERef<UmlSequenceDurationConstraintView> {
+    ERef::new(UmlSequenceDurationConstraintView {
+        uuid: ViewUuid::now_v7().into(),
+        model,
+
+        source: DurationViewEnding {
+            end: source.0,
+            view: source.1,
+        },
+        target: DurationViewEnding {
+            end: target.0,
+            view: target.1,
+        },
+        pos_x,
+        bounds_rect: egui::Rect::ZERO,
+        temporaries: Default::default(),
+    })
+}
+
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+struct DurationViewEnding {
+    #[nh_context_serde(entity)]
+    view: UmlSequenceElementView,
+    end: bool,
+}
+
+#[derive(Clone, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlSequenceDurationConstraintView {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    model: ERef<UmlSequenceDurationConstraint>,
+
+    #[nh_context_serde(entity)]
+    source: DurationViewEnding,
+    #[nh_context_serde(entity)]
+    target: DurationViewEnding,
+
+    pos_x: f32,
+    bounds_rect: egui::Rect,
+    #[nh_context_serde(skip_and_default)]
+    temporaries: UmlSequenceDurationConstraintViewTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct UmlSequenceDurationConstraintViewTemporaries {
+    text_buffer: String,
+    comment_buffer: String,
+    dragged: bool,
+    highlight: canvas::Highlight,
+}
+
+impl UmlSequenceDurationConstraintView {}
+
+impl Entity for UmlSequenceDurationConstraintView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl View for UmlSequenceDurationConstraintView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl ElementController<UmlSequenceElement> for UmlSequenceDurationConstraintView {
+    fn model(&self) -> UmlSequenceElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: self.bounds_rect,
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        todo!()
+    }
+}
+
+impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintView {
+    fn draw_in(
+        &mut self,
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
+        canvas: &mut dyn NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlSequenceDomain as Domain>::ToolT)>,
+    ) -> TargettingStatus {
+        let source_shape = self.source.view.min_shape();
+        let source = match self.source.end {
+            false => source_shape.bounding_box().center_top(),
+            true => source_shape.bounding_box().center_bottom(),
+        };
+        let target_shape = self.target.view.min_shape();
+        let target = match self.target.end {
+            false => target_shape.bounding_box().center_top(),
+            true => target_shape.bounding_box().center_bottom(),
+        };
+
+        let arrow_source = egui::Pos2::new(self.pos_x, source.y);
+        let arrow_target = egui::Pos2::new(self.pos_x, target.y);
+        let stroke = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
+        const OVERHANG: egui::Vec2 = egui::Vec2::new(5.0, 0.0);
+        // Draw horizontal lines
+        canvas.draw_line(
+            [
+                source,
+                arrow_source
+                    + if arrow_source.x > source.x {
+                        OVERHANG
+                    } else {
+                        -OVERHANG
+                    },
+            ],
+            stroke,
+            self.temporaries.highlight,
+        );
+        canvas.draw_line(
+            [
+                target,
+                arrow_target
+                    + if arrow_target.x > target.x {
+                        OVERHANG
+                    } else {
+                        -OVERHANG
+                    },
+            ],
+            stroke,
+            self.temporaries.highlight,
+        );
+        // Draw vertical arrow
+        let (arrow_source, arrow_target) = if arrow_source.y <= arrow_target.y {
+            (arrow_source, arrow_target)
+        } else {
+            (arrow_target, arrow_source)
+        };
+        canvas.draw_line(
+            [arrow_source, arrow_target],
+            stroke,
+            self.temporaries.highlight,
+        );
+        const ARROWHEAD_WIDTH2: f32 = 5.0;
+        const ARROWHEAD_HEIGHT: f32 = 10.0;
+        for e in [
+            (arrow_source, (-ARROWHEAD_WIDTH2, ARROWHEAD_HEIGHT)),
+            (arrow_source, (ARROWHEAD_WIDTH2, ARROWHEAD_HEIGHT)),
+            (arrow_target, (-ARROWHEAD_WIDTH2, -ARROWHEAD_HEIGHT)),
+            (arrow_target, (ARROWHEAD_WIDTH2, -ARROWHEAD_HEIGHT)),
+        ] {
+            canvas.draw_line([e.0, e.0 + e.1.into()], stroke, self.temporaries.highlight);
+        }
+
+        self.bounds_rect = egui::Rect::from_two_pos(arrow_source, arrow_target);
+
+        canvas.draw_text(
+            (arrow_source + arrow_target.to_vec2()) / 2.0,
+            egui::Align2::CENTER_CENTER,
+            &self.temporaries.text_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+
+        TargettingStatus::NotDrawn
+    }
+
+    fn show_properties(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                UmlSequenceOrdinalMovement,
+                UmlSequenceElementOrVertex,
+                UmlSequencePropChange,
+            >,
+        >,
+    ) -> PropertiesStatus<UmlSequenceDomain> {
+        if !self.temporaries.highlight.selected {
+            return PropertiesStatus::NotShown;
+        }
+
+        if ui
+            .labeled_text_edit_singleline("Text:", &mut self.temporaries.text_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlSequencePropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
+            ));
+        }
+
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlSequencePropChange::CommentChange(Arc::new(
+                    self.temporaries.comment_buffer.clone(),
+                )),
+            ));
+        }
+
+        ui.label("x");
+        let mut x = self.pos_x;
+        if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+            commands.push(InsensitiveCommand::MovePositional(
+                q.selected_views(),
+                egui::Vec2::new(x - self.pos_x, 0.0),
+            ));
+        }
+
+        PropertiesStatus::Shown
+    }
+
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        _ehc: &EventHandlingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
+        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                <UmlSequenceDomain as Domain>::OrdinalMovementT,
+                <UmlSequenceDomain as Domain>::AddCommandElementT,
+                <UmlSequenceDomain as Domain>::PropChangeT,
+            >,
+        >,
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::MouseDown(pos) if self.bounds_rect.expand(5.0).contains(pos) => {
+                self.temporaries.dragged = true;
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => {
+                self.temporaries.dragged = false;
+                EventHandlingStatus::NotHandled
+            }
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged => {
+                commands.push(InsensitiveCommand::MovePositional(
+                    if self.temporaries.highlight.selected {
+                        q.selected_views()
+                    } else {
+                        std::iter::once(*self.uuid).collect()
+                    },
+                    egui::Vec2 { x: delta.x, y: 0.0 },
+                ));
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Click(pos) if self.bounds_rect.expand(5.0).contains(pos) => {
+                EventHandlingStatus::HandledByElement
+            }
+            _ => EventHandlingStatus::NotHandled,
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<
+                <UmlSequenceDomain as Domain>::OrdinalMovementT,
+                <UmlSequenceDomain as Domain>::AddCommandElementT,
+                <UmlSequenceDomain as Domain>::PropChangeT,
+            >,
+        >,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                }
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
+                    || self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&self.uuid) => {}
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
+                self.pos_x += delta.x;
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
+                    std::iter::once(*self.uuid()).collect(),
+                    -*delta,
+                ));
+            }
+            InsensitiveCommand::PropertyChange(uuids, property) if uuids.contains(&*self.uuid) => {
+                let mut model = self.model.write();
+                affected_models.insert(*model.uuid);
+                match property {
+                    UmlSequencePropChange::NameChange(name) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::NameChange(model.text.clone()),
+                        ));
+                        model.text = name.clone();
+                    }
+                    UmlSequencePropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::CommentChange(model.comment.clone()),
+                        ));
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        self.temporaries.text_buffer = (*model.text).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
+    }
+
+    fn head_count(
+        &mut self,
+        _flattened_views: &mut HashMap<ViewUuid, (UmlSequenceElementView, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
+        flattened_represented_models.insert(*self.model.read().uuid, *self.uuid);
+    }
+    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
+        deleting.contains(&self.source.view.uuid()) || deleting.contains(&self.target.view.uuid())
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlSequenceDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlSequenceDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlSequenceDomain as Domain>::CommonElementT>,
+    ) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *self.model_uuid())
+        };
+
+        let old_model = self.model.read();
+
+        let model = if let Some(UmlSequenceElement::DurationConstraint(m)) = m.get(&old_model.uuid)
+        {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model,
+            source: self.source.clone(),
+            target: self.target.clone(),
+            pos_x: self.pos_x,
+            bounds_rect: self.bounds_rect,
+            temporaries: self.temporaries.clone(),
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
+    }
+
+    fn deep_copy_relink(
+        &mut self,
+        _c: &HashMap<ViewUuid, UmlSequenceElementView>,
+        m: &HashMap<ModelUuid, UmlSequenceElement>,
+    ) {
+        let mut model = self.model.write();
+
+        let source_model_uuid = *model.source.element.uuid();
+        if let Some(new_source) = m.get(&source_model_uuid).and_then(|e| e.as_horizontal()) {
+            model.source.element = new_source;
+        }
+        let target_model_uuid = *model.target.element.uuid();
+        if let Some(new_target) = m.get(&target_model_uuid).and_then(|e| e.as_horizontal()) {
+            model.target.element = new_target;
+        }
     }
 }
 
@@ -8052,7 +8827,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                        element: self.model(),
+                        end: false,
+                    })),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -8090,16 +8868,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
-                    EventHandlingStatus::HandledByElement
-                } else {
-                    EventHandlingStatus::NotHandled
-                }
+                self.dragged_shape = None;
+                EventHandlingStatus::NotHandled
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_section(UmlSequenceViewTargettingSection {
+                        element: self.model(),
+                        end: false,
+                    });
                 } else {
                     if ehc
                         .modifier_settings
