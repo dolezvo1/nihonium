@@ -1,9 +1,14 @@
 # Nihonium User Manual
 
 
+![](img/screenshot.png)
+
+
 ## New Diagram Tab
 
 The New Diagram tab shows list of supported diagram types. After selecting a diagram type, specific options can be selected, such as whether the diagram should be empty or contain some predefined content (usually a demo of the notation is offered).
+
+![](img/screenshot_newdiagram.png)
 
 
 ## Project Hierarchy Tab
@@ -18,10 +23,14 @@ The Model Hierarchy tab shows model of the currently selected diagram. Whether a
 
 The Search tab provides a way to search all models. The search expression may contain logical operators `AND`, `OR` and `NOT`.
 
+![](img/screenshot_search.png)
+
 
 ## Toolbar Tab
 
 The Toolbar tab shows a list of tools separated into categories, as well as previews of the elements that will be created by the tools.
+
+![](img/screenshot_toolbar.png)
 
 Selecting a tool in the list with the primary mouse button engages the repeated mode (indicated by `∞`). Selecting a tool in the list with a secondary mouse button engages the one-shot mode (indicated by `1`).
 
@@ -33,6 +42,8 @@ The toolbar tools and categories for a given diagram type may usually be modifie
 ## Properties Tab
 
 The Properties tab shows available properties of the currently selected element (if some elements are selected) or the current diagram (if no elements are selected). When multiple elements are selected, the changes are usually applied to all selected elements where appropriate.
+
+![](img/screenshot_properties.png)
 
 ## Outline Tab
 
