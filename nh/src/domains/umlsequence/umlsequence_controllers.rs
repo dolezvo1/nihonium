@@ -2478,6 +2478,12 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     .iter_mut()
                     .flat_map(|v| v.show_properties(gdc, q, ui, commands).non_default())
                     .next()
+            })
+            .or_else(|| {
+                self.standalone_views
+                    .iter_mut()
+                    .flat_map(|v| v.show_properties(gdc, q, ui, commands).non_default())
+                    .next()
             });
 
         if let Some(child) = child {
@@ -3492,16 +3498,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     }
                     if (*bucket == 0 || *bucket == NONDIAGRAM_STANDALONE_BUCKET)
                         && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
-                        && let Some(_) =
-                            w.get_element_pos(&view.model_uuid())
-                                .map(|e| e.1)
-                                .or_else(|| {
-                                    if *into_model {
-                                        w.insert_element(*bucket, *position, view.model()).ok()
-                                    } else {
-                                        None
-                                    }
-                                })
+                        && let Some((b, _)) = w.get_element_pos(&view.model_uuid()).or_else(|| {
+                            if *into_model {
+                                w.insert_element(*bucket, *position, view.model())
+                                    .map(|e| (*bucket, e))
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        })
+                        && (b == 0 || b == NONDIAGRAM_STANDALONE_BUCKET)
                     {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency {
