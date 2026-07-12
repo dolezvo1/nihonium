@@ -344,6 +344,27 @@ impl UmlSequenceHorizontalElementView {
             ),
         }
     }
+
+    fn lifeline_dependencies_met(&self, lifelines: &HashSet<ViewUuid>) -> bool {
+        match self {
+            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner
+                .read()
+                .temporaries
+                .spanned_lifelines
+                .iter()
+                .all(|e| lifelines.contains(e)),
+            UmlSequenceHorizontalElementView::Message(inner) => {
+                let r = inner.read();
+                lifelines.contains(&r.source.uuid()) && lifelines.contains(&r.target.uuid())
+            }
+            UmlSequenceHorizontalElementView::Ref(inner) => inner
+                .read()
+                .temporaries
+                .spanned_lifelines
+                .iter()
+                .all(|e| lifelines.contains(e)),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1482,7 +1503,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             ],
         ),
         (
-            "Elements",
+            "Lifelines",
             vec![
                 (
                     UmlSequenceToolStage::Lifeline {
@@ -1648,7 +1669,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(100.0, 75.0)),
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(150.0, 75.0)),
                 true,
             )
             .1;
@@ -3667,6 +3688,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
                             .and_then(|v| v.as_horizontal().ok_or(()))
+                        && view.lifeline_dependencies_met(
+                            &self.lifeline_views.iter().map(|e| *e.read().uuid).collect(),
+                        )
                         && let Some(model_pos) = w
                             .get_element_pos(&view.model_uuid())
                             .map(|e| e.1)
@@ -3718,9 +3742,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
                         && let Some((b, _)) = w.get_element_pos(&view.model_uuid()).or_else(|| {
                             if *into_model {
-                                w.insert_element(*bucket, *position, view.model())
-                                    .map(|e| (*bucket, e))
-                                    .ok()
+                                w.insert_element(
+                                    NONDIAGRAM_STANDALONE_BUCKET,
+                                    *position,
+                                    view.model(),
+                                )
+                                .map(|e| (NONDIAGRAM_STANDALONE_BUCKET, e))
+                                .ok()
                             } else {
                                 None
                             }
@@ -4714,8 +4742,12 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         macro_rules! recurse {
             () => {
                 self.sections.iter().for_each(|s| {
-                    s.write()
-                        .apply_command(command, undo_accumulator, affected_models)
+                    s.write().apply_command_inner(
+                        &self.temporaries.spanned_lifelines,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    )
                 });
             };
         }
@@ -4826,6 +4858,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                     if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Ok(UmlSequenceElementView::CombinedFragmentSection(view)) =
                             element.clone().try_into()
+                        && view.read().horizontal_element_views.iter().all(|e| {
+                            e.lifeline_dependencies_met(&self.temporaries.spanned_lifelines)
+                        })
                     {
                         let mut vw = view.write();
                         if let Some(model_pos) = w
@@ -5398,6 +5433,287 @@ impl UmlSequenceCombinedFragmentSectionView {
         }
     }
 
+    fn apply_command_inner(
+        &mut self,
+        parent_spanned_lifelines: &HashSet<ViewUuid>,
+        command: &InsensitiveCommand<
+            UmlSequenceOrdinalMovement,
+            UmlSequenceElementOrVertex,
+            UmlSequencePropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<
+                UmlSequenceOrdinalMovement,
+                UmlSequenceElementOrVertex,
+                UmlSequencePropChange,
+            >,
+        >,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        macro_rules! recurse {
+            () => {
+                self.horizontal_element_views
+                    .iter_mut()
+                    .for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
+            };
+        }
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                if h.selected {
+                    match set {
+                        true => {
+                            self.temporaries.selected_direct_elements = self
+                                .horizontal_element_views
+                                .iter()
+                                .map(|v| *v.uuid())
+                                .collect();
+                        }
+                        false => self.temporaries.selected_direct_elements.clear(),
+                    }
+                }
+                recurse!();
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                }
+
+                if h.selected {
+                    for k in self
+                        .horizontal_element_views
+                        .iter()
+                        .map(|v| *v.uuid())
+                        .filter(|k| uuids.contains(k))
+                    {
+                        match set {
+                            true => self.temporaries.selected_direct_elements.insert(k),
+                            false => self.temporaries.selected_direct_elements.remove(&k),
+                        };
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
+                    || self.min_shape().contained_within(*rect);
+
+                recurse!();
+            }
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
+                recurse!();
+            }
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
+                self.bounds_rect.set_center(self.position() + *delta);
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
+                    std::iter::once(*self.uuid).collect(),
+                    -*delta,
+                ));
+                let mut void = vec![];
+                self.horizontal_element_views.iter_mut().for_each(|v| {
+                    v.apply_command(
+                        &InsensitiveCommand::MovePositionalAll(*delta),
+                        &mut void,
+                        affected_models,
+                    );
+                });
+            }
+            InsensitiveCommand::ResizeElementsBy(..) | InsensitiveCommand::ResizeElementTo(..) => {
+                recurse!();
+            }
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
+                for element in self
+                    .horizontal_element_views
+                    .iter()
+                    .filter(|v| uuids.contains(&v.uuid()))
+                {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (1, None)
+                    } else if let Some((b, pos)) =
+                        self.model.read().get_element_pos(&element.model_uuid())
+                    {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: element.clone().as_element_view().into(),
+                        into_model: false,
+                    });
+                }
+                self.horizontal_element_views
+                    .retain(|v| !uuids.contains(&v.uuid()));
+
+                recurse!();
+            }
+            InsensitiveCommand::AddDependency {
+                target,
+                bucket,
+                position,
+                element,
+                into_model,
+            } => {
+                if *target == *self.uuid {
+                    let mut w = self.model.write();
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
+                        && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
+                            .and_then(|v| v.as_horizontal().ok_or(()))
+                        && view.lifeline_dependencies_met(parent_spanned_lifelines)
+                        && let Some(model_pos) = w
+                            .get_element_pos(&view.model_uuid())
+                            .map(|e| e.1)
+                            .or_else(|| {
+                                if *into_model {
+                                    w.insert_element(*bucket, *position, view.model()).ok()
+                                } else {
+                                    None
+                                }
+                            })
+                    {
+                        let uuid = *view.uuid();
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            element: uuid,
+                            including_model: *into_model,
+                        });
+
+                        if *into_model {
+                            affected_models.insert(*w.uuid);
+                        }
+                        let mut model_transitives = HashMap::new();
+                        view.head_count(
+                            &mut HashMap::new(),
+                            &mut HashMap::new(),
+                            &mut model_transitives,
+                        );
+                        affected_models.extend(model_transitives.into_keys());
+
+                        let view_pos = {
+                            let mut view_pos: PositionNoT = 0;
+                            for e in &self.horizontal_element_views {
+                                let Some((_b, pos)) = w.get_element_pos(&e.model_uuid()) else {
+                                    unreachable!()
+                                };
+                                if pos < model_pos {
+                                    view_pos += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            view_pos
+                        };
+                        self.horizontal_element_views
+                            .insert(view_pos.try_into().unwrap(), view.clone());
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::RemoveDependency {
+                target,
+                bucket,
+                element,
+                including_model,
+            } => {
+                if *target == *self.uuid {
+                    let mut w = self.model.write();
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
+                        && let Some(view) = self
+                            .horizontal_element_views
+                            .iter()
+                            .find(|v| *v.uuid() == *element)
+                            .cloned()
+                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
+                    {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            position: Some(pos),
+                            element: view.clone().as_element_view().into(),
+                            into_model: *including_model,
+                        });
+
+                        if *including_model {
+                            affected_models.insert(*w.uuid);
+                        }
+
+                        self.horizontal_element_views
+                            .retain(|v| *v.uuid() != *element);
+                    }
+                }
+                recurse!();
+            }
+            InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {}
+            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
+                if let UmlSequenceOrdinalMovement::HorizontalUp
+                | UmlSequenceOrdinalMovement::HorizontalDown = direction
+                {
+                    let mut undo_uuids = HashSet::new();
+                    let horizontal_elements_iter: Box<
+                        dyn Iterator<Item = &mut UmlSequenceHorizontalElementView>,
+                    > = match direction {
+                        UmlSequenceOrdinalMovement::HorizontalUp => {
+                            Box::new(self.horizontal_element_views.iter_mut())
+                        }
+                        UmlSequenceOrdinalMovement::HorizontalDown => {
+                            Box::new(self.horizontal_element_views.iter_mut().rev())
+                        }
+                        _ => unreachable!(),
+                    };
+                    let mut horizontal_elements_iter = horizontal_elements_iter.peekable();
+                    while let Some(dest) = horizontal_elements_iter.next()
+                        && let Some(src) = horizontal_elements_iter.peek_mut()
+                    {
+                        if uuids.contains(&src.uuid()) && !uuids.contains(&dest.uuid()) {
+                            let mut w = self.model.write();
+                            let Some(new_pos) = w.get_element_pos(&dest.model_uuid()) else {
+                                continue;
+                            };
+                            w.move_element(&src.model_uuid(), 1, new_pos.1);
+                            undo_uuids.insert(*src.uuid());
+                            std::mem::swap(dest, *src);
+                        }
+                    }
+                    if !undo_uuids.is_empty() {
+                        undo_accumulator.push(InsensitiveCommand::MoveOrdinal(
+                            undo_uuids,
+                            direction.inverse(),
+                        ));
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::PropertyChange(uuids, property) => {
+                if uuids.contains(&self.uuid) {
+                    let mut model = self.model.write();
+                    affected_models.insert(*model.uuid);
+                    if let UmlSequencePropChange::CombinedFragmentSectionGuardChange(guard) =
+                        property
+                    {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::CombinedFragmentSectionGuardChange(
+                                model.guard.clone(),
+                            ),
+                        ));
+                        model.guard = guard.clone();
+                    }
+                }
+                recurse!();
+            }
+            InsensitiveCommand::Macro(..) => unreachable!(),
+        }
+    }
+
     // TODO: deduplicate?
     fn horizontal_insertion_place(
         &self,
@@ -5558,7 +5874,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
     ) -> TargettingStatus {
         self.draw_inner(
             &Vec::new(),
-            (0.0, 100.0),
+            (0.0, 200.0),
             &HashMap::new(),
             0.0,
             q,
@@ -5605,267 +5921,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
-        macro_rules! recurse {
-            () => {
-                self.horizontal_element_views
-                    .iter_mut()
-                    .for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
-            };
-        }
-        match command {
-            InsensitiveCommand::HighlightAll(set, h) => {
-                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
-                if h.selected {
-                    match set {
-                        true => {
-                            self.temporaries.selected_direct_elements = self
-                                .horizontal_element_views
-                                .iter()
-                                .map(|v| *v.uuid())
-                                .collect();
-                        }
-                        false => self.temporaries.selected_direct_elements.clear(),
-                    }
-                }
-                recurse!();
-            }
-            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
-                if uuids.contains(&*self.uuid) {
-                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
-                }
-
-                if h.selected {
-                    for k in self
-                        .horizontal_element_views
-                        .iter()
-                        .map(|v| *v.uuid())
-                        .filter(|k| uuids.contains(k))
-                    {
-                        match set {
-                            true => self.temporaries.selected_direct_elements.insert(k),
-                            false => self.temporaries.selected_direct_elements.remove(&k),
-                        };
-                    }
-                }
-
-                recurse!();
-            }
-            InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
-                    && *retain)
-                    || self.min_shape().contained_within(*rect);
-
-                recurse!();
-            }
-            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
-                recurse!();
-            }
-            InsensitiveCommand::MovePositional(_, delta)
-            | InsensitiveCommand::MovePositionalAll(delta) => {
-                self.bounds_rect.set_center(self.position() + *delta);
-                undo_accumulator.push(InsensitiveCommand::MovePositional(
-                    std::iter::once(*self.uuid).collect(),
-                    -*delta,
-                ));
-                let mut void = vec![];
-                self.horizontal_element_views.iter_mut().for_each(|v| {
-                    v.apply_command(
-                        &InsensitiveCommand::MovePositionalAll(*delta),
-                        &mut void,
-                        affected_models,
-                    );
-                });
-            }
-            InsensitiveCommand::ResizeElementsBy(..) | InsensitiveCommand::ResizeElementTo(..) => {
-                recurse!();
-            }
-            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
-                for element in self
-                    .horizontal_element_views
-                    .iter()
-                    .filter(|v| uuids.contains(&v.uuid()))
-                {
-                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
-                        (1, None)
-                    } else if let Some((b, pos)) =
-                        self.model.read().get_element_pos(&element.model_uuid())
-                    {
-                        (b, Some(pos))
-                    } else {
-                        continue;
-                    };
-
-                    undo_accumulator.push(InsensitiveCommand::AddDependency {
-                        target: *self.uuid,
-                        bucket: b,
-                        position: pos,
-                        element: element.clone().as_element_view().into(),
-                        into_model: false,
-                    });
-                }
-                self.horizontal_element_views
-                    .retain(|v| !uuids.contains(&v.uuid()));
-
-                recurse!();
-            }
-            InsensitiveCommand::AddDependency {
-                target,
-                bucket,
-                position,
-                element,
-                into_model,
-            } => {
-                if *target == *self.uuid {
-                    let mut w = self.model.write();
-                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
-                        && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
-                            .and_then(|v| v.as_horizontal().ok_or(()))
-                        && let Some(model_pos) = w
-                            .get_element_pos(&view.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, view.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                    {
-                        let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            element: uuid,
-                            including_model: *into_model,
-                        });
-
-                        if *into_model {
-                            affected_models.insert(*w.uuid);
-                        }
-                        let mut model_transitives = HashMap::new();
-                        view.head_count(
-                            &mut HashMap::new(),
-                            &mut HashMap::new(),
-                            &mut model_transitives,
-                        );
-                        affected_models.extend(model_transitives.into_keys());
-
-                        let view_pos = {
-                            let mut view_pos: PositionNoT = 0;
-                            for e in &self.horizontal_element_views {
-                                let Some((_b, pos)) = w.get_element_pos(&e.model_uuid()) else {
-                                    unreachable!()
-                                };
-                                if pos < model_pos {
-                                    view_pos += 1;
-                                } else {
-                                    break;
-                                }
-                            }
-                            view_pos
-                        };
-                        self.horizontal_element_views
-                            .insert(view_pos.try_into().unwrap(), view.clone());
-                    }
-                }
-
-                recurse!();
-            }
-            InsensitiveCommand::RemoveDependency {
-                target,
-                bucket,
-                element,
-                including_model,
-            } => {
-                if *target == *self.uuid {
-                    let mut w = self.model.write();
-                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
-                        && let Some(view) = self
-                            .horizontal_element_views
-                            .iter()
-                            .find(|v| *v.uuid() == *element)
-                            .cloned()
-                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
-                    {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            position: Some(pos),
-                            element: view.clone().as_element_view().into(),
-                            into_model: *including_model,
-                        });
-
-                        if *including_model {
-                            affected_models.insert(*w.uuid);
-                        }
-
-                        self.horizontal_element_views
-                            .retain(|v| *v.uuid() != *element);
-                    }
-                }
-                recurse!();
-            }
-            InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {}
-            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
-                if let UmlSequenceOrdinalMovement::HorizontalUp
-                | UmlSequenceOrdinalMovement::HorizontalDown = direction
-                {
-                    let mut undo_uuids = HashSet::new();
-                    let horizontal_elements_iter: Box<
-                        dyn Iterator<Item = &mut UmlSequenceHorizontalElementView>,
-                    > = match direction {
-                        UmlSequenceOrdinalMovement::HorizontalUp => {
-                            Box::new(self.horizontal_element_views.iter_mut())
-                        }
-                        UmlSequenceOrdinalMovement::HorizontalDown => {
-                            Box::new(self.horizontal_element_views.iter_mut().rev())
-                        }
-                        _ => unreachable!(),
-                    };
-                    let mut horizontal_elements_iter = horizontal_elements_iter.peekable();
-                    while let Some(dest) = horizontal_elements_iter.next()
-                        && let Some(src) = horizontal_elements_iter.peek_mut()
-                    {
-                        if uuids.contains(&src.uuid()) && !uuids.contains(&dest.uuid()) {
-                            let mut w = self.model.write();
-                            let Some(new_pos) = w.get_element_pos(&dest.model_uuid()) else {
-                                continue;
-                            };
-                            w.move_element(&src.model_uuid(), 1, new_pos.1);
-                            undo_uuids.insert(*src.uuid());
-                            std::mem::swap(dest, *src);
-                        }
-                    }
-                    if !undo_uuids.is_empty() {
-                        undo_accumulator.push(InsensitiveCommand::MoveOrdinal(
-                            undo_uuids,
-                            direction.inverse(),
-                        ));
-                    }
-                }
-
-                recurse!();
-            }
-            InsensitiveCommand::PropertyChange(uuids, property) => {
-                if uuids.contains(&self.uuid) {
-                    let mut model = self.model.write();
-                    affected_models.insert(*model.uuid);
-                    if let UmlSequencePropChange::CombinedFragmentSectionGuardChange(guard) =
-                        property
-                    {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*self.uuid).collect(),
-                            UmlSequencePropChange::CombinedFragmentSectionGuardChange(
-                                model.guard.clone(),
-                            ),
-                        ));
-                        model.guard = guard.clone();
-                    }
-                }
-                recurse!();
-            }
-            InsensitiveCommand::Macro(..) => unreachable!(),
-        }
+        self.apply_command_inner(&HashSet::new(), command, undo_accumulator, affected_models);
     }
 
     fn refresh_buffers(&mut self) {
@@ -5896,6 +5952,23 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
             );
             flattened_views.insert(*v.uuid(), (v.clone().as_element_view(), *self.uuid));
         });
+    }
+
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlSequenceDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlSequenceDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlSequenceDomain as Domain>::CommonElementT>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid)) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            self.horizontal_element_views
+                .iter()
+                .for_each(|v| v.deep_copy_walk(requested, uuid_present, tlc, c, m));
+        }
     }
 
     fn deep_copy_clone(
@@ -7573,25 +7646,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             modelish
         };
 
-        let mut void = HashMap::new();
-        let source = if let Some(s) = c.get(&self.source.uuid()) {
-            s.clone()
-        } else {
-            self.source.deep_copy_clone(uuid_present, &mut void, c, m);
-            c.get(&*self.source.uuid()).unwrap().clone()
-        };
-        let target = if let Some(t) = c.get(&self.target.uuid()) {
-            t.clone()
-        } else {
-            self.target.deep_copy_clone(uuid_present, &mut void, c, m);
-            c.get(&*self.target.uuid()).unwrap().clone()
-        };
-
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model,
-            source,
-            target,
+            source: self.source.clone(),
+            target: self.target.clone(),
             bounds_rect: self.bounds_rect,
             found_activation_color: self.found_activation_color,
             new_activation_color: self.new_activation_color,
@@ -7660,6 +7719,7 @@ pub struct UmlSequenceRefView {
 struct UmlSequenceRefViewTemporaries {
     text_buffer: String,
 
+    spanned_lifelines: HashSet<ViewUuid>,
     highlight: canvas::Highlight,
 }
 
@@ -7699,6 +7759,10 @@ impl UmlSequenceRefView {
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> (TargettingStatus, egui::Rect) {
         let spanned_lifeline_views = self.spanned_lifeline_views(lifeline_views);
+        self.temporaries.spanned_lifelines = spanned_lifeline_views
+            .iter()
+            .map(|e| *e.read().uuid)
+            .collect();
         let span_x = (
             spanned_lifeline_views
                 .first()
