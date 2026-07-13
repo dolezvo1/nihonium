@@ -653,6 +653,7 @@ impl DiagramSettings for RdfSettings {
                             content,
                             datatype,
                             language,
+                            with_predicate_from: _,
                         } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Content", content)
@@ -664,7 +665,10 @@ impl DiagramSettings for RdfSettings {
                                 .labeled_text_edit_singleline("Language", language)
                                 .changed();
                         }
-                        RdfToolStage::Node { iri } => {
+                        RdfToolStage::Node {
+                            iri,
+                            with_predicate_from: _,
+                        } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("IRI", iri)
                                 .changed();
@@ -740,6 +744,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         content: "Eric Miller".to_owned(),
                         datatype: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
                         language: "en".to_owned(),
+                        with_predicate_from: None,
                     },
                     "Literal",
                     Some(egui::KeyboardShortcut::new(
@@ -750,6 +755,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 (
                     RdfToolStage::Node {
                         iri: "http://iri".to_owned(),
+                        with_predicate_from: None,
                     },
                     "Node",
                     Some(egui::KeyboardShortcut::new(
@@ -812,11 +818,15 @@ fn view_for_stage(s: &RdfToolStage) -> RdfElementView {
             content,
             datatype,
             language,
+            with_predicate_from: _,
         } => {
             let literal_view = new_rdf_literal(content, datatype, language, egui::Pos2::ZERO).1;
             literal_view.into()
         }
-        RdfToolStage::Node { iri } => {
+        RdfToolStage::Node {
+            iri,
+            with_predicate_from: _,
+        } => {
             let node_view = new_rdf_node(iri, egui::Pos2::ZERO).1;
             node_view.into()
         }
@@ -878,9 +888,11 @@ pub enum RdfToolStage {
         content: String,
         datatype: String,
         language: String,
+        with_predicate_from: Option<ModelUuid>,
     },
     Node {
         iri: String,
+        with_predicate_from: Option<ModelUuid>,
     },
     PredicateStart {
         iri: String,
@@ -896,12 +908,10 @@ enum PartialRdfElement {
     None,
     Some(RdfElementView),
     Predicate {
-        iri: String,
         source: ERef<RdfNode>,
         dest: Option<RdfTargettableElement>,
     },
     Graph {
-        iri: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -993,8 +1003,27 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         canvas: &mut dyn NHCanvas,
         pos: egui::Pos2,
     ) {
-        match &self.result {
-            PartialRdfElement::Predicate { source, .. } => {
+        match (&self.result, &self.initial_stage) {
+            (
+                _,
+                RdfToolStage::Literal {
+                    with_predicate_from: Some(source),
+                    ..
+                }
+                | RdfToolStage::Node {
+                    with_predicate_from: Some(source),
+                    ..
+                },
+            ) => {
+                if let Some(source_view) = q.get_view_for(source) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            (PartialRdfElement::Predicate { source, .. }, _) => {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1003,7 +1032,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     );
                 }
             }
-            PartialRdfElement::Graph { a, .. } => {
+            (PartialRdfElement::Graph { a, .. }, _) => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(*a, pos),
                     egui::CornerRadius::ZERO,
@@ -1027,6 +1056,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     content,
                     datatype,
                     language,
+                    with_predicate_from: _,
                 },
                 _,
             ) => {
@@ -1036,17 +1066,19 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 self.result = PartialRdfElement::Some(literal_view.into());
                 self.event_lock = true;
             }
-            (RdfToolStage::Node { iri }, _) => {
+            (
+                RdfToolStage::Node {
+                    iri,
+                    with_predicate_from: _,
+                },
+                _,
+            ) => {
                 let (_node, node_view) = new_rdf_node(iri, pos);
                 self.result = PartialRdfElement::Some(node_view.into());
                 self.event_lock = true;
             }
-            (RdfToolStage::GraphStart { iri }, _) => {
-                self.result = PartialRdfElement::Graph {
-                    iri: iri.clone(),
-                    a: pos,
-                    b: None,
-                };
+            (RdfToolStage::GraphStart { .. }, _) => {
+                self.result = PartialRdfElement::Graph { a: pos, b: None };
                 self.current_stage = RdfToolStage::GraphEnd;
                 self.event_lock = true;
             }
@@ -1070,9 +1102,8 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 }
             }
             RdfElement::RdfNode(inner) => match (&self.current_stage, &mut self.result) {
-                (RdfToolStage::PredicateStart { iri }, PartialRdfElement::None) => {
+                (RdfToolStage::PredicateStart { .. }, PartialRdfElement::None) => {
                     self.result = PartialRdfElement::Predicate {
-                        iri: iri.clone(),
                         source: inner,
                         dest: None,
                     };
@@ -1114,7 +1145,35 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     ))),
                     RdfElementView::Predicate(..) | RdfElementView::Graph(..) => unreachable!(),
                 };
+                let additional_predicate = match self.initial_stage {
+                    RdfToolStage::Literal {
+                        with_predicate_from: Some(source),
+                        ..
+                    }
+                    | RdfToolStage::Node {
+                        with_predicate_from: Some(source),
+                        ..
+                    } if let Some(RdfElementView::Node(source_view)) = q.get_view_for(&source)
+                        && q.get_parent(&source_view.read().uuid)
+                            .unwrap_or(q.get_root())
+                            == *preferred_container =>
+                    {
+                        let predicate_view = new_rdf_predicate(
+                            "",
+                            (source_view.read().model.clone(), source_view.clone().into()),
+                            (
+                                element.model().as_targettable_element().unwrap(),
+                                element.clone(),
+                            ),
+                        )
+                        .1;
+                        Some((*preferred_container, predicate_view))
+                    }
+                    _ => None,
+                };
+
                 self.try_spend();
+
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1122,14 +1181,22 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     element: element.into(),
                     into_model: true,
                 });
+                if let Some((parent, e)) = additional_predicate {
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: parent,
+                        bucket: 0,
+                        position: None,
+                        element: RdfElementView::from(e).into(),
+                        into_model: true,
+                    });
+                }
                 Ok(esm)
             }
             PartialRdfElement::Predicate {
-                iri,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let RdfToolStage::PredicateStart { iri } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.uuid());
                 if let (Some(source_controller), Some(dest_controller)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -1160,7 +1227,9 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     Err(())
                 }
             }
-            PartialRdfElement::Graph { iri, a, b: Some(b) } => {
+            PartialRdfElement::Graph { a, b: Some(b) }
+                if let RdfToolStage::GraphStart { iri } = &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let (graph_model, graph_view) =
@@ -1476,14 +1545,39 @@ pub struct RdfNodeView {
 }
 
 impl RdfNodeView {
+    const BUTTON_RADIUS: f32 = 8.0;
     fn predicate_button_rect(&self, ui_scale: f32) -> egui::Rect {
-        let b_radius = 8.0;
         let b_center = self.position
             + egui::Vec2::new(
-                self.bounds_radius.x + b_radius / ui_scale,
-                -self.bounds_radius.y + b_radius / ui_scale,
+                self.bounds_radius.x + Self::BUTTON_RADIUS / ui_scale,
+                -self.bounds_radius.y + Self::BUTTON_RADIUS / ui_scale,
             );
-        egui::Rect::from_center_size(b_center, egui::Vec2::splat(2.0 * b_radius / ui_scale))
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn literal_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_center = self.position
+            + egui::Vec2::new(
+                self.bounds_radius.x + Self::BUTTON_RADIUS / ui_scale,
+                -self.bounds_radius.y + 3.0 * Self::BUTTON_RADIUS / ui_scale,
+            );
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn node_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_center = self.position
+            + egui::Vec2::new(
+                self.bounds_radius.x + 3.0 * Self::BUTTON_RADIUS / ui_scale,
+                -self.bounds_radius.y + 3.0 * Self::BUTTON_RADIUS / ui_scale,
+            );
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
     }
 }
 
@@ -1628,6 +1722,36 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 14.0 / ui_scale,
                 egui::Color32::BLACK,
             );
+            let b_rect = self.literal_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(
+                b_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "L",
+                14.0 / ui_scale,
+                egui::Color32::BLACK,
+            );
+            let b_rect = self.node_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(
+                b_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "N",
+                14.0 / ui_scale,
+                egui::Color32::BLACK,
+            );
         }
 
         // Draw targetting ellipse
@@ -1689,10 +1813,48 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                     },
                     current_stage: RdfToolStage::PredicateEnd,
                     result: PartialRdfElement::Predicate {
-                        iri: "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
                         source: self.model.clone(),
                         dest: None,
                     },
+                    event_lock: true,
+                    is_spent: Some(false),
+                });
+
+                EventHandlingStatus::HandledByContainer
+            }
+            InputEvent::Click(pos)
+                if self.highlight.selected
+                    && self.literal_button_rect(ehc.ui_scale).contains(pos) =>
+            {
+                let stage = RdfToolStage::Literal {
+                    content: "".to_owned(),
+                    datatype: "".to_owned(),
+                    language: "en".to_owned(),
+                    with_predicate_from: Some(*self.model.read().uuid),
+                };
+                *tool = Some(NaiveRdfTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage: stage.clone(),
+                    current_stage: stage,
+                    result: PartialRdfElement::None,
+                    event_lock: true,
+                    is_spent: Some(false),
+                });
+
+                EventHandlingStatus::HandledByContainer
+            }
+            InputEvent::Click(pos)
+                if self.highlight.selected && self.node_button_rect(ehc.ui_scale).contains(pos) =>
+            {
+                let stage = RdfToolStage::Node {
+                    iri: "".to_owned(),
+                    with_predicate_from: Some(*self.model.read().uuid),
+                };
+                *tool = Some(NaiveRdfTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage: stage.clone(),
+                    current_stage: stage,
+                    result: PartialRdfElement::None,
                     event_lock: true,
                     is_spent: Some(false),
                 });
