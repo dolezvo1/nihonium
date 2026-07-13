@@ -274,21 +274,26 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         element: RdfElement,
     ) -> Result<RdfElementView, HashSet<ModelUuid>> {
         let v = match element {
-            RdfElement::RdfGraph(rw_lock) => RdfElementView::from(new_rdf_graph_view(
-                rw_lock,
+            RdfElement::RdfGraph(inner) => RdfElementView::from(new_rdf_graph_view(
+                inner,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 100.0),
                 },
+                MGlobalColor::None,
             )),
-            RdfElement::RdfLiteral(rw_lock) => {
-                RdfElementView::from(new_rdf_literal_view(rw_lock, egui::Pos2::ZERO))
-            }
-            RdfElement::RdfNode(rw_lock) => {
-                RdfElementView::from(new_rdf_node_view(rw_lock, egui::Pos2::ZERO))
-            }
-            RdfElement::RdfPredicate(rw_lock) => {
-                let m = rw_lock.read();
+            RdfElement::RdfLiteral(inner) => RdfElementView::from(new_rdf_literal_view(
+                inner,
+                egui::Pos2::ZERO,
+                MGlobalColor::None,
+            )),
+            RdfElement::RdfNode(inner) => RdfElementView::from(new_rdf_node_view(
+                inner,
+                egui::Pos2::ZERO,
+                MGlobalColor::None,
+            )),
+            RdfElement::RdfPredicate(inner) => {
+                let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
                 {
@@ -296,7 +301,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
                 RdfElementView::from(new_rdf_predicate_view(
-                    rw_lock.clone(),
+                    inner.clone(),
                     source_view,
                     target_view,
                 ))
@@ -518,6 +523,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (node, node_view) = new_rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
+        MGlobalColor::None,
     );
 
     let (literal_model, literal_view) = new_rdf_literal(
@@ -525,6 +531,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         "http://www.w3.org/2001/XMLSchema#string",
         "en",
         egui::Pos2::new(300.0, 200.0),
+        MGlobalColor::None,
     );
 
     let (predicate, predicate_view) = new_rdf_predicate(
@@ -536,6 +543,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (graph, graph_view) = new_rdf_graph(
         "http://subgraph",
         egui::Rect::from_x_y_ranges(100.0..=500.0, 300.0..=500.0),
+        MGlobalColor::None,
     );
 
     let name = format!("Demo RDF diagram {}", no);
@@ -571,6 +579,7 @@ pub fn stress_test<const N1: usize, const DX: u32, const DY: u32>(
             let (node_st, node_st_view) = new_rdf_node(
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(100.0 + xx as f32 * DX as f32, 200.0 + yy as f32 * DY as f32),
+                MGlobalColor::None,
             );
             models.push(node_st.into());
             views.push(node_st_view.into());
@@ -653,6 +662,7 @@ impl DiagramSettings for RdfSettings {
                             content,
                             datatype,
                             language,
+                            background_color,
                             with_predicate_from: _,
                         } => {
                             modified |= columns[1]
@@ -664,24 +674,61 @@ impl DiagramSettings for RdfSettings {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Language", language)
                                 .changed();
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         RdfToolStage::Node {
                             iri,
+                            background_color,
                             with_predicate_from: _,
                         } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("IRI", iri)
                                 .changed();
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         RdfToolStage::PredicateStart { iri } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("IRI", iri)
                                 .changed();
                         }
-                        RdfToolStage::GraphStart { iri } => {
+                        RdfToolStage::GraphStart {
+                            iri,
+                            background_color,
+                        } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("IRI", iri)
                                 .changed();
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         RdfToolStage::PredicateEnd | RdfToolStage::GraphEnd => unreachable!(),
                     }
@@ -744,6 +791,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         content: "Eric Miller".to_owned(),
                         datatype: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
                         language: "en".to_owned(),
+                        background_color: MGlobalColor::None,
                         with_predicate_from: None,
                     },
                     "Literal",
@@ -755,6 +803,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 (
                     RdfToolStage::Node {
                         iri: "http://iri".to_owned(),
+                        background_color: MGlobalColor::None,
                         with_predicate_from: None,
                     },
                     "Node",
@@ -783,6 +832,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             vec![(
                 RdfToolStage::GraphStart {
                     iri: "http://graph".to_owned(),
+                    background_color: MGlobalColor::None,
                 },
                 "Graph",
                 Some(egui::KeyboardShortcut::new(
@@ -818,32 +868,51 @@ fn view_for_stage(s: &RdfToolStage) -> RdfElementView {
             content,
             datatype,
             language,
+            background_color,
             with_predicate_from: _,
         } => {
-            let literal_view = new_rdf_literal(content, datatype, language, egui::Pos2::ZERO).1;
+            let literal_view = new_rdf_literal(
+                content,
+                datatype,
+                language,
+                egui::Pos2::ZERO,
+                *background_color,
+            )
+            .1;
             literal_view.into()
         }
         RdfToolStage::Node {
             iri,
+            background_color,
             with_predicate_from: _,
         } => {
-            let node_view = new_rdf_node(iri, egui::Pos2::ZERO).1;
+            let node_view = new_rdf_node(iri, egui::Pos2::ZERO, *background_color).1;
             node_view.into()
         }
         RdfToolStage::PredicateStart { iri } => {
-            let d1 = new_rdf_node("dummy", egui::Pos2::ZERO);
-            let d2 = new_rdf_literal("dummy", "", "", egui::Pos2::new(100.0, 75.0));
+            let d1 = new_rdf_node("dummy", egui::Pos2::ZERO, MGlobalColor::None);
+            let d2 = new_rdf_literal(
+                "dummy",
+                "",
+                "",
+                egui::Pos2::new(100.0, 75.0),
+                MGlobalColor::None,
+            );
             let predicate_view =
                 new_rdf_predicate(iri, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
             predicate_view.into()
         }
-        RdfToolStage::GraphStart { iri } => {
+        RdfToolStage::GraphStart {
+            iri,
+            background_color,
+        } => {
             let graph_view = new_rdf_graph(
                 iri,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 50.0),
                 },
+                *background_color,
             )
             .1;
             graph_view.into()
@@ -888,10 +957,12 @@ pub enum RdfToolStage {
         content: String,
         datatype: String,
         language: String,
+        background_color: MGlobalColor,
         with_predicate_from: Option<ModelUuid>,
     },
     Node {
         iri: String,
+        background_color: MGlobalColor,
         with_predicate_from: Option<ModelUuid>,
     },
     PredicateStart {
@@ -900,6 +971,7 @@ pub enum RdfToolStage {
     PredicateEnd,
     GraphStart {
         iri: String,
+        background_color: MGlobalColor,
     },
     GraphEnd,
 }
@@ -1056,12 +1128,13 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     content,
                     datatype,
                     language,
+                    background_color,
                     with_predicate_from: _,
                 },
                 _,
             ) => {
                 let (_literal_model, literal_view) =
-                    new_rdf_literal(content, datatype, language, pos);
+                    new_rdf_literal(content, datatype, language, pos, *background_color);
 
                 self.result = PartialRdfElement::Some(literal_view.into());
                 self.event_lock = true;
@@ -1069,11 +1142,12 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             (
                 RdfToolStage::Node {
                     iri,
+                    background_color,
                     with_predicate_from: _,
                 },
                 _,
             ) => {
-                let (_node, node_view) = new_rdf_node(iri, pos);
+                let (_node, node_view) = new_rdf_node(iri, pos, *background_color);
                 self.result = PartialRdfElement::Some(node_view.into());
                 self.event_lock = true;
             }
@@ -1228,12 +1302,15 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 }
             }
             PartialRdfElement::Graph { a, b: Some(b) }
-                if let RdfToolStage::GraphStart { iri } = &self.initial_stage =>
+                if let RdfToolStage::GraphStart {
+                    iri,
+                    background_color,
+                } = &self.initial_stage =>
             {
                 self.current_stage = self.initial_stage.clone();
 
                 let (graph_model, graph_view) =
-                    new_rdf_graph(iri, egui::Rect::from_two_pos(*a, *b));
+                    new_rdf_graph(iri, egui::Rect::from_two_pos(*a, *b), *background_color);
 
                 self.try_spend();
                 commands.push(InsensitiveCommand::AddDependency {
@@ -1315,23 +1392,31 @@ impl CustomModal for RdfIriBasedSetupModal {
     }
 }
 
-fn new_rdf_graph(iri: &str, bounds_rect: egui::Rect) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
-    let graph_model = ERef::new(RdfGraph::new(
+fn new_rdf_graph(
+    iri: &str,
+    bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
+) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
+    let model = ERef::new(RdfGraph::new(
         ModelUuid::now_v7(),
         iri.to_owned(),
         Vec::new(),
     ));
-    let graph_view = new_rdf_graph_view(graph_model.clone(), bounds_rect);
+    let view = new_rdf_graph_view(model.clone(), bounds_rect, background_color);
 
-    (graph_model, graph_view)
+    (model, view)
 }
-fn new_rdf_graph_view(model: ERef<RdfGraph>, bounds_rect: egui::Rect) -> ERef<PackageViewT> {
+fn new_rdf_graph_view(
+    model: ERef<RdfGraph>,
+    bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
+) -> ERef<PackageViewT> {
     let m = model.read();
     PackageView::new(
         ViewUuid::now_v7().into(),
         RdfGraphAdapter {
             model: model.clone(),
-            background_color: MGlobalColor::None,
+            background_color,
             iri_buffer: (*m.iri).clone(),
             comment_buffer: (*m.comment).clone(),
         },
@@ -1501,12 +1586,20 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     }
 }
 
-fn new_rdf_node(iri: &str, position: egui::Pos2) -> (ERef<RdfNode>, ERef<RdfNodeView>) {
-    let node_model = ERef::new(RdfNode::new(ModelUuid::now_v7(), iri.to_owned()));
-    let node_view = new_rdf_node_view(node_model.clone(), position);
-    (node_model, node_view)
+fn new_rdf_node(
+    iri: &str,
+    position: egui::Pos2,
+    background_color: MGlobalColor,
+) -> (ERef<RdfNode>, ERef<RdfNodeView>) {
+    let model = ERef::new(RdfNode::new(ModelUuid::now_v7(), iri.to_owned()));
+    let view = new_rdf_node_view(model.clone(), position, background_color);
+    (model, view)
 }
-fn new_rdf_node_view(model: ERef<RdfNode>, position: egui::Pos2) -> ERef<RdfNodeView> {
+fn new_rdf_node_view(
+    model: ERef<RdfNode>,
+    position: egui::Pos2,
+    background_color: MGlobalColor,
+) -> ERef<RdfNodeView> {
     let m = model.read();
 
     ERef::new(RdfNodeView {
@@ -1520,6 +1613,7 @@ fn new_rdf_node_view(model: ERef<RdfNode>, position: egui::Pos2) -> ERef<RdfNode
         highlight: canvas::Highlight::NONE,
         position,
         bounds_radius: egui::Vec2::ZERO,
+        background_color,
     })
 }
 
@@ -1542,6 +1636,7 @@ pub struct RdfNodeView {
     pub position: egui::Pos2,
     #[nh_context_serde(skip_and_default)]
     pub bounds_radius: egui::Vec2,
+    background_color: MGlobalColor,
 }
 
 impl RdfNodeView {
@@ -1616,7 +1711,7 @@ impl ElementController<RdfElement> for RdfNodeView {
 impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -1670,12 +1765,22 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             }
         });
 
+        ui.label("Background color:");
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                RdfPropChange::ColorChange((0, new_color).into()),
+            ));
+        }
+
         PropertiesStatus::Shown
     }
     fn draw_in(
         &mut self,
         _q: &<RdfDomain as Domain>::QueryableT<'_>,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         _settings: &RdfSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
@@ -1692,7 +1797,9 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         canvas.draw_ellipse(
             self.position,
             self.bounds_radius,
-            egui::Color32::WHITE,
+            gdc.global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -1830,6 +1937,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                     content: "".to_owned(),
                     datatype: "".to_owned(),
                     language: "en".to_owned(),
+                    background_color: MGlobalColor::None,
                     with_predicate_from: Some(*self.model.read().uuid),
                 };
                 *tool = Some(NaiveRdfTool {
@@ -1848,6 +1956,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             {
                 let stage = RdfToolStage::Node {
                     iri: "".to_owned(),
+                    background_color: MGlobalColor::None,
                     with_predicate_from: Some(*self.model.read().uuid),
                 };
                 *tool = Some(NaiveRdfTool {
@@ -1956,6 +2065,16 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                             ));
                             model.comment = comment.clone();
                         }
+                        RdfPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::ColorChange(ColorChangeData {
+                                    slot: 0,
+                                    color: self.background_color,
+                                }),
+                            ));
+                            self.background_color = *color;
+                        }
                         _ => {}
                     }
                 }
@@ -2011,6 +2130,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             highlight: self.highlight,
             position: self.position,
             bounds_radius: self.bounds_radius,
+            background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -2022,17 +2142,22 @@ fn new_rdf_literal(
     datatype: &str,
     langtag: &str,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<RdfLiteral>, ERef<RdfLiteralView>) {
-    let literal_model = ERef::new(RdfLiteral::new(
+    let model = ERef::new(RdfLiteral::new(
         ModelUuid::now_v7(),
         content.to_owned(),
         datatype.to_owned(),
         langtag.to_owned(),
     ));
-    let literal_view = new_rdf_literal_view(literal_model.clone(), position);
-    (literal_model, literal_view)
+    let view = new_rdf_literal_view(model.clone(), position, background_color);
+    (model, view)
 }
-fn new_rdf_literal_view(model: ERef<RdfLiteral>, position: egui::Pos2) -> ERef<RdfLiteralView> {
+fn new_rdf_literal_view(
+    model: ERef<RdfLiteral>,
+    position: egui::Pos2,
+    background_color: MGlobalColor,
+) -> ERef<RdfLiteralView> {
     let m = model.read();
 
     ERef::new(RdfLiteralView {
@@ -2048,6 +2173,7 @@ fn new_rdf_literal_view(model: ERef<RdfLiteral>, position: egui::Pos2) -> ERef<R
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_pos(position),
+        background_color,
     })
 }
 
@@ -2132,6 +2258,7 @@ pub struct RdfLiteralView {
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
 }
 
 impl Entity for RdfLiteralView {
@@ -2168,7 +2295,7 @@ impl ElementController<RdfElement> for RdfLiteralView {
 impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(
         &mut self,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -2241,13 +2368,23 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             }
         });
 
+        ui.label("Background color:");
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                RdfPropChange::ColorChange((0, new_color).into()),
+            ));
+        }
+
         PropertiesStatus::Shown
     }
 
     fn draw_in(
         &mut self,
         _q: &<RdfDomain as Domain>::QueryableT<'_>,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         _settings: &RdfSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
@@ -2261,7 +2398,9 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             None,
             false,
             &[],
-            egui::Color32::WHITE,
+            gdc.global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -2424,6 +2563,16 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                             ));
                             model.comment = comment.clone();
                         }
+                        RdfPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::ColorChange(ColorChangeData {
+                                    slot: 0,
+                                    color: self.background_color,
+                                }),
+                            ));
+                            self.background_color = *color;
+                        }
                         _ => {}
                     }
                 }
@@ -2483,6 +2632,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -2494,15 +2644,15 @@ fn new_rdf_predicate(
     source: (ERef<RdfNode>, RdfElementView),
     target: (RdfTargettableElement, RdfElementView),
 ) -> (ERef<RdfPredicate>, ERef<LinkViewT>) {
-    let predicate_model = ERef::new(RdfPredicate::new(
+    let model = ERef::new(RdfPredicate::new(
         ModelUuid::now_v7(),
         iri.to_owned(),
         source.0,
         target.0,
     ));
-    let predicate_view = new_rdf_predicate_view(predicate_model.clone(), source.1, target.1);
+    let view = new_rdf_predicate_view(model.clone(), source.1, target.1);
 
-    (predicate_model, predicate_view)
+    (model, view)
 }
 fn new_rdf_predicate_view(
     model: ERef<RdfPredicate>,
