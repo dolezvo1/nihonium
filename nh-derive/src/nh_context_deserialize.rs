@@ -102,7 +102,9 @@ pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
                     struct Helper {
                         #(#basic_fields_def)*
                     }
-                    let helper: Helper = toml::Value::try_into(source.clone())?;
+                    let helper: Helper = toml::Value::try_into(source.clone()).map_err(|e| {
+                        (e, source.get("uuid").and_then(|e| e.as_str()).map(|e| e.to_owned()))
+                    })?;
 
                     #instance_initialized
                 }

@@ -634,7 +634,7 @@ impl<'a> NHDeserializer<'a> {
                         depends_on,
                         main,
                         other,
-                    } = toml::from_str(content)?;
+                    } = toml::from_str(content).map_err(|e| (e, model_uuid.to_string().into()))?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_model) = main else {
@@ -657,7 +657,7 @@ impl<'a> NHDeserializer<'a> {
                         depends_on,
                         main,
                         other,
-                    } = toml::from_str(content)?;
+                    } = toml::from_str(content).map_err(|e| (e, view_uuid.to_string().into()))?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_view) = main else {
@@ -680,7 +680,8 @@ impl<'a> NHDeserializer<'a> {
                         depends_on,
                         main,
                         other,
-                    } = toml::from_str(content)?;
+                    } = toml::from_str(content)
+                        .map_err(|e| (e, controller_uuid.to_string().into()))?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_controller) = main else {
@@ -753,7 +754,7 @@ deserialize_instantiator!(ControllerUuid, instantiated_controllers, source_contr
 pub enum NHDeserializeError {
     StructureError(String),
     UuidError(uuid::Error),
-    TomlError(toml::de::Error),
+    TomlError(toml::de::Error, Option<String>),
     IoError(std::io::Error),
     Utf8Error(std::str::Utf8Error),
 }
@@ -778,7 +779,7 @@ where
             None,
             Some(toml::Value),
         }
-        match toml::Value::try_into(source.clone())? {
+        match toml::Value::try_into(source.clone()).map_err(|e| (e, None))? {
             Helper::None => Ok(UFOption::None),
             Helper::Some(v) => Ok(UFOption::Some(T::deserialize(&v, deserializer)?)),
         }
@@ -808,7 +809,7 @@ where
         source: &toml::Value,
         deserializer: &mut NHDeserializer,
     ) -> Result<Self, NHDeserializeError> {
-        let uuid = toml::Value::try_into(source.clone())?;
+        let uuid = toml::Value::try_into(source.clone()).map_err(|e| (e, None))?;
         match uuid {
             EntityUuid::Model(uuid) => deserializer.get_entity(&uuid),
             EntityUuid::View(uuid) => deserializer.get_entity(&uuid),

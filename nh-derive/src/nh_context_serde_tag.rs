@@ -70,7 +70,8 @@ pub fn derive_nh_context_serde_tag(input: TokenStream) -> TokenStream {
 
             impl #impl_generics NHContextDeserialize for super :: #ident #type_generics #where_clause {
                 fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-                    let tag = toml::Value::try_into::<#ident #type_generics>(source.clone())?;
+                    let tag = toml::Value::try_into::<#ident #type_generics>(source.clone())
+                        .map_err(|e| (e, None))?;
                     Ok(tag.deserialize_referenced(deserializer)?)
                 }
             }

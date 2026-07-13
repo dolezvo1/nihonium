@@ -742,7 +742,8 @@ impl NHContext {
     ) -> Result<(), NHDeserializeError> {
         let project_file_bytes = ra.read_manifest_file()?;
         let project_file_str = str::from_utf8(&project_file_bytes)?;
-        let pdto: common::project_serde::NHProjectSerialization = toml::from_str(project_file_str)?;
+        let pdto: common::project_serde::NHProjectSerialization =
+            toml::from_str(project_file_str).map_err(|e| (e, None))?;
         let (hierarchy, top_level_views, documents) =
             pdto.deserialize_all(ra, &self.diagram_deserializers)?;
 
