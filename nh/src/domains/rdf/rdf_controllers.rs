@@ -656,7 +656,7 @@ impl DiagramSettings for RdfSettings {
                             with_predicate_from: _,
                         } => {
                             modified |= columns[1]
-                                .labeled_text_edit_singleline("Content", content)
+                                .labeled_text_edit_multiline("Content", content)
                                 .changed();
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Datatype", datatype)
@@ -2080,7 +2080,7 @@ impl CustomModal for RdfLiteralSetupModal {
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Content:");
-        let r = ui.text_edit_singleline(&mut self.content_buffer);
+        let r = ui.text_edit_multiline(&mut self.content_buffer);
         ui.label("Datatype:");
         ui.text_edit_singleline(&mut self.datatype_buffer);
         ui.label("Langtag:");
@@ -2182,7 +2182,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_singleline("Content:", &mut self.content_buffer)
+            .labeled_text_edit_multiline("Content:", &mut self.content_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
