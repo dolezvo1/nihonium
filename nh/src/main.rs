@@ -2749,7 +2749,7 @@ impl NHApp {
             unprocessed_commands: Vec::new(),
             affected_models: HashSet::new(),
             should_change_title: true,
-            has_unsaved_changes: true,
+            has_unsaved_changes: false,
 
             shortcut_top_order: vec![],
 
