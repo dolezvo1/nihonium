@@ -525,47 +525,56 @@ where
                     .find(|e| *e.element.model_uuid() == *model_uuid);
 
                 ui.horizontal(|ui| {
-                    ui.label(&*lp.get(model_uuid));
-                    if let Some(e) = e {
-                        if ui
-                            .add_enabled(views.len() > 1, egui::Button::new("Remove from view"))
-                            .clicked()
-                        {
-                            commands.push(InsensitiveCommand::RemoveDependency {
-                                target: self_uuid,
-                                bucket: b,
-                                element: *e.element.uuid(),
-                                including_model: false,
-                            });
+                    let l = ui.label(&*lp.get(model_uuid));
+
+                    l.context_menu(|ui| {
+                        if let Some(e) = e {
+                            if ui
+                                .add_enabled(views.len() > 1, egui::Button::new("Remove from view"))
+                                .clicked()
+                            {
+                                commands.push(InsensitiveCommand::RemoveDependency {
+                                    target: self_uuid,
+                                    bucket: b,
+                                    element: *e.element.uuid(),
+                                    including_model: false,
+                                });
+                            }
+                            if ui
+                                .add_enabled(
+                                    models.len() > 1,
+                                    egui::Button::new("Remove from model"),
+                                )
+                                .clicked()
+                            {
+                                commands.push(InsensitiveCommand::RemoveDependency {
+                                    target: self_uuid,
+                                    bucket: b,
+                                    element: *e.element.uuid(),
+                                    including_model: true,
+                                });
+                            }
+                        } else {
+                            if ui.button("Add to view").clicked()
+                                && let Some(v) = q.get_view_for(model_uuid)
+                            {
+                                commands.push(InsensitiveCommand::AddDependency {
+                                    target: self_uuid,
+                                    bucket: b,
+                                    position: None,
+                                    element: v.into(),
+                                    into_model: false,
+                                });
+                            }
+                            if ui
+                                .add_enabled(
+                                    models.len() > 1,
+                                    egui::Button::new("Remove from model"),
+                                )
+                                .clicked()
+                            {}
                         }
-                        if ui
-                            .add_enabled(models.len() > 1, egui::Button::new("Remove from model"))
-                            .clicked()
-                        {
-                            commands.push(InsensitiveCommand::RemoveDependency {
-                                target: self_uuid,
-                                bucket: b,
-                                element: *e.element.uuid(),
-                                including_model: true,
-                            });
-                        }
-                    } else {
-                        if ui.button("Add to view").clicked()
-                            && let Some(v) = q.get_view_for(model_uuid)
-                        {
-                            commands.push(InsensitiveCommand::AddDependency {
-                                target: self_uuid,
-                                bucket: b,
-                                position: None,
-                                element: v.into(),
-                                into_model: false,
-                            });
-                        }
-                        if ui
-                            .add_enabled(models.len() > 1, egui::Button::new("Remove from model"))
-                            .clicked()
-                        {}
-                    }
+                    });
                 });
             }
         }
@@ -578,7 +587,7 @@ where
             self.adapter.source_uuids(),
             &self.sources,
             *self.uuid,
-            0,
+            MULTICONNECTION_SOURCE_BUCKET,
         );
         ui.label("Targets:");
         display_endings_info::<DomainT>(
@@ -589,7 +598,7 @@ where
             self.adapter.target_uuids(),
             &self.targets,
             *self.uuid,
-            1,
+            MULTICONNECTION_TARGET_BUCKET,
         );
 
         self.adapter.show_properties(q, ui, commands)
