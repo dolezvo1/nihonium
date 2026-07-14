@@ -1444,6 +1444,7 @@ impl NHContext {
     }
 
     fn show_project_settings(&mut self, ui: &mut egui::Ui) {
+        let mut anything_changed = false;
         ui.heading(self.drawing_context.translate_0("nh-tab-projectsettings"));
 
         egui::CollapsingHeader::new(
@@ -1466,6 +1467,7 @@ impl NHContext {
                 .changed()
             {
                 *s = buffer.into();
+                anything_changed = true;
             }
         });
 
@@ -1484,13 +1486,14 @@ impl NHContext {
             for (idx, id) in gc!().colors_order.iter().enumerate() {
                 ui.horizontal(|ui| {
                     if let Some(c) = gc!().colors.get_mut(id) {
-                        egui::widgets::color_picker::color_edit_button_srgba(
+                        anything_changed |= egui::widgets::color_picker::color_edit_button_srgba(
                             ui,
                             &mut c.1,
                             egui::widgets::color_picker::Alpha::OnlyBlend,
-                        );
+                        )
+                        .changed();
 
-                        ui.text_edit_singleline(&mut c.0);
+                        anything_changed |= ui.text_edit_singleline(&mut c.0).changed();
 
                         if ui.button("X").clicked() {
                             color_to_remove = Some(idx);
@@ -1501,6 +1504,7 @@ impl NHContext {
             if let Some(idx) = color_to_remove {
                 let id = gc!().colors_order.remove(idx);
                 gc!().colors.remove(&id);
+                anything_changed = true;
             }
 
             ui.horizontal(|ui| {
@@ -1523,9 +1527,14 @@ impl NHContext {
                             egui::Color32::WHITE,
                         ),
                     );
+                    anything_changed = true;
                 }
             });
         });
+
+        if anything_changed {
+            self.set_has_unsaved_changes(true);
+        }
     }
 
     fn show_outline(&mut self, ui: &mut egui::Ui) {
@@ -2867,6 +2876,19 @@ impl NHApp {
         self.context
             .diagram_controllers
             .insert(view_uuid, controller);
+        self.context.set_has_unsaved_changes(true);
+    }
+
+    fn delete_diagram(&mut self, view_uuid: ViewUuid) {
+        self.context.project_hierarchy.remove(&view_uuid);
+        self.context.diagram_controllers.remove(&view_uuid);
+        self.context
+            .last_focused_diagram
+            .take_if(|e| *e == view_uuid);
+        if let Some(snt) = self.tree.find_tab(&NHTab::Diagram { uuid: view_uuid }) {
+            self.tree.remove_tab(snt);
+        }
+        self.context.set_has_unsaved_changes(true);
     }
 
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
@@ -4065,22 +4087,30 @@ impl eframe::App for NHApp {
                         searched_uuid: ViewUuid,
                         new_name: &str,
                         docs: &mut HashMap<ViewUuid, (String, String)>,
-                    ) {
+                    ) -> bool {
                         match e {
                             HierarchyNode::Folder(view_uuid, name, children) => {
+                                let mut any_changed = false;
+
                                 if searched_uuid == *view_uuid {
                                     *name = new_name.to_owned().into();
+                                    any_changed = true;
                                 }
 
                                 for e in children.iter_mut() {
-                                    h(e, searched_uuid, new_name, docs);
+                                    any_changed |= h(e, searched_uuid, new_name, docs);
                                 }
+
+                                any_changed
                             }
                             HierarchyNode::Diagram(uuid, inner) => {
                                 if searched_uuid == *uuid {
                                     inner
                                         .write()
                                         .set_view_name(uuid, new_name.to_owned().into());
+                                    true
+                                } else {
+                                    false
                                 }
                             }
                             HierarchyNode::Document(view_uuid) => {
@@ -4095,17 +4125,22 @@ impl eframe::App for NHApp {
                                         lines.push(new_name);
                                     }
                                     e.1 = lines.join("\n");
+                                    true
+                                } else {
+                                    false
                                 }
                             }
                         }
                     }
 
-                    h(
+                    if h(
                         &mut self.context.project_hierarchy,
                         view_uuid,
                         &new_name,
                         &mut self.context.documents,
-                    );
+                    ) {
+                        self.context.set_has_unsaved_changes(true);
+                    }
                 }
                 ProjectCommand::OpenAndFocusTab(..) => {
                     unreachable!("this really should not happen")
@@ -4116,14 +4151,7 @@ impl eframe::App for NHApp {
                     self.add_diagram(parent, view_uuid, controller);
                 }
                 ProjectCommand::DeleteDiagram(view_uuid) => {
-                    self.context.project_hierarchy.remove(&view_uuid);
-                    self.context.diagram_controllers.remove(&view_uuid);
-                    self.context
-                        .last_focused_diagram
-                        .take_if(|e| *e == view_uuid);
-                    if let Some(snt) = self.tree.find_tab(&NHTab::Diagram { uuid: view_uuid }) {
-                        self.tree.remove_tab(snt);
-                    }
+                    self.delete_diagram(view_uuid);
                 }
                 ProjectCommand::AddNewDocument(uuid, content) => {
                     let first_line = content
@@ -4137,6 +4165,7 @@ impl eframe::App for NHApp {
                         children.push(HierarchyNode::Document(uuid));
                     }
                     push_tab_to_best!(self, NHTab::Document { uuid });
+                    self.context.set_has_unsaved_changes(true);
                 }
                 ProjectCommand::DuplicateDocument(_uuid) => {
                     // TODO:
@@ -4147,11 +4176,13 @@ impl eframe::App for NHApp {
                     if let Some(snt) = self.tree.find_tab(&NHTab::Document { uuid }) {
                         self.tree.remove_tab(snt);
                     }
+                    self.context.set_has_unsaved_changes(true);
                 }
             }
         }
 
         if !self.context.affected_models.is_empty() {
+            self.context.set_has_unsaved_changes(true);
             for c in self.context.diagram_controllers.values() {
                 c.write().refresh_buffers(
                     &self.context.affected_models,
