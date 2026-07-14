@@ -2638,7 +2638,7 @@ impl NHApp {
         selected_shades_profile: usize,
         shades_profiles: Vec<ShadesProfile>,
         diagram_specific_settings: HashMap<String, toml::Value>,
-        tree: DockState<NHTab>,
+        mut tree: DockState<NHTab>,
     ) -> Self {
         let mut diagram_infos: Vec<_> = inventory::iter::<DiagramInfo>.into_iter().collect();
         diagram_infos.sort_by_cached_key(|e| {
@@ -2774,6 +2774,8 @@ impl NHApp {
         };
         context.sort_shortcuts();
 
+        Self::clear_nonstatic_tabs(&mut tree);
+
         Self { context, tree }
     }
 }
@@ -2875,15 +2877,10 @@ impl NHApp {
         self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
     }
 
-    pub fn clear_nonstatic_tabs(&mut self) {
-        self.tree.retain_tabs(|e| {
-            !matches!(
-                e,
-                NHTab::Diagram { .. } | NHTab::Document { .. } | NHTab::CustomTab { .. }
-            )
-        });
-        for e in self.tree.iter_leaves_mut() {
-            if e.1.active.0 > e.1.tabs.len() {
+    pub fn clear_nonstatic_tabs(tree: &mut DockState<NHTab>) {
+        tree.retain_tabs(|e| e.is_persistable());
+        for e in tree.iter_leaves_mut() {
+            if e.1.active.0 >= e.1.tabs.len() {
                 e.1.active.0 = 0;
             }
         }
@@ -2963,7 +2960,7 @@ impl eframe::App for NHApp {
                         Ok(_) => {
                             let file_path = get_project_path(&fh);
                             self.context.set_project_path(Some(file_path));
-                            self.clear_nonstatic_tabs();
+                            Self::clear_nonstatic_tabs(&mut self.tree);
                         }
                     },
                 },
@@ -4047,7 +4044,7 @@ impl eframe::App for NHApp {
                     SimpleProjectCommand::CloseProject(b) => {
                         if !self.context.has_unsaved_changes || b {
                             self.context.clear_project_data();
-                            self.clear_nonstatic_tabs();
+                            Self::clear_nonstatic_tabs(&mut self.tree);
                         } else {
                             self.context.confirm_modal_reason =
                                 Some(SimpleProjectCommand::CloseProject(b));
