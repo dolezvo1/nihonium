@@ -68,6 +68,7 @@ nh-tab-recentlyused = Nedávné
 nh-tab-settings = Nastavení
 
 nh-tab-newdiagram = Nový Diagram
+nh-tab-newdiagram-name = Jméno
 nh-tab-newdiagram-open = Přidat a otevřít
 nh-tab-newdiagram-background = Přidat na pozadí
 
@@ -80,6 +81,7 @@ nh-tab-projecthierarchy-collapsechildren = Sbalit potomky
 nh-tab-projecthierarchy-uncollapsechildren = Rozbalit potomky
 nh-tab-projecthierarchy-open = Otevřít
 nh-tab-projecthierarchy-rename = Přejmenovat
+nh-tab-projecthierarchy-newname = Nové jméno
 nh-tab-projecthierarchy-delete = Odstranit
 nh-tab-projecthierarchy-duplicate = Duplikovat
 nh-tab-projecthierarchy-duplicateshared = Duplikovat se sdíleným modelem

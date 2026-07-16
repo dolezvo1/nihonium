@@ -7,8 +7,8 @@ use super::super::umlclass::{
     umlclass_models::UmlClassDiagram,
 };
 use crate::{
-    DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF,
-    DiagramCreationData, DiagramInfo,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo,
     common::{
         controller::{
             ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2,
@@ -131,17 +131,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New Use Case diagram {}", no);
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (customer_model, customer_view) = new_umlclass_class(
         "Customer",
         usecase_models::ACTOR,
@@ -212,10 +211,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         }
     }
 
-    let name = format!("Demo Use Case diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![
             customer_model.into(),
             bank_model.into(),
@@ -226,7 +224,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ));
     new_controlller(
         diagram,
-        name,
+        name.to_owned(),
         vec![
             customer_view.into(),
             bank_view.into(),
@@ -507,8 +505,8 @@ inventory::submit! {DiagramInfo {
         directory: "/Unified Modeling Language",
         description: "Use Case diagram (users, use cases, etc.)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New Use Case diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo Use Case diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

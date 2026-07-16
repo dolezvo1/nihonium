@@ -27,7 +27,7 @@ use crate::domains::network::network_models::{
     NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind,
 };
 use crate::{
-    CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
@@ -544,18 +544,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New Network diagram {}", no);
-
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(NetworkDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (internet, internet_view) = new_network_node(
         "Cloud",
         NetworkNodeKind::Cloud,
@@ -625,10 +623,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         NetworkAssociationArrowheadType::OpenTriangle,
     );
 
-    let name = format!("Demo Network diagram {}", no);
     let diagram = ERef::new(NetworkDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![
             internet.into(),
             router.into(),
@@ -645,7 +642,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ));
     new_controlller(
         diagram,
-        name,
+        name.to_owned(),
         vec![
             internet_view.into(),
             router_view.into(),
@@ -1363,8 +1360,8 @@ inventory::submit! {DiagramInfo {
         directory: "",
         description: "Network diagram (network nodes, users, etc.)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New Network diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo Network diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

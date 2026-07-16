@@ -25,8 +25,8 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::{
-    CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
-    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
+    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -512,14 +512,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New RDF diagram {}", no);
-
-    let diagram = ERef::new(RdfDiagram::new(ModelUuid::now_v7(), name.clone(), vec![]));
-    new_controlller(diagram, name, vec![])
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
+    let diagram = ERef::new(RdfDiagram::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        vec![],
+    ));
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (node, node_view) = new_rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
@@ -546,10 +548,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         MGlobalColor::None,
     );
 
-    let name = format!("Demo RDF diagram {}", no);
     let diagram = ERef::new(RdfDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![
             node.into(),
             literal_model.into(),
@@ -559,7 +560,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ));
     new_controlller(
         diagram,
-        name,
+        name.to_owned(),
         vec![
             node_view.into(),
             literal_view.into(),
@@ -570,7 +571,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn stress_test<const N1: usize, const DX: u32, const DY: u32>(
-    no: u32,
+    name: &str,
 ) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (mut models, mut views): (Vec<_>, Vec<_>) = Default::default();
 
@@ -586,9 +587,12 @@ pub fn stress_test<const N1: usize, const DX: u32, const DY: u32>(
         }
     }
 
-    let name = format!("Stress RDF diagram {}", no);
-    let diagram = ERef::new(RdfDiagram::new(ModelUuid::now_v7(), name.clone(), models));
-    new_controlller(diagram, name, views)
+    let diagram = ERef::new(RdfDiagram::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        models,
+    ));
+    new_controlller(diagram, name.to_owned(), views)
 }
 
 pub fn deserializer(
@@ -941,11 +945,11 @@ inventory::submit! {DiagramInfo {
         directory: "",
         description: "Resource Description Framework (RDF)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
-            ("stress test 2k", &(stress_test::<20, 20, 20> as DiagramConstructorF)),
-            ("stress test 5k", &(stress_test::<50, 20, 20> as DiagramConstructorF)),
-            ("stress test 10k", &(stress_test::<100, 20, 20> as DiagramConstructorF)),
+            ("empty", &((|no| format!("New RDF diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo RDF diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
+            ("stress test 2k", &((|no| format!("Stress test RDF diagram {}", no)) as DefaultNameF), &(stress_test::<20, 20, 20> as DiagramConstructorF)),
+            ("stress test 5k", &((|no| format!("Stress test RDF diagram {}", no)) as DefaultNameF), &(stress_test::<50, 20, 20> as DiagramConstructorF)),
+            ("stress test 10k", &((|no| format!("Stress test RDF diagram {}", no)) as DefaultNameF), &(stress_test::<100, 20, 20> as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

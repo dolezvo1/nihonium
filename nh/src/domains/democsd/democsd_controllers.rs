@@ -31,8 +31,8 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::{
-    CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
-    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
+    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -559,18 +559,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New DEMO CSD diagram {}", no);
-
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(DemoCsdDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let mut models: Vec<DemoCsdElement> = vec![];
     let mut controllers = Vec::<DemoCsdElementView>::new();
 
@@ -674,13 +672,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(access_link.1.into());
 
     {
-        let name = format!("Demo DEMO CSD diagram {}", no);
         let diagram = ERef::new(DemoCsdDiagram::new(
             ModelUuid::now_v7(),
-            name.clone(),
+            name.to_owned(),
             models,
         ));
-        new_controlller(diagram, name, controllers)
+        new_controlller(diagram, name.to_owned(), controllers)
     }
 }
 
@@ -1088,8 +1085,8 @@ inventory::submit! {DiagramInfo {
         directory: "/Design & Engineering Methodology for Organizations",
         description: "Coordination Structure Diagram (roles, transactions, etc.)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New DEMO CSD diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo DEMO CSD diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

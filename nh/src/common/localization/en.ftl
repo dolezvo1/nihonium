@@ -68,6 +68,7 @@ nh-tab-recentlyused = Recently Used
 nh-tab-settings = Settings
 
 nh-tab-newdiagram = New Diagram
+nh-tab-newdiagram-name = Name
 nh-tab-newdiagram-open = Add and Open
 nh-tab-newdiagram-background = Add in Background
 
@@ -80,6 +81,7 @@ nh-tab-projecthierarchy-collapsechildren = Collapse children
 nh-tab-projecthierarchy-uncollapsechildren = Uncollapse children
 nh-tab-projecthierarchy-open = Open
 nh-tab-projecthierarchy-rename = Rename
+nh-tab-projecthierarchy-newname = New name
 nh-tab-projecthierarchy-delete = Delete
 nh-tab-projecthierarchy-duplicate = Duplicate
 nh-tab-projecthierarchy-duplicateshared = Duplicate with shared model

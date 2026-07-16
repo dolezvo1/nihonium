@@ -32,8 +32,9 @@ use crate::domains::umlclass::umlclass_models::{
     UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization,
 };
 use crate::{
-    CustomModal, CustomModalResult, CustomTab, DefaultSettingsF, DeserializeControllerF,
-    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, CustomModalResult, CustomTab, DefaultNameF, DefaultSettingsF,
+    DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData,
+    DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -892,17 +893,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New UML class diagram {}", no);
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
@@ -1232,10 +1232,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         MGlobalColor::None,
     );
 
-    let name = format!("Demo UML class diagram {}", no);
     let diagram2 = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![
             class_af.into(),
             class_cfx.into(),
@@ -1264,7 +1263,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ));
     new_controlller(
         diagram2,
-        name,
+        name.to_owned(),
         vec![
             class_af_view.into(),
             class_cfx_view.into(),
@@ -2301,8 +2300,8 @@ inventory::submit! {DiagramInfo {
         directory: "/Unified Modeling Language",
         description: "UML Class diagram (classes, objects, packages, etc.)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New UML Class diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo UML Class diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

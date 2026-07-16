@@ -31,7 +31,7 @@ use crate::domains::umlactivity::umlactivity_models::{
     UmlActivityPartition, UmlActivityPartitionSection,
 };
 use crate::{
-    CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
@@ -705,17 +705,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New UML activity diagram {}", no);
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(UmlActivityDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (initial, initial_view) = new_umlactivity_initialnode(egui::Pos2::new(200.0, 200.0));
     let (object, object_view) = new_umlactivity_objectnode(
         "Order data",
@@ -875,13 +874,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         }
     }
 
-    let name = format!("Demo UML activity diagram {}", no);
     let diagram = ERef::new(UmlActivityDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![activity.into()],
     ));
-    new_controlller(diagram, name, vec![activity_view.into()])
+    new_controlller(diagram, name.to_owned(), vec![activity_view.into()])
 }
 
 pub fn deserializer(
@@ -1760,8 +1758,8 @@ inventory::submit! {DiagramInfo {
         directory: "/Unified Modeling Language",
         description: "UML Activity diagram (actions, activites, decisions, etc.)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New UML Activity diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo UML Activity diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

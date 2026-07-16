@@ -275,7 +275,8 @@ impl SetShortcut {
 
 type DefaultSettingsF = fn() -> Box<dyn DiagramSettings>;
 type DeserializeSettingsF = fn(toml::Value) -> Result<Box<dyn DiagramSettings>, ()>;
-type DiagramConstructorF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
+type DefaultNameF = fn(u32) -> String;
+type DiagramConstructorF = fn(&str) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
 type DeserializeControllerF = fn(
     ControllerUuid,
     &mut NHDeserializer,
@@ -285,7 +286,11 @@ type DeserializeControllerF = fn(
 struct DiagramCreationData {
     directory: &'static str,
     description: &'static str,
-    constructors: &'static [(&'static str, &'static DiagramConstructorF)],
+    constructors: &'static [(
+        &'static str,
+        &'static DefaultNameF,
+        &'static DiagramConstructorF,
+    )],
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -336,6 +341,7 @@ struct NHContext {
     new_diagram_data: HashMap<usize, (&'static str, DiagramCreationData)>,
     new_diagram_selected_kind: usize,
     new_diagram_selected_constructor: usize,
+    new_diagram_name: String,
 
     unprocessed_commands: Vec<ProjectCommand>,
     affected_models: HashSet<ModelUuid>,
@@ -803,6 +809,14 @@ impl NHContext {
             .sort_by_key(|e| std::cmp::Reverse(weight(&e.1)));
     }
 
+    fn new_diagram_name(&self) -> String {
+        self.new_diagram_data
+            .get(&self.new_diagram_selected_kind)
+            .and_then(|e| e.1.constructors.get(self.new_diagram_selected_constructor))
+            .map(|e| e.1(self.new_diagram_no))
+            .unwrap_or_else(|| "diagram".to_owned())
+    }
+
     fn show_project_hierarchy(&mut self, ui: &mut egui::Ui) {
         macro_rules! translate {
             ($msg_name:expr) => {
@@ -1204,7 +1218,7 @@ impl NHContext {
                             ui: &mut egui::Ui,
                             commands: &mut Vec<ProjectCommand>,
                         ) -> CustomModalResult {
-                            ui.label("Name:");
+                            ui.label(gdc.translate_0("nh-tab-projecthierarchy-newname"));
                             let r = ui.text_edit_singleline(&mut self.name_buffer);
                             if self.first_frame {
                                 r.request_focus();
@@ -1603,6 +1617,7 @@ impl NHContext {
             for e in actions {
                 if let egui_ltreeview::Action::SetSelected(items) = e {
                     self.new_diagram_selected_kind = items.first().map_or(0, |e| *e);
+                    self.new_diagram_name = self.new_diagram_name();
                 }
             }
 
@@ -1613,8 +1628,19 @@ impl NHContext {
                     ui.separator();
 
                     for (idx, e) in dd.constructors.iter().enumerate() {
-                        ui.radio_value(&mut self.new_diagram_selected_constructor, idx, e.0);
+                        if ui
+                            .radio_value(&mut self.new_diagram_selected_constructor, idx, e.0)
+                            .changed()
+                        {
+                            self.new_diagram_name = self.new_diagram_name();
+                        }
                     }
+                    ui.separator();
+
+                    ui.labeled_text_edit_singleline(
+                        self.drawing_context.translate_0("nh-tab-newdiagram-name"),
+                        &mut self.new_diagram_name,
+                    );
                     ui.separator();
 
                     ui.horizontal(|ui| {
@@ -1629,7 +1655,9 @@ impl NHContext {
                             .clicked()
                         {
                             let (uuid, c) = dd.constructors[self.new_diagram_selected_constructor]
-                                .1(self.new_diagram_no);
+                                .2(
+                                &self.new_diagram_name
+                            );
                             self.unprocessed_commands
                                 .push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
                             self.unprocessed_commands
@@ -1651,7 +1679,9 @@ impl NHContext {
                             .clicked()
                         {
                             let (uuid, c) = dd.constructors[self.new_diagram_selected_constructor]
-                                .1(self.new_diagram_no);
+                                .2(
+                                &self.new_diagram_name
+                            );
                             self.unprocessed_commands
                                 .push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
                             self.unprocessed_commands
@@ -2754,6 +2784,7 @@ impl NHApp {
             new_diagram_data: diagram_type_creation_data,
             new_diagram_selected_kind: 0,
             new_diagram_selected_constructor: 0,
+            new_diagram_name: String::new(),
 
             unprocessed_commands: Vec::new(),
             affected_models: HashSet::new(),
@@ -4146,7 +4177,10 @@ impl eframe::App for NHApp {
                     unreachable!("this really should not happen")
                 }
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
-                ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
+                ProjectCommand::SetNewDiagramNumber(no) => {
+                    self.context.new_diagram_no = no;
+                    self.context.new_diagram_name = self.context.new_diagram_name();
+                }
                 ProjectCommand::AddNewDiagram(parent, view_uuid, controller) => {
                     self.add_diagram(parent, view_uuid, controller);
                 }

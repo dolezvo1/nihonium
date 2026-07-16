@@ -33,7 +33,7 @@ use crate::domains::umlsequence::umlsequence_models::{
     VERTICALS_BUCKET,
 };
 use crate::{
-    CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::{egui, epaint};
@@ -1050,18 +1050,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let model_uuid = ModelUuid::now_v7();
-    let name = format!("New UML sequence diagram {}", no);
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(UmlSequenceDiagramBoard::new(
-        model_uuid,
-        name.clone(),
+        ModelUuid::now_v7(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (user_model, user_view) = new_umlsequence_lifeline(
         "User",
         "",
@@ -1180,14 +1178,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         true,
     );
 
-    let model_uuid = ModelUuid::now_v7();
-    let name = format!("Demo UML sequence diagram {}", no);
     let diagram = ERef::new(UmlSequenceDiagramBoard::new(
-        model_uuid,
-        name.clone(),
+        ModelUuid::now_v7(),
+        name.to_owned(),
         vec![diagram_model.into()],
     ));
-    new_controlller(diagram, name, vec![diagram_view.into()])
+    new_controlller(diagram, name.to_owned(), vec![diagram_view.into()])
 }
 
 pub fn deserializer(
@@ -1803,8 +1799,8 @@ inventory::submit! {DiagramInfo {
         directory: "/Unified Modeling Language",
         description: "UML Sequence diagram (lifelines, messages, etc.)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New UML Sequence diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo UML Sequence diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

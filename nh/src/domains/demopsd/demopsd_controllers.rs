@@ -32,8 +32,8 @@ use crate::common::views::multiconnection_view::{
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::demopsd::demopsd_models::{DemoPsdState, DemoPsdStateInfo};
 use crate::{
-    CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
-    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
+    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::{egui, epaint};
 use std::collections::HashSet;
@@ -741,18 +741,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New DEMO PSD diagram {}", no);
-
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(DemoPsdDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let fact1 = new_demopsd_fact("", false, egui::Pos2::new(100.0, 100.0));
     let act1 = new_demopsd_act("rq", true, egui::Pos2::ZERO);
     let fact2 = new_demopsd_fact("TK04/ac", false, egui::Pos2::new(375.0, 400.0));
@@ -824,13 +822,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ];
 
     {
-        let name = format!("Demo DEMO PSD diagram {}", no);
         let diagram = ERef::new(DemoPsdDiagram::new(
             ModelUuid::now_v7(),
-            name.clone(),
+            name.to_owned(),
             models,
         ));
-        new_controlller(diagram, name, views)
+        new_controlller(diagram, name.to_owned(), views)
     }
 }
 
@@ -1175,8 +1172,8 @@ inventory::submit! {DiagramInfo {
         directory: "/Design & Engineering Methodology for Organizations",
         description: "Process Structure Diagram (transactions, acts, facts, etc.)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New DEMO PSD diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo DEMO PSD diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),

@@ -7,8 +7,8 @@ use super::super::umlclass::{
     umlclass_models::UmlClassDiagram,
 };
 use crate::{
-    DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF,
-    DiagramCreationData, DiagramInfo,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo,
     common::{
         controller::{
             ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2,
@@ -160,17 +160,16 @@ fn new_controlller(
     )
 }
 
-pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let name = format!("New OntoUML diagram {}", no);
+pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![],
     ));
-    new_controlller(diagram, name, vec![])
+    new_controlller(diagram, name.to_owned(), vec![])
 }
 
-pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (animal_model, animal_view) = new_ontouml_class(
         "Animal",
         ontouml_models::KIND,
@@ -269,10 +268,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         (marriage_model.clone().into(), marriage_view.clone().into()),
     );
 
-    let name = format!("Demo OntoUML diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.clone(),
+        name.to_owned(),
         vec![
             animal_model.into(),
             temp_model.into(),
@@ -290,7 +288,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ));
     new_controlller(
         diagram,
-        name,
+        name.to_owned(),
         vec![
             animal_view.into(),
             temp_view.into(),
@@ -630,8 +628,8 @@ inventory::submit! {DiagramInfo {
         directory: "",
         description: "OntoUML UFO-A diagram (UML Class diagram profile for modelling of ontological concepts)",
         constructors: &[
-            ("empty", &(new as DiagramConstructorF)),
-            ("demo", &(demo as DiagramConstructorF)),
+            ("empty", &((|no| format!("New OntoUML diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
+            ("demo", &((|no| format!("Demo OntoUML diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),
