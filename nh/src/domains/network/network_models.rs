@@ -514,12 +514,21 @@ pub enum NetworkNodeKind {
     Cloud,
 
     Firewall,
+    IntrusionPreventionSystem,
+    LoadBalancer,
+
+    Hub,
     Router,
+    WirelessRouter,
     Switch,
     #[default]
     Server,
 
+    VirtualMachine,
     Workstation,
+    IpPhone,
+    Printer,
+
     Laptop,
     Tablet,
     CellularPhone,
@@ -528,13 +537,20 @@ pub enum NetworkNodeKind {
 }
 
 impl NetworkNodeKind {
-    pub const VARIANTS: [Self; 11] = [
+    pub const VARIANTS: [Self; 18] = [
         Self::Cloud,
         Self::Firewall,
+        Self::IntrusionPreventionSystem,
+        Self::LoadBalancer,
+        Self::Hub,
         Self::Router,
+        Self::WirelessRouter,
         Self::Switch,
         Self::Server,
+        Self::VirtualMachine,
         Self::Workstation,
+        Self::IpPhone,
+        Self::Printer,
         Self::Laptop,
         Self::Tablet,
         Self::CellularPhone,
@@ -546,10 +562,17 @@ impl NetworkNodeKind {
         match self {
             NetworkNodeKind::Cloud => "Cloud",
             NetworkNodeKind::Firewall => "Firewall",
+            NetworkNodeKind::IntrusionPreventionSystem => "Intrusion Prevention System",
+            NetworkNodeKind::LoadBalancer => "Load Balancer",
+            NetworkNodeKind::Hub => "Hub",
             NetworkNodeKind::Router => "Router",
+            NetworkNodeKind::WirelessRouter => "Wireless Router",
             NetworkNodeKind::Switch => "Switch",
             NetworkNodeKind::Server => "Server",
+            NetworkNodeKind::VirtualMachine => "Virtual Machine",
             NetworkNodeKind::Workstation => "Workstation",
+            NetworkNodeKind::IpPhone => "IP Phone",
+            NetworkNodeKind::Printer => "Printer",
             NetworkNodeKind::Laptop => "Laptop",
             NetworkNodeKind::Tablet => "Tablet",
             NetworkNodeKind::CellularPhone => "Cellular Phone",
