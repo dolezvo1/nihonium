@@ -573,15 +573,17 @@ fn add_project_element_block(
     gdc: &GlobalDrawingContext,
     ui: &mut egui::Ui,
     commands: &mut Vec<ProjectCommand>,
+    target_folder: &ViewUuid,
 ) {
     if ui
         .button(gdc.translate_0("nh-project-addnewdocument"))
         .clicked()
     {
-        commands.push(ProjectCommand::AddNewDocument(
-            ViewUuid::now_v7(),
-            "New Document".to_owned(),
-        ));
+        commands.push(ProjectCommand::AddNewDocument {
+            into: *target_folder,
+            uuid: ViewUuid::now_v7(),
+            content: "New Document".to_owned(),
+        });
     }
 
     if ui
@@ -873,6 +875,7 @@ impl NHContext {
             docs: &HashMap<ViewUuid, (String, String)>,
             cma: &mut Option<ContextMenuAction>,
             commands: &mut Vec<ProjectCommand>,
+            target_folder: &ViewUuid,
         ) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
@@ -902,7 +905,7 @@ impl NHContext {
                             ui.close();
                         }
 
-                        add_project_element_block(gdc, ui, commands);
+                        add_project_element_block(gdc, ui, commands, uuid);
 
                         if ui
                             .button(gdc.translate_0("nh-tab-projecthierarchy-collapsechildren"))
@@ -937,7 +940,7 @@ impl NHContext {
                     }));
 
                     for c in children {
-                        hierarchy(builder, gdc, c, docs, cma, commands);
+                        hierarchy(builder, gdc, c, docs, cma, commands, uuid);
                     }
 
                     builder.close_dir();
@@ -969,7 +972,7 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, ui, commands);
+                                add_project_element_block(gdc, ui, commands, target_folder);
 
                                 if let Some((new_uuid, new_c)) =
                                     c.write().show_duplication_menu(gdc, ui, uuid)
@@ -1031,7 +1034,7 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, ui, commands);
+                                add_project_element_block(gdc, ui, commands, target_folder);
 
                                 if ui
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-duplicate"))
@@ -1077,6 +1080,7 @@ impl NHContext {
                             &self.documents,
                             &mut context_menu_action,
                             &mut commands,
+                            &ViewUuid::nil(),
                         );
                     });
 
@@ -1121,20 +1125,16 @@ impl NHContext {
                             }
                         }
                         egui_ltreeview::Action::Move(dnd) => {
-                            let target_is_folder = matches!(
-                                self.project_hierarchy.get(&dnd.target),
-                                Some((HierarchyNode::Folder(..), _))
-                            );
+                            let target_is_folder = dnd.target.is_nil()
+                                || matches!(
+                                    self.project_hierarchy.get(&dnd.target),
+                                    Some((HierarchyNode::Folder(..), _))
+                                );
 
                             for source_id in &dnd.source {
-                                if let Some((source_node, source_node_parent)) =
+                                if let Some((_source_node, source_node_parent)) =
                                     self.project_hierarchy.get(source_id)
-                                    && ((target_is_folder
-                                        && matches!(
-                                            source_node,
-                                            HierarchyNode::Folder(..) | HierarchyNode::Diagram(..)
-                                        ))
-                                        || dnd.target == source_node_parent.uuid())
+                                    && (target_is_folder || dnd.target == source_node_parent.uuid())
                                     && let Some(source) = self.project_hierarchy.remove(source_id)
                                 {
                                     _ = self.project_hierarchy.insert(
@@ -3331,7 +3331,12 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    add_project_element_block(&self.context.drawing_context, ui, &mut commands);
+                    add_project_element_block(
+                        &self.context.drawing_context,
+                        ui,
+                        &mut commands,
+                        &ViewUuid::nil(),
+                    );
 
                     #[cfg(not(target_arch = "wasm32"))]
                     button!(ui, "nh-project-save", SimpleProjectCommand::SaveProject);
@@ -4187,17 +4192,22 @@ impl eframe::App for NHApp {
                 ProjectCommand::DeleteDiagram(view_uuid) => {
                     self.delete_diagram(view_uuid);
                 }
-                ProjectCommand::AddNewDocument(uuid, content) => {
+                ProjectCommand::AddNewDocument {
+                    into,
+                    uuid,
+                    content,
+                } => {
                     let first_line = content
                         .lines()
                         .next()
                         .unwrap_or("empty document")
                         .to_owned();
                     self.context.documents.insert(uuid, (first_line, content));
-                    if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy
-                    {
-                        children.push(HierarchyNode::Document(uuid));
-                    }
+                    let _ = self.context.project_hierarchy.insert(
+                        &into,
+                        egui_ltreeview::DirPosition::Last,
+                        HierarchyNode::Document(uuid),
+                    );
                     push_tab_to_best!(self, NHTab::Document { uuid });
                     self.context.set_has_unsaved_changes(true);
                 }

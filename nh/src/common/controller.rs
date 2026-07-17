@@ -162,7 +162,11 @@ pub enum ProjectCommand {
     ),
     DeleteDiagram(ViewUuid),
 
-    AddNewDocument(ViewUuid, String),
+    AddNewDocument {
+        into: ViewUuid,
+        uuid: ViewUuid,
+        content: String,
+    },
     DuplicateDocument(ViewUuid),
     DeleteDocument(ViewUuid),
 }
