@@ -1657,21 +1657,60 @@ impl NHContext {
                         .map(|e| e.0)
                         .unwrap_or(&self.project_hierarchy)
                     {
+                        fn pop(s: &mut String, n: usize) {
+                            for _ in 0..n {
+                                s.pop();
+                            }
+                        }
                         egui::ComboBox::from_id_salt("newdiagram targetfolder")
                             .selected_text(&**name)
                             .show_ui(ui, |ui| {
-                                fn h(ui: &mut egui::Ui, e: &HierarchyNode, t: &mut ViewUuid) {
+                                fn h(
+                                    ui: &mut egui::Ui,
+                                    prefix: &mut String,
+                                    is_root: bool,
+                                    is_last: bool,
+                                    e: &HierarchyNode,
+                                    t: &mut ViewUuid,
+                                ) {
                                     if let HierarchyNode::Folder(view_uuid, name, children) = e {
-                                        ui.selectable_value(t, *view_uuid, &**name);
+                                        ui.selectable_value(
+                                            t,
+                                            *view_uuid,
+                                            if is_root {
+                                                format!("{}", name)
+                                            } else {
+                                                let branch = if is_last { "`-- " } else { "|-- " };
+                                                format!("{}{}{}", prefix, branch, name)
+                                            },
+                                        );
 
-                                        for e in children {
-                                            h(ui, e, t);
+                                        if !is_root {
+                                            if is_last {
+                                                prefix.push_str("    ");
+                                            } else {
+                                                prefix.push_str("|   ");
+                                            }
                                         }
+
+                                        let mut iter = children
+                                            .iter()
+                                            .filter(|e| matches!(e, HierarchyNode::Folder(..)))
+                                            .peekable();
+                                        while let Some(e) = iter.next() {
+                                            h(ui, prefix, false, iter.peek().is_none(), e, t);
+                                        }
+
+                                        pop(prefix, 4);
                                     }
                                 }
 
+                                let mut prefix = String::new();
                                 h(
                                     ui,
+                                    &mut prefix,
+                                    true,
+                                    true,
                                     &self.project_hierarchy,
                                     &mut self.new_diagram_target_folder,
                                 );
