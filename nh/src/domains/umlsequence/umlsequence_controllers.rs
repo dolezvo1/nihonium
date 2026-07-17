@@ -1259,7 +1259,7 @@ impl DiagramSettings for UmlSequenceSettings {
                             end_behaviour,
                         } => {
                             columns[1].label("Kind:");
-                            egui::ComboBox::from_id_salt("Kind:")
+                            egui::ComboBox::from_id_salt("combined fragment kind")
                                 .selected_text(kind.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in UmlSequenceCombinedFragmentKind::VARIANTS {
@@ -1269,7 +1269,7 @@ impl DiagramSettings for UmlSequenceSettings {
                                 });
 
                             columns[1].label("End behaviour:");
-                            egui::ComboBox::from_id_salt("End behaviour:")
+                            egui::ComboBox::from_id_salt("end behaviour")
                                 .selected_text(end_behaviour.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in UmlSequenceActivationBehaviour::VARIANTS {
@@ -4615,7 +4615,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         }
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("Kind:")
+        egui::ComboBox::from_id_salt("combined fragment kind")
             .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in UmlSequenceCombinedFragmentKind::VARIANTS {
@@ -4649,7 +4649,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         }
 
         ui.label("End behaviour:");
-        egui::ComboBox::from_id_salt("End behaviour:")
+        egui::ComboBox::from_id_salt("end behaviour")
             .selected_text(self.temporaries.end_behaviour_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in UmlSequenceActivationBehaviour::VARIANTS {

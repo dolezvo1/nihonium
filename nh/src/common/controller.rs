@@ -324,11 +324,11 @@ impl HierarchyNode {
             Self::Diagram(..) | Self::Document(..) => Err(value),
         }
     }
-    pub fn for_each(&self, mut f: impl FnMut(&Self)) {
+    pub fn for_each(&self, f: &mut impl FnMut(&Self)) {
         f(self);
         match self {
             Self::Folder(.., children) => {
-                children.iter().for_each(f);
+                children.iter().for_each(|e| e.for_each(f));
             }
             Self::Diagram(..) | Self::Document(..) => {}
         }

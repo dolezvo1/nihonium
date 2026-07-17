@@ -2999,7 +2999,7 @@ impl CustomModal for DemoOfdEventTypeSetupModal {
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Transaction Kind:");
-        egui::ComboBox::from_id_salt("Transaction Kind:")
+        egui::ComboBox::from_id_salt("transaction kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for value in DemoTransactionKind::VARIANTS {
@@ -3124,7 +3124,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         ui.label("Model properties");
 
         ui.label("Transaction Kind:");
-        egui::ComboBox::from_id_salt("Transaction Kind:")
+        egui::ComboBox::from_id_salt("transaction kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for value in DemoTransactionKind::VARIANTS {
@@ -4494,7 +4494,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         ui.separator();
 
         ui.label("Type:");
-        egui::ComboBox::from_id_salt("Type")
+        egui::ComboBox::from_id_salt("aggregation kind")
             .selected_text(if r.is_generalization {
                 "Generalization"
             } else {

@@ -1873,7 +1873,7 @@ impl CustomModal for DemoPsdTransactionSetupModal {
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Transaction Kind:");
-        egui::ComboBox::from_id_salt("Transaction Kind:")
+        egui::ComboBox::from_id_salt("transaction kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for value in DemoTransactionKind::VARIANTS {
@@ -2114,7 +2114,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         ui.label("Model properties");
 
         ui.label("Transaction Kind:");
-        egui::ComboBox::from_id_salt("Transaction Kind:")
+        egui::ComboBox::from_id_salt("transaction kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for value in DemoTransactionKind::VARIANTS {
@@ -4416,7 +4416,7 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
         >,
     ) -> PropertiesStatus<DemoPsdDomain> {
         ui.label("Type:");
-        egui::ComboBox::from_id_salt("Type:")
+        egui::ComboBox::from_id_salt("link type")
             .selected_text(self.temporaries.link_type_buffer.as_str())
             .show_ui(ui, |ui| {
                 for value in DemoPsdLinkType::VARIANTS {

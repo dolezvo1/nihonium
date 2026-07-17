@@ -1004,7 +1004,7 @@ impl DiagramSettings for UmlActivitySettings {
                                 .changed();
 
                             columns[1].label("Kind:");
-                            egui::ComboBox::from_id_salt("kind")
+                            egui::ComboBox::from_id_salt("action kind")
                                 .selected_text(kind.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in UmlActivityActionKind::VARIANTS {
@@ -1056,7 +1056,7 @@ impl DiagramSettings for UmlActivitySettings {
                                 .changed();
 
                             columns[1].label("Kind:");
-                            egui::ComboBox::from_id_salt("kind")
+                            egui::ComboBox::from_id_salt("edge kind")
                                 .selected_text(kind.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in UmlActivityEdgeKind::VARIANTS {
@@ -5051,7 +5051,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         }
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("kind")
+        egui::ComboBox::from_id_salt("action kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in UmlActivityActionKind::VARIANTS {
@@ -6048,7 +6048,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
         ui.label("Model properties");
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("kind")
+        egui::ComboBox::from_id_salt("final node kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in UmlActivityFinalNodeKind::VARIANTS {
@@ -7816,7 +7816,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
         }
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("kind")
+        egui::ComboBox::from_id_salt("edge kind")
             .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in UmlActivityEdgeKind::VARIANTS {

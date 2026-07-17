@@ -4324,7 +4324,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
         ui.text_edit_singleline(&mut self.default_value_buffer);
 
         ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("Visibility:")
+        egui::ComboBox::from_id_salt("visibility")
             .selected_text(
                 self.visibility_buffer
                     .as_ref()
@@ -4594,7 +4594,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         }
 
         ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("Visibility:")
+        egui::ComboBox::from_id_salt("visibility")
             .selected_text(
                 self.visibility_buffer
                     .as_ref()
@@ -5139,7 +5139,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
         ui.text_edit_singleline(&mut self.return_type_buffer);
 
         ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("Visibility:")
+        egui::ComboBox::from_id_salt("visibility")
             .selected_text(
                 self.visibility_buffer
                     .as_ref()
@@ -5396,7 +5396,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         }
 
         ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("Visibility:")
+        egui::ComboBox::from_id_salt("visibility")
             .selected_text(
                 self.visibility_buffer
                     .as_ref()

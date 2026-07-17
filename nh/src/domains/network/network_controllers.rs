@@ -726,7 +726,7 @@ impl DiagramSettings for NetworkSettings {
                                 .changed();
 
                             columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("kind")
+                            egui::ComboBox::from_id_salt("node kind")
                                 .selected_text(kind.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in NetworkNodeKind::VARIANTS {
@@ -746,7 +746,7 @@ impl DiagramSettings for NetworkSettings {
                                 .changed();
 
                             columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("kind")
+                            egui::ComboBox::from_id_salt("user kind")
                                 .selected_text(kind.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in NetworkUserKind::VARIANTS {
@@ -777,7 +777,7 @@ impl DiagramSettings for NetworkSettings {
                                 .changed();
 
                             columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("kind")
+                            egui::ComboBox::from_id_salt("file kind")
                                 .selected_text(kind.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in NetworkFileKind::VARIANTS {
@@ -807,7 +807,7 @@ impl DiagramSettings for NetworkSettings {
                                 .changed();
 
                             columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("kind")
+                            egui::ComboBox::from_id_salt("location kind")
                                 .selected_text(kind.as_str())
                                 .show_ui(&mut columns[1], |ui| {
                                     for e in NetworkLocationKind::VARIANTS {
@@ -2221,7 +2221,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         }
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("kind")
+        egui::ComboBox::from_id_salt("node kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkNodeKind::VARIANTS {
@@ -3263,7 +3263,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         }
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("kind")
+        egui::ComboBox::from_id_salt("user kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkUserKind::VARIANTS {
@@ -3903,7 +3903,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         }
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("kind")
+        egui::ComboBox::from_id_salt("file kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkFileKind::VARIANTS {
@@ -4435,7 +4435,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         }
 
         ui.label("Kind:");
-        egui::ComboBox::from_id_salt("kind")
+        egui::ComboBox::from_id_salt("location kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkLocationKind::VARIANTS {

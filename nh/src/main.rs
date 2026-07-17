@@ -536,6 +536,10 @@ impl TabViewer for NHContext {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
+        // TODO: remove when egui/#5138 is fixed?
+        ui.spacing_mut().combo_width = 250.0;
+        ui.spacing_mut().combo_height = 400.0;
+
         match tab {
             NHTab::NewDiagram => self.show_newdiagram_tab(ui),
             NHTab::RecentlyUsed => {
@@ -1170,7 +1174,7 @@ impl NHContext {
                 ContextMenuAction::CollapseAt(collapse, recurse, view_uuid) => {
                     let mut f = |e: &HierarchyNode| {
                         if recurse {
-                            e.for_each(|e| {
+                            e.for_each(&mut |e| {
                                 self.tree_view_state.set_openness(
                                     e.uuid(),
                                     !collapse.unwrap_or_else(|| {
@@ -1662,7 +1666,14 @@ impl NHContext {
                                 s.pop();
                             }
                         }
-                        egui::ComboBox::from_id_salt("newdiagram targetfolder")
+
+                        let mut folder_count: usize = 0;
+                        self.project_hierarchy.for_each(&mut |e| {
+                            if matches!(e, HierarchyNode::Folder(..)) {
+                                folder_count += 1;
+                            }
+                        });
+                        egui::ComboBox::from_id_salt(("newdiagram targetfolder", folder_count))
                             .selected_text(&**name)
                             .show_ui(ui, |ui| {
                                 fn h(
@@ -1792,7 +1803,8 @@ impl NHContext {
                     self.style = Some(Style::from_egui(&ui.ctx().global_style()));
                 }
 
-                egui::ComboBox::new("zoom_factor", "UI Scale")
+                ui.label("UI Scale");
+                egui::ComboBox::from_id_salt("zoom_factor")
                     .selected_text(self.zoom_factor.to_string())
                     .show_ui(ui, |ui| {
                         for e in [1.0, 1.25, 1.5, 1.75, 2.0, 4.0, 8.0] {

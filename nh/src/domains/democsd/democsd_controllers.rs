@@ -3047,7 +3047,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         ui.label("Model properties");
 
         ui.label("Transaction Kind:");
-        egui::ComboBox::from_id_salt("Transaction Kind:")
+        egui::ComboBox::from_id_salt("transaction kind")
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for value in DemoTransactionKind::VARIANTS {
@@ -3496,7 +3496,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         >,
     ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Type:");
-        egui::ComboBox::from_id_salt("Type:")
+        egui::ComboBox::from_id_salt("link type")
             .selected_text(self.temporaries.link_type_buffer.as_str())
             .show_ui(ui, |ui| {
                 for value in DemoCsdLinkType::VARIANTS {
