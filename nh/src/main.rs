@@ -342,6 +342,7 @@ struct NHContext {
     new_diagram_selected_kind: usize,
     new_diagram_selected_constructor: usize,
     new_diagram_name: String,
+    new_diagram_target_folder: ViewUuid,
 
     unprocessed_commands: Vec<ProjectCommand>,
     affected_models: HashSet<ModelUuid>,
@@ -590,6 +591,7 @@ fn add_project_element_block(
         .button(gdc.translate_0("nh-project-addnewdiagram"))
         .clicked()
     {
+        commands.push(ProjectCommand::SetInsertionTargetFolder(*target_folder));
         commands.push(ProjectCommand::OpenAndFocusTab(NHTab::NewDiagram, None));
     }
     ui.separator();
@@ -978,11 +980,11 @@ impl NHContext {
                                     c.write().show_duplication_menu(gdc, ui, uuid)
                                 {
                                     let new_c = new_c.unwrap_or_else(|| c.clone());
-                                    commands.push(ProjectCommand::AddNewDiagram(
-                                        ViewUuid::nil(),
-                                        new_uuid,
-                                        new_c,
-                                    ));
+                                    commands.push(ProjectCommand::AddNewDiagram {
+                                        parent: ViewUuid::nil(),
+                                        view_uuid: new_uuid,
+                                        diagram: new_c,
+                                    });
                                     commands.push(ProjectCommand::OpenAndFocusTab(
                                         NHTab::Diagram { uuid: new_uuid },
                                         None,
@@ -1641,6 +1643,15 @@ impl NHContext {
                         self.drawing_context.translate_0("nh-tab-newdiagram-name"),
                         &mut self.new_diagram_name,
                     );
+                    ui.label("Target folder");
+                    if let HierarchyNode::Folder(_, name, _) = self
+                        .project_hierarchy
+                        .get(&self.new_diagram_target_folder)
+                        .map(|e| e.0)
+                        .unwrap_or(&self.project_hierarchy)
+                    {
+                        ui.label(&**name);
+                    }
                     ui.separator();
 
                     ui.horizontal(|ui| {
@@ -1661,7 +1672,11 @@ impl NHContext {
                             self.unprocessed_commands
                                 .push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
                             self.unprocessed_commands
-                                .push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), uuid, c));
+                                .push(ProjectCommand::AddNewDiagram {
+                                    parent: self.new_diagram_target_folder,
+                                    view_uuid: uuid,
+                                    diagram: c,
+                                });
                             self.unprocessed_commands
                                 .push(ProjectCommand::OpenAndFocusTab(
                                     NHTab::Diagram { uuid },
@@ -1685,7 +1700,11 @@ impl NHContext {
                             self.unprocessed_commands
                                 .push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
                             self.unprocessed_commands
-                                .push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), uuid, c));
+                                .push(ProjectCommand::AddNewDiagram {
+                                    parent: self.new_diagram_target_folder,
+                                    view_uuid: uuid,
+                                    diagram: c,
+                                });
                         }
                     });
                 }
@@ -2785,6 +2804,7 @@ impl NHApp {
             new_diagram_selected_kind: 0,
             new_diagram_selected_constructor: 0,
             new_diagram_name: String::new(),
+            new_diagram_target_folder: ViewUuid::nil(),
 
             unprocessed_commands: Vec::new(),
             affected_models: HashSet::new(),
@@ -4178,6 +4198,9 @@ impl eframe::App for NHApp {
                         self.context.set_has_unsaved_changes(true);
                     }
                 }
+                ProjectCommand::SetInsertionTargetFolder(uuid) => {
+                    self.context.new_diagram_target_folder = uuid;
+                }
                 ProjectCommand::OpenAndFocusTab(..) => {
                     unreachable!("this really should not happen")
                 }
@@ -4186,7 +4209,11 @@ impl eframe::App for NHApp {
                     self.context.new_diagram_no = no;
                     self.context.new_diagram_name = self.context.new_diagram_name();
                 }
-                ProjectCommand::AddNewDiagram(parent, view_uuid, controller) => {
+                ProjectCommand::AddNewDiagram {
+                    parent,
+                    view_uuid,
+                    diagram: controller,
+                } => {
                     self.add_diagram(parent, view_uuid, controller);
                 }
                 ProjectCommand::DeleteDiagram(view_uuid) => {

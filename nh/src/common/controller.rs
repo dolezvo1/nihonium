@@ -152,14 +152,15 @@ pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
     RenameElement(ViewUuid, String),
 
+    SetInsertionTargetFolder(ViewUuid),
     OpenAndFocusTab(NHTab, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetNewDiagramNumber(u32),
-    AddNewDiagram(
-        /*parent:*/ ViewUuid,
-        ViewUuid,
-        ERef<dyn DiagramController>,
-    ),
+    AddNewDiagram {
+        parent: ViewUuid,
+        view_uuid: ViewUuid,
+        diagram: ERef<dyn DiagramController>,
+    },
     DeleteDiagram(ViewUuid),
 
     AddNewDocument {
