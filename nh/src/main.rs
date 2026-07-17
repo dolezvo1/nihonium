@@ -1144,6 +1144,7 @@ impl NHContext {
                                         dnd.position,
                                         source,
                                     );
+                                    self.set_has_unsaved_changes(true);
                                 }
                             }
                         }
@@ -1164,6 +1165,7 @@ impl NHContext {
                             vec![],
                         ),
                     );
+                    self.set_has_unsaved_changes(true);
                 }
                 ContextMenuAction::CollapseAt(collapse, recurse, view_uuid) => {
                     let mut f = |e: &HierarchyNode| {
@@ -1252,7 +1254,9 @@ impl NHContext {
                     }));
                 }
                 ContextMenuAction::DeleteFolder(view_uuid) => {
-                    self.project_hierarchy.remove(&view_uuid);
+                    if self.project_hierarchy.remove(&view_uuid).is_some() {
+                        self.set_has_unsaved_changes(true);
+                    }
                 }
             }
         }
