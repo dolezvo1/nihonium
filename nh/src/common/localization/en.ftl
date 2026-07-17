@@ -69,6 +69,7 @@ nh-tab-settings = Settings
 
 nh-tab-newdiagram = New Diagram
 nh-tab-newdiagram-name = Name
+nh-tab-newdiagram-targetfolder = Target folder
 nh-tab-newdiagram-open = Add and Open
 nh-tab-newdiagram-background = Add in Background
 

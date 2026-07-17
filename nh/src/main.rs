@@ -1647,14 +1647,35 @@ impl NHContext {
                         self.drawing_context.translate_0("nh-tab-newdiagram-name"),
                         &mut self.new_diagram_name,
                     );
-                    ui.label("Target folder");
+                    ui.label(
+                        self.drawing_context
+                            .translate_0("nh-tab-newdiagram-targetfolder"),
+                    );
                     if let HierarchyNode::Folder(_, name, _) = self
                         .project_hierarchy
                         .get(&self.new_diagram_target_folder)
                         .map(|e| e.0)
                         .unwrap_or(&self.project_hierarchy)
                     {
-                        ui.label(&**name);
+                        egui::ComboBox::from_id_salt("newdiagram targetfolder")
+                            .selected_text(&**name)
+                            .show_ui(ui, |ui| {
+                                fn h(ui: &mut egui::Ui, e: &HierarchyNode, t: &mut ViewUuid) {
+                                    if let HierarchyNode::Folder(view_uuid, name, children) = e {
+                                        ui.selectable_value(t, *view_uuid, &**name);
+
+                                        for e in children {
+                                            h(ui, e, t);
+                                        }
+                                    }
+                                }
+
+                                h(
+                                    ui,
+                                    &self.project_hierarchy,
+                                    &mut self.new_diagram_target_folder,
+                                );
+                            });
                     }
                     ui.separator();
 

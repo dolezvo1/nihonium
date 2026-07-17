@@ -69,6 +69,7 @@ nh-tab-settings = Nastavení
 
 nh-tab-newdiagram = Nový Diagram
 nh-tab-newdiagram-name = Jméno
+nh-tab-newdiagram-targetfolder = Cílová složka
 nh-tab-newdiagram-open = Přidat a otevřít
 nh-tab-newdiagram-background = Přidat na pozadí
 
