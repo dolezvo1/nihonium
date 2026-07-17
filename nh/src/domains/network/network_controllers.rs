@@ -24,7 +24,8 @@ use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::network::network_models::{
     NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType,
     NetworkComment, NetworkContainer, NetworkDiagram, NetworkElement, NetworkFile, NetworkFileKind,
-    NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind,
+    NetworkLocation, NetworkLocationKind, NetworkNode, NetworkNodeKind, NetworkUser,
+    NetworkUserKind,
 };
 use crate::{
     CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -65,6 +66,7 @@ pub enum NetworkPropChange {
     NodeKindChange(NetworkNodeKind),
     UserKindChange(NetworkUserKind),
     FileKindChange(NetworkFileKind),
+    LocationKindChange(NetworkLocationKind),
 
     AssociationLineTypeChange(NetworkAssociationLineType),
     AssociationArrowheadTypeChange(/*target?*/ bool, NetworkAssociationArrowheadType),
@@ -80,29 +82,7 @@ pub enum NetworkPropChange {
 
 impl Debug for NetworkPropChange {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "NetworkPropChange::{}",
-            match self {
-                Self::NameChange(name) => format!("NameChange({})", name),
-                Self::NodeKindChange(_kind) => "NodeKindChange(..)".to_string(),
-                Self::UserKindChange(_kind) => "UserKindChange(..)".to_string(),
-                Self::FileKindChange(_kind) => "FileKindChange(..)".to_string(),
-
-                Self::AssociationLineTypeChange(_) => "AssociationLineTypeChange(..)".to_string(),
-                Self::AssociationArrowheadTypeChange(..) =>
-                    "AssociationArrowheadTypeChange(..)".to_string(),
-                Self::AssociationMultiplicityChange(..) =>
-                    "AssociationMultiplicityChange(..)".to_string(),
-                Self::AssociationRoleChange(..) => "AssociationRoleChange(..)".to_string(),
-                Self::AssociationReadingChange(..) => "AssociationReadingChange(..)".to_string(),
-                Self::FlipMulticonnection(_) => "FlipMulticonnection".to_string(),
-
-                Self::ColorChange(_color) => "ColorChange(..)".to_string(),
-                Self::CommentChange(comment) => format!("CommentChange({})", comment),
-                Self::CommentAlignChange(..) => "CommentAlignChange(..)".to_string(),
-            }
-        )
+        write!(f, "NetworkPropChange::???(..)",)
     }
 }
 
@@ -175,7 +155,8 @@ pub enum NetworkElementView {
     Node(ERef<NetworkNodeView>),
     User(ERef<NetworkUserView>),
     File(ERef<NetworkFileView>),
-    Predicate(ERef<LinkViewT>),
+    Location(ERef<NetworkLocationView>),
+    Association(ERef<LinkViewT>),
     Comment(ERef<NetworkCommentView>),
 }
 
@@ -311,6 +292,9 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
             NetworkElement::File(inner) => {
                 new_network_file_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
             }
+            NetworkElement::Location(inner) => {
+                new_network_location_view(inner, egui::Pos2::ZERO).into()
+            }
             NetworkElement::Association(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.source.uuid(), *m.target.uuid());
@@ -348,6 +332,11 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
             .into(),
             NetworkElement::File(inner) => format!(
                 "File ({})",
+                LabelProvider::filter_and_elipsis(&inner.read().name)
+            )
+            .into(),
+            NetworkElement::Location(inner) => format!(
+                "Location ({})",
                 LabelProvider::filter_and_elipsis(&inner.read().name)
             )
             .into(),
@@ -808,6 +797,25 @@ impl DiagramSettings for NetworkSettings {
                                 modified = true;
                             }
                         }
+                        NetworkToolStage::Location {
+                            name,
+                            kind,
+                            with_edge_from: _,
+                        } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Name", name)
+                                .changed();
+
+                            columns[1].label("Kind");
+                            egui::ComboBox::from_id_salt("kind")
+                                .selected_text(kind.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in NetworkLocationKind::VARIANTS {
+                                        modified |=
+                                            ui.selectable_value(kind, e, e.as_str()).clicked();
+                                    }
+                                });
+                        }
                         NetworkToolStage::AssociationStart {
                             line_type,
                             source_arrowhead,
@@ -1049,6 +1057,21 @@ mod buttons {
         };
         (stage.clone(), stage, PartialNetworkElement::None, true)
     }
+    fn element_location(
+        m: NetworkElement,
+    ) -> (
+        NetworkToolStage,
+        NetworkToolStage,
+        PartialNetworkElement,
+        bool,
+    ) {
+        let stage = NetworkToolStage::Location {
+            name: "Home".to_owned(),
+            kind: NetworkLocationKind::Home,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialNetworkElement::None, true)
+    }
 
     pub const ELEMENT_BUTTONS: LazyLock<
         Vec<(usize, usize, &'static str, &'static ElementButtonF)>,
@@ -1059,6 +1082,7 @@ mod buttons {
             (1, 0, "N", &element_node as &ElementButtonF),
             (1, 1, "U", &element_user as &ElementButtonF),
             (1, 2, "F", &element_file as &ElementButtonF),
+            (1, 3, "L", &element_location as &ElementButtonF),
         ]
     });
 }
@@ -1164,20 +1188,31 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             ],
         ),
         (
-            "Files",
-            vec![(
-                NetworkToolStage::File {
-                    name: "File".to_owned(),
-                    kind: NetworkFileKind::Unspecified,
-                    background_color: MGlobalColor::None,
-                    with_edge_from: None,
-                },
-                "File",
-                Some(egui::KeyboardShortcut::new(
-                    egui::Modifiers::COMMAND,
-                    egui::Key::Num5,
-                )),
-            )],
+            "Files & Locations",
+            vec![
+                (
+                    NetworkToolStage::File {
+                        name: "File".to_owned(),
+                        kind: NetworkFileKind::Unspecified,
+                        background_color: MGlobalColor::None,
+                        with_edge_from: None,
+                    },
+                    "File",
+                    Some(egui::KeyboardShortcut::new(
+                        egui::Modifiers::COMMAND,
+                        egui::Key::Num5,
+                    )),
+                ),
+                (
+                    NetworkToolStage::Location {
+                        name: "Home".to_owned(),
+                        kind: NetworkLocationKind::Home,
+                        with_edge_from: None,
+                    },
+                    "Location",
+                    None,
+                ),
+            ],
         ),
         (
             "Relationships",
@@ -1293,6 +1328,14 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             let file_view = new_network_file(name, *kind, egui::Pos2::ZERO, *background_color).1;
             file_view.into()
         }
+        NetworkToolStage::Location {
+            name,
+            kind,
+            with_edge_from: _,
+        } => {
+            let view = new_network_location(name, *kind, egui::Pos2::ZERO).1;
+            view.into()
+        }
         NetworkToolStage::AssociationStart {
             line_type,
             source_arrowhead,
@@ -1386,6 +1429,11 @@ pub enum NetworkToolStage {
         background_color: MGlobalColor,
         with_edge_from: Option<ModelUuid>,
     },
+    Location {
+        name: String,
+        kind: NetworkLocationKind,
+        with_edge_from: Option<ModelUuid>,
+    },
     AssociationStart {
         line_type: NetworkAssociationLineType,
         source_arrowhead: NetworkAssociationArrowheadType,
@@ -1467,6 +1515,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
                 | NetworkToolStage::File { .. }
+                | NetworkToolStage::Location { .. }
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
@@ -1478,6 +1527,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 NetworkElement::Node(_)
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
+                | NetworkElement::Location(_)
                 | NetworkElement::Comment(_),
             ) => match self.current_stage {
                 NetworkToolStage::AssociationStart { .. } | NetworkToolStage::AssociationEnd => {
@@ -1486,6 +1536,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
                 | NetworkToolStage::File { .. }
+                | NetworkToolStage::Location { .. }
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment { .. } => NON_TARGETTABLE_COLOR,
@@ -1529,6 +1580,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     ..
                 }
                 | NetworkToolStage::File {
+                    with_edge_from: Some(source_uuid),
+                    ..
+                }
+                | NetworkToolStage::Location {
                     with_edge_from: Some(source_uuid),
                     ..
                 },
@@ -1589,6 +1644,18 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(file_view.into());
                 self.event_lock = true;
             }
+            (
+                NetworkToolStage::Location {
+                    name,
+                    kind,
+                    with_edge_from: _,
+                },
+                _,
+            ) => {
+                let (_, view) = new_network_location(name, *kind, pos);
+                self.result = PartialNetworkElement::Some(view.into());
+                self.event_lock = true;
+            }
             (NetworkToolStage::ContainerStart { name }, _) => {
                 self.result = PartialNetworkElement::Container {
                     name: name.clone(),
@@ -1620,6 +1687,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             NetworkElement::Node(_)
             | NetworkElement::User(_)
             | NetworkElement::File(_)
+            | NetworkElement::Location(_)
             | NetworkElement::Comment(_) => match (&self.current_stage, &mut self.result) {
                 (
                     NetworkToolStage::AssociationStart {
@@ -1679,6 +1747,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                         ..
                     }
                     | NetworkToolStage::File {
+                        with_edge_from: Some(source_uuid),
+                        ..
+                    }
+                    | NetworkToolStage::Location {
                         with_edge_from: Some(source_uuid),
                         ..
                     } if let Some(source) = q.get_view_for(source_uuid)
@@ -4244,6 +4316,597 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
+    }
+}
+
+fn new_network_location(
+    name: &str,
+    kind: NetworkLocationKind,
+    position: egui::Pos2,
+) -> (ERef<NetworkLocation>, ERef<NetworkLocationView>) {
+    let model = ERef::new(NetworkLocation::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        kind,
+    ));
+    let view = new_network_location_view(model.clone(), position);
+    (model, view)
+}
+fn new_network_location_view(
+    model: ERef<NetworkLocation>,
+    position: egui::Pos2,
+) -> ERef<NetworkLocationView> {
+    let m = model.read();
+    ERef::new(NetworkLocationView {
+        uuid: ViewUuid::now_v7().into(),
+        model: model.clone(),
+
+        name_buffer: (*m.name).to_owned(),
+        kind_buffer: m.kind,
+        comment_buffer: (*m.comment).to_owned(),
+
+        dragged_shape: None,
+        highlight: canvas::Highlight::NONE,
+        position,
+        bounds_rect: egui::Rect::ZERO,
+    })
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct NetworkLocationView {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    pub model: ERef<NetworkLocation>,
+
+    #[nh_context_serde(skip_and_default)]
+    name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    kind_buffer: NetworkLocationKind,
+    #[nh_context_serde(skip_and_default)]
+    comment_buffer: String,
+
+    #[nh_context_serde(skip_and_default)]
+    dragged_shape: Option<NHShape>,
+    #[nh_context_serde(skip_and_default)]
+    highlight: canvas::Highlight,
+    pub position: egui::Pos2,
+    pub bounds_rect: egui::Rect,
+}
+
+impl Entity for NetworkLocationView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl View for NetworkLocationView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl ElementController<NetworkElement> for NetworkLocationView {
+    fn model(&self) -> NetworkElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: self.bounds_rect,
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.position
+    }
+}
+
+impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
+    fn show_properties(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
+    ) -> PropertiesStatus<NetworkDomain> {
+        if !self.highlight.selected {
+            return PropertiesStatus::NotShown;
+        }
+
+        ui.label("Model properties");
+
+        if ui
+            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+            ));
+        }
+
+        ui.label("Kind:");
+        egui::ComboBox::from_id_salt("kind")
+            .selected_text(self.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in NetworkLocationKind::VARIANTS {
+                    if ui
+                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            NetworkPropChange::LocationKindChange(self.kind_buffer),
+                        ));
+                    }
+                }
+            });
+
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+            ));
+        }
+
+        ui.label("View properties");
+
+        ui.horizontal(|ui| {
+            let egui::Pos2 { mut x, mut y } = self.position;
+
+            ui.label("x");
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(x - self.position.x, 0.0),
+                ));
+            }
+            ui.label("y");
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(0.0, y - self.position.y),
+                ));
+            }
+        });
+
+        PropertiesStatus::Shown
+    }
+    fn draw_in(
+        &mut self,
+        _q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        _gdc: &GlobalDrawingContext,
+        settings: &NetworkSettings,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveNetworkTool)>,
+    ) -> TargettingStatus {
+        const INNER_SIZE: egui::Vec2 = egui::Vec2::new(40.0, 40.0);
+        const OUTER_SIZE: egui::Vec2 = egui::Vec2::new(50.0, 50.0);
+        // Draw shape and text
+        let inner_rect = egui::Rect::from_center_size(self.position, INNER_SIZE);
+        canvas.draw_rectangle(
+            inner_rect,
+            egui::CornerRadius::ZERO,
+            egui::Color32::TRANSPARENT,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
+        );
+
+        fn draw_house(canvas: &mut dyn NHCanvas, position: egui::Pos2, scale: f32) {
+            let roof_rect = egui::Rect::from_center_size(
+                position + scale * egui::Vec2::new(0.0, -7.5),
+                scale * egui::Vec2::new(25.0, 15.0),
+            );
+            canvas.draw_polygon(
+                [
+                    roof_rect.center_top(),
+                    roof_rect.right_bottom(),
+                    roof_rect.left_bottom(),
+                ]
+                .to_vec(),
+                egui::Color32::RED,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            let body_rect = egui::Rect::from_center_size(
+                position + scale * egui::Vec2::new(0.0, 7.5),
+                scale * egui::Vec2::new(20.0, 15.0),
+            );
+            canvas.draw_rectangle(
+                body_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            let door_rect = egui::Rect::from_center_size(
+                position + scale * egui::Vec2::new(-5.0, 11.5),
+                scale * egui::Vec2::new(5.0, 7.0),
+            );
+            canvas.draw_rectangle(
+                door_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::KHAKI,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            let window_rect = egui::Rect::from_center_size(
+                position + scale * egui::Vec2::new(5.0, 7.0),
+                scale * egui::Vec2::splat(5.0),
+            );
+            canvas.draw_rectangle(
+                window_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::LIGHT_BLUE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+        }
+        fn draw_building(canvas: &mut dyn NHCanvas, position: egui::Pos2, scale: f32) {
+            let r = egui::Rect::from_center_size(position, scale * egui::Vec2::new(15.0, 35.0));
+            canvas.draw_rectangle(
+                r,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            const W: f32 = 2.0;
+            const D_X: f32 = 1.0;
+            const D_Y: f32 = 2.0;
+            for x in 0..4 {
+                for y in 0..7 {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_min_size(
+                            r.min
+                                + scale
+                                    * egui::Vec2::new(
+                                        D_Y + (W + D_X) * x as f32,
+                                        D_Y + (W + D_Y) * y as f32,
+                                    ),
+                            scale * egui::Vec2::new(W, W),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::LIGHT_BLUE,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+        }
+
+        match self.kind_buffer {
+            NetworkLocationKind::Home => {
+                draw_house(canvas, self.position, 1.0);
+            }
+            NetworkLocationKind::Neighbourhood => {
+                draw_house(canvas, self.position + (0.0, -10.0).into(), 0.5);
+                draw_house(canvas, self.position + (-10.0, 0.0).into(), 0.5);
+                draw_house(canvas, self.position + (10.0, 0.0).into(), 0.5);
+                draw_house(canvas, self.position + (0.0, 10.0).into(), 0.5);
+            }
+            NetworkLocationKind::OfficeBranch => {
+                draw_building(canvas, self.position, 1.0);
+            }
+            NetworkLocationKind::HeadOffice => {
+                draw_building(canvas, self.position + (0.0, -10.0).into(), 0.5);
+                draw_building(canvas, self.position + (-10.0, 0.0).into(), 0.5);
+                draw_building(canvas, self.position + (10.0, 0.0).into(), 0.5);
+                draw_building(canvas, self.position + (0.0, 10.0).into(), 0.5);
+            }
+            NetworkLocationKind::Factory => {
+                const B_X: f32 = 18.0;
+                const B_Y: f32 = 18.0;
+                const D_X: f32 = 4.0;
+                const D_Y: f32 = 7.0;
+                let b_start_x = self.position.x - B_X;
+                for e in 0..2 {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_min_size(
+                            egui::Pos2::new(b_start_x + e as f32 * B_X, self.position.y),
+                            (B_X, B_Y).into(),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::DARK_GRAY,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                    let d_start_x = b_start_x + e as f32 * B_X + 2.0;
+                    for e in 0..2 {
+                        canvas.draw_rectangle(
+                            egui::Rect::from_min_size(
+                                egui::Pos2::new(
+                                    d_start_x + e as f32 * D_X,
+                                    self.position.y + B_Y - D_Y,
+                                ),
+                                (D_X, D_Y).into(),
+                            ),
+                            egui::CornerRadius::ZERO,
+                            egui::Color32::LIGHT_BLUE,
+                            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                            canvas::Highlight::NONE,
+                        );
+                    }
+                }
+                const C_X: f32 = 4.5;
+                const C_Y: f32 = 8.0;
+                for e in 0..4 {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_min_size(
+                            egui::Pos2::new(
+                                b_start_x + e as f32 * 2.0 * C_X,
+                                self.position.y - C_Y,
+                            ),
+                            (C_X, C_Y).into(),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::DARK_GRAY,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                    // TODO: draw smoke
+                }
+            }
+        }
+
+        canvas.draw_text(
+            self.position + egui::Vec2::new(0.0, OUTER_SIZE.y / 2.0),
+            egui::Align2::CENTER_TOP,
+            &self.name_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+        self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
+
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
+
+        // Draw targetting rectangle
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
+                .as_ref()
+                .filter(|e| self.min_shape().contains(e.0))
+                .map(|e| e.1)
+        {
+            canvas.draw_rectangle(
+                inner_rect,
+                egui::CornerRadius::ZERO,
+                t.targetting_for_section(Some(self.model())),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            TargettingStatus::Drawn
+        } else {
+            TargettingStatus::NotDrawn
+        }
+    }
+
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        settings: &<NetworkDomain as Domain>::SettingsT,
+        q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        tool: &mut Option<NaiveNetworkTool>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::MouseDown(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled;
+                }
+                self.dragged_shape = Some(self.min_shape());
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => {
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
+            InputEvent::Click(pos)
+                if self.highlight.selected
+                    && let Some(f) = handle_element_button_click(
+                        settings,
+                        self.bounds_rect.right_top(),
+                        ehc.ui_scale,
+                        pos,
+                    ) =>
+            {
+                let (initial_stage, current_stage, result, event_lock) =
+                    f(self.model.clone().into());
+                *tool = Some(NaiveNetworkTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByContainer
+            }
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_section(self.model());
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos - self.position;
+
+                if self.highlight.selected {
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        coerced_delta,
+                    ));
+                } else {
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(*self.uuid).collect(),
+                        coerced_delta,
+                    ));
+                }
+                EventHandlingStatus::HandledByElement
+            }
+            _ => EventHandlingStatus::NotHandled,
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.highlight = self.highlight.combine(*set, *h);
+                }
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
+                    std::iter::once(*self.uuid).collect(),
+                    -*delta,
+                ));
+            }
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, property) => {
+                if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
+                    let mut model = self.model.write();
+                    match property {
+                        NetworkPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        NetworkPropChange::LocationKindChange(kind) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::LocationKindChange(model.kind),
+                            ));
+                            model.kind = *kind;
+                        }
+                        NetworkPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            InsensitiveCommand::Macro(..) => unreachable!(),
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.name_buffer = (*model.name).clone();
+        self.kind_buffer = model.kind;
+        self.comment_buffer = (*model.comment).clone();
+    }
+
+    fn head_count(
+        &mut self,
+        _flattened_views: &mut HashMap<ViewUuid, (NetworkElementView, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, NetworkElementView>,
+        c: &mut HashMap<ViewUuid, NetworkElementView>,
+        m: &mut HashMap<ModelUuid, NetworkElement>,
+    ) {
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let modelish = if let Some(NetworkElement::Location(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model: modelish,
+            name_buffer: self.name_buffer.clone(),
+            kind_buffer: self.kind_buffer,
+            comment_buffer: self.comment_buffer.clone(),
+            dragged_shape: None,
+            highlight: self.highlight,
+            position: self.position,
+            bounds_rect: self.bounds_rect,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());

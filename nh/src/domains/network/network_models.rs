@@ -42,6 +42,7 @@ pub fn deep_copy_diagram(
             NetworkElement::Node(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::User(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::File(inner) => inner.read().clone_with(*new_uuid).into(),
+            NetworkElement::Location(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
         }
@@ -55,7 +56,10 @@ pub fn deep_copy_diagram(
                     relink(e, all_models);
                 }
             }
-            NetworkElement::Node(_) | NetworkElement::User(_) | NetworkElement::File(_) => {}
+            NetworkElement::Node(_)
+            | NetworkElement::User(_)
+            | NetworkElement::File(_)
+            | NetworkElement::Location(_) => {}
             NetworkElement::Association(inner) => {
                 let mut model = inner.write();
 
@@ -110,6 +114,7 @@ fn enumerate_elements(e: &NetworkElement, into: &mut HashMap<ModelUuid, NetworkE
         NetworkElement::Node(_)
         | NetworkElement::User(_)
         | NetworkElement::File(_)
+        | NetworkElement::Location(_)
         | NetworkElement::Association(_)
         | NetworkElement::Comment(_) => {}
     }
@@ -137,6 +142,7 @@ pub fn transitive_closure(
                 NetworkElement::Node(_)
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
+                | NetworkElement::Location(_)
                 | NetworkElement::Association(_)
                 | NetworkElement::Comment(_) => {}
             }
@@ -157,7 +163,10 @@ pub fn transitive_closure(
                         walk(e, when_deleting, also_delete);
                     }
                 }
-                NetworkElement::Node(_) | NetworkElement::User(_) | NetworkElement::File(_) => {}
+                NetworkElement::Node(_)
+                | NetworkElement::User(_)
+                | NetworkElement::File(_)
+                | NetworkElement::Location(_) => {}
                 NetworkElement::Association(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
@@ -200,6 +209,7 @@ pub enum NetworkElement {
     Node(ERef<NetworkNode>),
     User(ERef<NetworkUser>),
     File(ERef<NetworkFile>),
+    Location(ERef<NetworkLocation>),
 
     Association(ERef<NetworkAssociation>),
 
@@ -303,6 +313,7 @@ impl NetworkDiagram {
                 NetworkElement::Node(_)
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
+                | NetworkElement::Location(_)
                 | NetworkElement::Association(_)
                 | NetworkElement::Comment(_) => {}
             }
@@ -797,6 +808,81 @@ impl Entity for NetworkFile {
 }
 
 impl Model for NetworkFile {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum NetworkLocationKind {
+    #[default]
+    Home,
+    Neighbourhood,
+    OfficeBranch,
+    HeadOffice,
+    Factory,
+}
+
+impl NetworkLocationKind {
+    pub const VARIANTS: [Self; 5] = [
+        Self::Home,
+        Self::Neighbourhood,
+        Self::OfficeBranch,
+        Self::HeadOffice,
+        Self::Factory,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NetworkLocationKind::Home => "Home",
+            NetworkLocationKind::Neighbourhood => "Neighbourhood",
+            NetworkLocationKind::OfficeBranch => "Office Branch",
+            NetworkLocationKind::HeadOffice => "Head Office",
+            NetworkLocationKind::Factory => "Factory",
+        }
+    }
+}
+
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+#[nh_context_serde(is_entity)]
+pub struct NetworkLocation {
+    #[full_text_searchable(search_kind = "to_string_ref")]
+    pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
+    #[full_text_searchable(search_kind = "as_str_ref")]
+    pub kind: NetworkLocationKind,
+
+    pub comment: Arc<String>,
+}
+
+impl NetworkLocation {
+    pub fn new(uuid: ModelUuid, name: String, kind: NetworkLocationKind) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
+            kind,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            name: self.name.clone(),
+            kind: self.kind,
+            comment: self.comment.clone(),
+        })
+    }
+}
+
+impl Entity for NetworkLocation {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for NetworkLocation {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
