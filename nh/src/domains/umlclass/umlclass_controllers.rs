@@ -1974,18 +1974,16 @@ mod buttons {
         PartialUmlClassElement<UmlClassNullProfile>,
         bool,
     ) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
         (
             UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
+                link_type: LinkType::Association {
+                    stereotype: "".to_owned(),
+                    source_multiplicity: "0..*".to_owned(),
+                    target_multiplicity: "1..1".to_owned(),
+                },
             },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -2004,18 +2002,16 @@ mod buttons {
         PartialUmlClassElement<UmlClassNullProfile>,
         bool,
     ) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
         (
             UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
+                link_type: LinkType::Association {
+                    stereotype: "".to_owned(),
+                    source_multiplicity: "0..*".to_owned(),
+                    target_multiplicity: "1..1".to_owned(),
+                },
             },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -2030,16 +2026,14 @@ mod buttons {
         PartialUmlClassElement<UmlClassNullProfile>,
         bool,
     ) {
-        let link_type = LinkType::Generalization {
-            set_name: "".to_owned(),
-        };
         (
             UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
+                link_type: LinkType::Generalization {
+                    set_name: "".to_owned(),
+                },
             },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -2381,7 +2375,6 @@ pub enum PartialUmlClassElement<P: UmlClassProfile> {
     None,
     Some(UmlClassElementView<P>),
     Link {
-        link_type: LinkType,
         source: UmlClassAssociable,
         dest: Option<UmlClassAssociable>,
     },
@@ -2391,10 +2384,6 @@ pub enum PartialUmlClassElement<P: UmlClassProfile> {
         new_model: Option<ModelUuid>,
     },
     Package {
-        // TODO: are these necessary?
-        name: String,
-        stereotype: String,
-        kind: UmlClassPackageKind,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -2482,8 +2471,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 UmlClassToolStage::LinkStart { .. } | UmlClassToolStage::CommentLinkEnd => {
                     TARGETTABLE_COLOR
                 }
-                UmlClassToolStage::LinkEnd => match &self.result {
-                    PartialUmlClassElement::Link { link_type, .. }
+                UmlClassToolStage::LinkEnd => match &self.initial_stage {
+                    UmlClassToolStage::LinkStart { link_type }
                         if !matches!(link_type, LinkType::Generalization { .. }) =>
                     {
                         TARGETTABLE_COLOR
@@ -2507,7 +2496,6 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 UmlClassToolStage::LinkAddEnding { .. } | UmlClassToolStage::LinkEnd => {
                     match &self.result {
                         PartialUmlClassElement::Link {
-                            link_type: LinkType::Generalization { .. },
                             source: UmlClassAssociable::Class(_),
                             ..
                         }
@@ -2515,11 +2503,6 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                             gen_model: UmlGeneralization::Generalization(_),
                             ..
                         } => TARGETTABLE_COLOR,
-                        PartialUmlClassElement::Link { link_type, .. }
-                            if !matches!(link_type, LinkType::Generalization { .. }) =>
-                        {
-                            TARGETTABLE_COLOR
-                        }
                         _ => NON_TARGETTABLE_COLOR,
                     }
                 }
@@ -2545,7 +2528,6 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 UmlClassToolStage::LinkAddEnding { .. } | UmlClassToolStage::LinkEnd => {
                     match &self.result {
                         PartialUmlClassElement::Link {
-                            link_type: LinkType::Generalization { .. },
                             source: UmlClassAssociable::UseCase(_),
                             ..
                         }
@@ -2553,11 +2535,6 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                             gen_model: UmlGeneralization::UseCaseGeneralization(_),
                             ..
                         } => TARGETTABLE_COLOR,
-                        PartialUmlClassElement::Link { link_type, .. }
-                            if !matches!(link_type, LinkType::Generalization { .. }) =>
-                        {
-                            TARGETTABLE_COLOR
-                        }
                         _ => NON_TARGETTABLE_COLOR,
                     }
                 }
@@ -2696,21 +2673,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.result = PartialUmlClassElement::Some(usecase_view.into());
                 self.event_lock = true;
             }
-            (
-                UmlClassToolStage::PackageStart {
-                    name,
-                    stereotype,
-                    kind,
-                },
-                _,
-            ) => {
-                self.result = PartialUmlClassElement::Package {
-                    name: name.clone(),
-                    stereotype: stereotype.clone(),
-                    kind: *kind,
-                    a: pos,
-                    b: None,
-                };
+            (UmlClassToolStage::PackageStart { .. }, _) => {
+                self.result = PartialUmlClassElement::Package { a: pos, b: None };
                 self.current_stage = UmlClassToolStage::PackageEnd;
                 self.event_lock = true;
             }
@@ -2755,19 +2719,15 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     if !matches!(link_type, LinkType::Generalization { .. }) =>
                 {
                     self.result = PartialUmlClassElement::Link {
-                        link_type: link_type.clone(),
                         source: inner.into(),
                         dest: None,
                     };
                     self.current_stage = UmlClassToolStage::LinkEnd;
                     self.event_lock = true;
                 }
-                (
-                    UmlClassToolStage::LinkEnd,
-                    PartialUmlClassElement::Link {
-                        link_type, dest, ..
-                    },
-                ) => {
+                (UmlClassToolStage::LinkEnd, PartialUmlClassElement::Link { dest, .. })
+                    if let UmlClassToolStage::LinkStart { link_type } = &self.initial_stage =>
+                {
                     if !matches!(link_type, LinkType::Generalization { .. }) {
                         *dest = Some(inner.into());
                     }
@@ -2815,23 +2775,17 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     self.result = PartialUmlClassElement::Some(operation_view.into());
                     self.event_lock = true;
                 }
-                (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
+                (UmlClassToolStage::LinkStart { .. }, PartialUmlClassElement::None) => {
                     self.result = PartialUmlClassElement::Link {
-                        link_type: link_type.to_owned(),
                         source: inner.into(),
                         dest: None,
                     };
                     self.current_stage = UmlClassToolStage::LinkEnd;
                     self.event_lock = true;
                 }
-                (
-                    UmlClassToolStage::LinkEnd,
-                    PartialUmlClassElement::Link {
-                        link_type,
-                        source,
-                        dest,
-                    },
-                ) => {
+                (UmlClassToolStage::LinkEnd, PartialUmlClassElement::Link { source, dest })
+                    if let UmlClassToolStage::LinkStart { link_type } = &self.initial_stage =>
+                {
                     if !matches!(link_type, LinkType::Generalization { .. })
                         || matches!(source, UmlClassAssociable::Class(_))
                     {
@@ -2870,23 +2824,17 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             },
             UmlClassElement::Property(..) | UmlClassElement::Operation(..) => {}
             UmlClassElement::UseCase(inner) => match (&self.current_stage, &mut self.result) {
-                (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
+                (UmlClassToolStage::LinkStart { .. }, PartialUmlClassElement::None) => {
                     self.result = PartialUmlClassElement::Link {
-                        link_type: link_type.to_owned(),
                         source: inner.into(),
                         dest: None,
                     };
                     self.current_stage = UmlClassToolStage::LinkEnd;
                     self.event_lock = true;
                 }
-                (
-                    UmlClassToolStage::LinkEnd,
-                    PartialUmlClassElement::Link {
-                        link_type,
-                        source,
-                        dest,
-                    },
-                ) => {
+                (UmlClassToolStage::LinkEnd, PartialUmlClassElement::Link { source, dest })
+                    if let UmlClassToolStage::LinkStart { link_type } = &self.initial_stage =>
+                {
                     if !matches!(link_type, LinkType::Generalization { .. })
                         || matches!(source, UmlClassAssociable::UseCase(_))
                     {
@@ -3022,11 +2970,10 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 Ok(esm)
             }
             PartialUmlClassElement::Link {
-                link_type,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let UmlClassToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -3144,13 +3091,13 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     Err(())
                 }
             }
-            PartialUmlClassElement::Package {
-                name,
-                stereotype,
-                kind,
-                a,
-                b: Some(b),
-            } => {
+            PartialUmlClassElement::Package { a, b: Some(b) }
+                if let UmlClassToolStage::PackageStart {
+                    name,
+                    stereotype,
+                    kind,
+                } = &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let (_package_model, package_view) =

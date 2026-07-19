@@ -1126,13 +1126,10 @@ enum PartialDemoCsdElement {
     None,
     Some(DemoCsdElementView),
     Link {
-        link_type: DemoCsdLinkType,
-        multiplicity: String,
         source: ERef<DemoCsdTransactor>,
         dest: Option<ERef<DemoCsdTransaction>>,
     },
     Package {
-        name: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -1243,12 +1240,9 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         pos: egui::Pos2,
     ) {
         match (&self.current_stage, &self.result) {
-            (
-                _,
-                PartialDemoCsdElement::Link {
-                    source, link_type, ..
-                },
-            ) => {
+            (_, PartialDemoCsdElement::Link { source, .. })
+                if let DemoCsdToolStage::LinkStart { link_type, .. } = &self.initial_stage =>
+            {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1343,12 +1337,8 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.result = PartialDemoCsdElement::Some(transaction_view.into());
                 self.event_lock = true;
             }
-            (DemoCsdToolStage::PackageStart { name }, _) => {
-                self.result = PartialDemoCsdElement::Package {
-                    name: name.clone(),
-                    a: pos,
-                    b: None,
-                };
+            (DemoCsdToolStage::PackageStart { .. }, _) => {
+                self.result = PartialDemoCsdElement::Package { a: pos, b: None };
                 self.current_stage = DemoCsdToolStage::PackageEnd;
                 self.event_lock = true;
             }
@@ -1367,16 +1357,8 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             DemoCsdElement::DemoCsdPackage(..) => {}
             DemoCsdElement::DemoCsdTransactor(inner) => {
                 match (&self.current_stage, &mut self.result) {
-                    (
-                        DemoCsdToolStage::LinkStart {
-                            link_type,
-                            multiplicity,
-                        },
-                        PartialDemoCsdElement::None,
-                    ) => {
+                    (DemoCsdToolStage::LinkStart { .. }, PartialDemoCsdElement::None) => {
                         self.result = PartialDemoCsdElement::Link {
-                            link_type: *link_type,
-                            multiplicity: multiplicity.clone(),
                             source: inner,
                             dest: None,
                         };
@@ -1507,10 +1489,12 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             PartialDemoCsdElement::Link {
                 source,
                 dest: Some(target),
+                ..
+            } if let DemoCsdToolStage::LinkStart {
                 link_type,
                 multiplicity,
-                ..
-            } => {
+            } = &self.initial_stage =>
+            {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *target.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -1540,11 +1524,9 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     Err(())
                 }
             }
-            PartialDemoCsdElement::Package {
-                name,
-                a,
-                b: Some(b),
-            } => {
+            PartialDemoCsdElement::Package { a, b: Some(b) }
+                if let DemoCsdToolStage::PackageStart { name } = &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let package_view = new_democsd_package(name, egui::Rect::from_two_pos(*a, *b)).1;
@@ -2346,8 +2328,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                         },
                         current_stage: DemoCsdToolStage::LinkEnd,
                         result: PartialDemoCsdElement::Link {
-                            link_type: DemoCsdLinkType::InitiatorLink,
-                            multiplicity: "".to_owned(),
                             source: self.model.clone(),
                             dest: None,
                         },

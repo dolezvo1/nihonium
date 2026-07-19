@@ -1863,18 +1863,14 @@ enum PartialUmlSequenceElement {
         b: Option<egui::Pos2>,
     },
     CombinedFragment {
-        kind: UmlSequenceCombinedFragmentKind,
-        end_behaviour: UmlSequenceActivationBehaviour,
         source: ERef<UmlSequenceLifeline>,
         dest: Option<ERef<UmlSequenceLifeline>>,
     },
     Link {
-        link_type: LinkType,
         source: ERef<UmlSequenceLifeline>,
         dest: Option<ERef<UmlSequenceLifeline>>,
     },
     Ref {
-        text: String,
         source: ERef<UmlSequenceLifeline>,
         dest: Option<ERef<UmlSequenceLifeline>>,
     },
@@ -2107,12 +2103,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
 
         if let UmlSequenceElement::Lifeline(inner) = section.element {
             match (&self.current_stage, &mut self.result) {
-                (
-                    UmlSequenceToolStage::LinkStart { link_type },
-                    PartialUmlSequenceElement::None,
-                ) => {
+                (UmlSequenceToolStage::LinkStart { .. }, PartialUmlSequenceElement::None) => {
                     self.result = PartialUmlSequenceElement::Link {
-                        link_type: link_type.clone(),
                         source: inner,
                         dest: None,
                     };
@@ -2124,15 +2116,10 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     self.event_lock = true;
                 }
                 (
-                    UmlSequenceToolStage::CombinedFragmentStart {
-                        kind,
-                        end_behaviour,
-                    },
+                    UmlSequenceToolStage::CombinedFragmentStart { .. },
                     PartialUmlSequenceElement::None,
                 ) => {
                     self.result = PartialUmlSequenceElement::CombinedFragment {
-                        kind: *kind,
-                        end_behaviour: *end_behaviour,
                         source: inner,
                         dest: None,
                     };
@@ -2146,9 +2133,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     *dest = Some(inner);
                     self.event_lock = true;
                 }
-                (UmlSequenceToolStage::RefStart { text }, PartialUmlSequenceElement::None) => {
+                (UmlSequenceToolStage::RefStart { .. }, PartialUmlSequenceElement::None) => {
                     self.result = PartialUmlSequenceElement::Ref {
-                        text: text.clone(),
                         source: inner,
                         dest: None,
                     };
@@ -2238,12 +2224,14 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 Ok(None)
             }
             PartialUmlSequenceElement::CombinedFragment {
-                kind,
-                end_behaviour,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let UmlSequenceToolStage::CombinedFragmentStart {
+                kind,
+                end_behaviour,
+            } = &self.initial_stage =>
+            {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -2282,11 +2270,10 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 }
             }
             PartialUmlSequenceElement::Link {
-                link_type,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let UmlSequenceToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -2340,10 +2327,9 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 }
             }
             PartialUmlSequenceElement::Ref {
-                text,
                 source,
                 dest: Some(dest),
-            } => {
+            } if let UmlSequenceToolStage::RefStart { text } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))

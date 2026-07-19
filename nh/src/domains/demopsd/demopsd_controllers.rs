@@ -1208,14 +1208,9 @@ enum PartialDemoPsdElement {
     None,
     Some(DemoPsdElementView),
     TransactionStart {
-        identifier: String,
-        name: String,
-        transaction_kind: DemoTransactionKind,
         start_pos: egui::Pos2,
     },
     Link {
-        link_type: DemoPsdLinkType,
-        multiplicity: String,
         source: ERef<DemoPsdFact>,
         dest: Option<ERef<DemoPsdAct>>,
     },
@@ -1352,9 +1347,9 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     canvas::Highlight::NONE,
                 );
             }
-            PartialDemoPsdElement::Link {
-                source, link_type, ..
-            } => {
+            PartialDemoPsdElement::Link { source, .. }
+                if let DemoPsdToolStage::LinkStart { link_type, .. } = &self.initial_stage =>
+            {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1386,32 +1381,20 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         }
 
         match (&self.current_stage, &mut self.result) {
-            (
-                DemoPsdToolStage::TransactionStart {
-                    identifier,
-                    name,
-                    transaction_kind,
-                },
-                _,
-            ) => {
-                self.result = PartialDemoPsdElement::TransactionStart {
-                    identifier: identifier.clone(),
-                    name: name.clone(),
-                    transaction_kind: *transaction_kind,
-                    start_pos: pos,
-                };
+            (DemoPsdToolStage::TransactionStart { .. }, _) => {
+                self.result = PartialDemoPsdElement::TransactionStart { start_pos: pos };
                 self.current_stage = DemoPsdToolStage::TransactionEnd;
                 self.event_lock = true;
             }
             (
                 DemoPsdToolStage::TransactionEnd,
-                PartialDemoPsdElement::TransactionStart {
-                    identifier,
-                    name,
-                    transaction_kind,
-                    start_pos,
-                },
-            ) => {
+                PartialDemoPsdElement::TransactionStart { start_pos },
+            ) if let DemoPsdToolStage::TransactionStart {
+                identifier,
+                name,
+                transaction_kind,
+            } = &self.initial_stage =>
+            {
                 let rect = egui::Rect::from_two_pos(
                     egui::Pos2::new(start_pos.x, start_pos.y),
                     egui::Pos2::new(pos.x, start_pos.y),
@@ -1473,14 +1456,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         match section {
             TS::Package(..) | TS::Transaction(..) => {}
             TS::Fact(inner) => {
-                if let DemoPsdToolStage::LinkStart {
-                    link_type,
-                    multiplicity,
-                } = &self.current_stage
-                {
+                if let DemoPsdToolStage::LinkStart { .. } = &self.current_stage {
                     self.result = PartialDemoPsdElement::Link {
-                        link_type: *link_type,
-                        multiplicity: multiplicity.clone(),
                         source: inner,
                         dest: None,
                     };
@@ -1539,10 +1516,12 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             PartialDemoPsdElement::Link {
                 source,
                 dest: Some(target),
+                ..
+            } if let DemoPsdToolStage::LinkStart {
                 link_type,
                 multiplicity,
-                ..
-            } => {
+            } = &self.initial_stage =>
+            {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *target.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))

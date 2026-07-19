@@ -1246,15 +1246,10 @@ enum PartialDemoOfdElement {
     None,
     Some(DemoOfdElementView),
     Event {
-        identifier: String,
-        name: String,
-        transaction_kind: DemoTransactionKind,
-        specialization: Option<EntityStageData>,
         source: ERef<DemoOfdEntityType>,
         pos: Option<egui::Pos2>,
     },
     EntityLink {
-        link_type: LinkType,
         source: ERef<DemoOfdEntityType>,
         dest: Option<ERef<DemoOfdEntityType>>,
     },
@@ -1263,17 +1258,14 @@ enum PartialDemoOfdElement {
         new_model: Option<ModelUuid>,
     },
     EventLink {
-        link_type: LinkType,
         source: ERef<DemoOfdEventType>,
         dest: Option<ERef<DemoOfdEventType>>,
     },
     TypeLink {
-        link_type: LinkType,
         source: DemoOfdType,
         dest: Option<DemoOfdType>,
     },
     Package {
-        name: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -1346,9 +1338,9 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             },
             Some(DemoOfdElement::DemoOfdEntityType(inner)) => match self.current_stage {
                 DemoOfdToolStage::LinkEnd => match &self.result {
-                    PartialDemoOfdElement::EntityLink {
-                        link_type, source, ..
-                    } => {
+                    PartialDemoOfdElement::EntityLink { source, .. }
+                        if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
+                    {
                         if matches!(link_type, LinkType::PropertyType { .. })
                             || (*link_type == LinkType::Specialization
                                 && *source.read().uuid != *inner.read().uuid)
@@ -1360,9 +1352,9 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                             NON_TARGETTABLE_COLOR
                         }
                     }
-                    PartialDemoOfdElement::TypeLink {
-                        link_type, source, ..
-                    } => {
+                    PartialDemoOfdElement::TypeLink { source, .. }
+                        if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
+                    {
                         if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid
                         {
                             TARGETTABLE_COLOR
@@ -1411,14 +1403,14 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     link_type: LinkType::Precedence | LinkType::Exclusion,
                 } => TARGETTABLE_COLOR,
                 DemoOfdToolStage::LinkEnd => match &self.result {
-                    PartialDemoOfdElement::EventLink {
-                        link_type,
-                        source,
-                        dest,
-                    } if *source.read().uuid != *inner.read().uuid => TARGETTABLE_COLOR,
-                    PartialDemoOfdElement::TypeLink {
-                        link_type, source, ..
-                    } => {
+                    PartialDemoOfdElement::EventLink { source, dest }
+                        if *source.read().uuid != *inner.read().uuid =>
+                    {
+                        TARGETTABLE_COLOR
+                    }
+                    PartialDemoOfdElement::TypeLink { source, .. }
+                        if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
+                    {
                         if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid
                         {
                             TARGETTABLE_COLOR
@@ -1529,12 +1521,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 *p = Some(pos);
                 self.event_lock = true;
             }
-            (DemoOfdToolStage::PackageStart { name }, _) => {
-                self.result = PartialDemoOfdElement::Package {
-                    name: name.clone(),
-                    a: pos,
-                    b: None,
-                };
+            (DemoOfdToolStage::PackageStart { .. }, _) => {
+                self.result = PartialDemoOfdElement::Package { a: pos, b: None };
                 self.current_stage = DemoOfdToolStage::PackageEnd;
                 self.event_lock = true;
             }
@@ -1552,20 +1540,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         match element {
             DemoOfdElement::DemoOfdEntityType(inner) => {
                 match (&self.current_stage, &mut self.result) {
-                    (
-                        DemoOfdToolStage::EventStart {
-                            identifier,
-                            name,
-                            transaction_kind,
-                            specialization,
-                        },
-                        PartialDemoOfdElement::None,
-                    ) => {
+                    (DemoOfdToolStage::EventStart { .. }, PartialDemoOfdElement::None) => {
                         self.result = PartialDemoOfdElement::Event {
-                            identifier: identifier.clone(),
-                            name: name.clone(),
-                            transaction_kind: *transaction_kind,
-                            specialization: specialization.clone(),
                             source: inner,
                             pos: None,
                         };
@@ -1575,14 +1551,13 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     (
                         DemoOfdToolStage::LinkStart {
                             link_type:
-                                link_type @ (LinkType::PropertyType { .. }
+                                LinkType::PropertyType { .. }
                                 | LinkType::Specialization
-                                | LinkType::Aggregation),
+                                | LinkType::Aggregation,
                         },
                         PartialDemoOfdElement::None,
                     ) => {
                         self.result = PartialDemoOfdElement::EntityLink {
-                            link_type: link_type.clone(),
                             source: inner,
                             dest: None,
                         };
@@ -1591,12 +1566,11 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkStart {
-                            link_type: link_type @ LinkType::Exclusion,
+                            link_type: LinkType::Exclusion,
                         },
                         PartialDemoOfdElement::None,
                     ) => {
                         self.result = PartialDemoOfdElement::TypeLink {
-                            link_type: link_type.clone(),
                             source: inner.into(),
                             dest: None,
                         };
@@ -1605,12 +1579,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::EntityLink {
-                            link_type,
-                            source,
-                            dest,
-                        },
-                    ) => {
+                        PartialDemoOfdElement::EntityLink { source, dest },
+                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                         if matches!(link_type, LinkType::PropertyType { .. })
                             || (*link_type == LinkType::Specialization
                                 && *source.read().uuid != *inner.read().uuid)
@@ -1623,12 +1593,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::TypeLink {
-                            link_type,
-                            source,
-                            dest,
-                        },
-                    ) => {
+                        PartialDemoOfdElement::TypeLink { source, dest },
+                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                         if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid
                         {
                             *dest = Some(inner.into());
@@ -1682,12 +1648,11 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkStart {
-                            link_type: link_type @ LinkType::Precedence,
+                            link_type: LinkType::Precedence,
                         },
                         PartialDemoOfdElement::None,
                     ) => {
                         self.result = PartialDemoOfdElement::EventLink {
-                            link_type: link_type.clone(),
                             source: inner,
                             dest: None,
                         };
@@ -1696,12 +1661,11 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkStart {
-                            link_type: link_type @ LinkType::Exclusion,
+                            link_type: LinkType::Exclusion,
                         },
                         PartialDemoOfdElement::None,
                     ) => {
                         self.result = PartialDemoOfdElement::TypeLink {
-                            link_type: link_type.clone(),
                             source: inner.into(),
                             dest: None,
                         };
@@ -1710,12 +1674,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::EventLink {
-                            link_type,
-                            source,
-                            dest,
-                        },
-                    ) => {
+                        PartialDemoOfdElement::EventLink { source, dest },
+                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                         if *link_type == LinkType::Precedence
                             && *source.read().uuid != *inner.read().uuid
                         {
@@ -1725,12 +1685,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::TypeLink {
-                            link_type,
-                            source,
-                            dest,
-                        },
-                    ) => {
+                        PartialDemoOfdElement::TypeLink { source, dest },
+                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                         if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid
                         {
                             *dest = Some(inner.into());
@@ -1802,13 +1758,15 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 Ok(esm)
             }
             PartialDemoOfdElement::Event {
+                source,
+                pos: Some(p),
+            } if let DemoOfdToolStage::EventStart {
                 identifier,
                 name,
                 transaction_kind,
                 specialization,
-                source,
-                pos: Some(p),
-            } => {
+            } = &self.initial_stage =>
+            {
                 let base_uuid = *source.read().uuid;
                 if let Some(base_view) = q.get_view_for(&base_uuid)
                     && q.is_contained(&base_view.uuid(), preferred_container)
@@ -1849,11 +1807,10 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::EntityLink {
-                link_type,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
                 if let (Some(source_view), Some(dest_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -1908,11 +1865,10 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::EventLink {
-                link_type,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
                 if let (Some(source_view), Some(dest_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -1949,11 +1905,10 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::TypeLink {
-                link_type,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
                 if let (Some(source_view), Some(dest_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -1989,11 +1944,9 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     Err(())
                 }
             }
-            PartialDemoOfdElement::Package {
-                name,
-                a,
-                b: Some(b),
-            } => {
+            PartialDemoOfdElement::Package { a, b: Some(b) }
+                if let DemoOfdToolStage::PackageStart { name } = &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let package_view = new_demoofd_package(name, egui::Rect::from_two_pos(*a, *b)).1;
@@ -2658,10 +2611,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     },
                     current_stage: DemoOfdToolStage::EventEnd,
                     result: PartialDemoOfdElement::Event {
-                        identifier: "01".to_owned(),
-                        name: "is started".to_owned(),
-                        transaction_kind: DemoTransactionKind::Performa,
-                        specialization: None,
                         source: self.model.clone(),
                         pos: None,
                     },
@@ -2690,10 +2639,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     },
                     current_stage: DemoOfdToolStage::EventEnd,
                     result: PartialDemoOfdElement::Event {
-                        identifier: "01".to_owned(),
-                        name: "is started".to_owned(),
-                        transaction_kind: DemoTransactionKind::Performa,
-                        specialization: Some(esd),
                         source: self.model.clone(),
                         pos: None,
                     },
@@ -2719,7 +2664,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     },
                     current_stage: DemoOfdToolStage::LinkEnd,
                     result: PartialDemoOfdElement::EntityLink {
-                        link_type,
                         source: self.model.clone(),
                         dest: None,
                     },

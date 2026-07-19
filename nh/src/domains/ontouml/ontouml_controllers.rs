@@ -332,18 +332,16 @@ mod buttons {
         PartialUmlClassElement<OntoUmlProfile>,
         bool,
     ) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
         (
             UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
+                link_type: LinkType::Association {
+                    stereotype: "".to_owned(),
+                    source_multiplicity: "0..*".to_owned(),
+                    target_multiplicity: "1..1".to_owned(),
+                },
             },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -368,18 +366,16 @@ mod buttons {
         PartialUmlClassElement<OntoUmlProfile>,
         bool,
     ) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
         (
             UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
+                link_type: LinkType::Association {
+                    stereotype: "".to_owned(),
+                    source_multiplicity: "0..*".to_owned(),
+                    target_multiplicity: "1..1".to_owned(),
+                },
             },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -394,16 +390,14 @@ mod buttons {
         PartialUmlClassElement<OntoUmlProfile>,
         bool,
     ) {
-        let link_type = LinkType::Generalization {
-            set_name: "".to_owned(),
-        };
         (
             UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
+                link_type: LinkType::Generalization {
+                    set_name: "".to_owned(),
+                },
             },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type,
                 source: m.into(),
                 dest: None,
             },

@@ -975,9 +975,6 @@ mod buttons {
             },
             NetworkToolStage::AssociationEnd,
             PartialNetworkElement::Association {
-                line_type: NetworkAssociationLineType::Solid,
-                source_arrowhead: NetworkAssociationArrowheadType::None,
-                target_arrowhead: NetworkAssociationArrowheadType::None,
                 source: m,
                 dest: None,
             },
@@ -1000,9 +997,6 @@ mod buttons {
             },
             NetworkToolStage::AssociationEnd,
             PartialNetworkElement::Association {
-                line_type: NetworkAssociationLineType::Solid,
-                source_arrowhead: NetworkAssociationArrowheadType::None,
-                target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
                 source: m,
                 dest: None,
             },
@@ -1454,14 +1448,10 @@ enum PartialNetworkElement {
     None,
     Some(NetworkElementView),
     Association {
-        line_type: NetworkAssociationLineType,
-        source_arrowhead: NetworkAssociationArrowheadType,
-        target_arrowhead: NetworkAssociationArrowheadType,
         source: NetworkElement,
         dest: Option<NetworkElement>,
     },
     Container {
-        name: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -1656,12 +1646,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::ContainerStart { name }, _) => {
-                self.result = PartialNetworkElement::Container {
-                    name: name.clone(),
-                    a: pos,
-                    b: None,
-                };
+            (NetworkToolStage::ContainerStart { .. }, _) => {
+                self.result = PartialNetworkElement::Container { a: pos, b: None };
                 self.current_stage = NetworkToolStage::ContainerEnd;
                 self.event_lock = true;
             }
@@ -1689,18 +1675,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             | NetworkElement::File(_)
             | NetworkElement::Location(_)
             | NetworkElement::Comment(_) => match (&self.current_stage, &mut self.result) {
-                (
-                    NetworkToolStage::AssociationStart {
-                        line_type,
-                        source_arrowhead,
-                        target_arrowhead,
-                    },
-                    PartialNetworkElement::None,
-                ) => {
+                (NetworkToolStage::AssociationStart { .. }, PartialNetworkElement::None) => {
                     self.result = PartialNetworkElement::Association {
-                        line_type: *line_type,
-                        source_arrowhead: *source_arrowhead,
-                        target_arrowhead: *target_arrowhead,
                         source: section,
                         dest: None,
                     };
@@ -1796,13 +1772,15 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 Ok(None)
             }
             PartialNetworkElement::Association {
-                line_type,
-                source_arrowhead,
-                target_arrowhead,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let NetworkToolStage::AssociationStart {
+                line_type,
+                source_arrowhead,
+                target_arrowhead,
+            } = &self.initial_stage =>
+            {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
                 if let (Some(source_controller), Some(dest_controller)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -1833,11 +1811,9 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     Err(())
                 }
             }
-            PartialNetworkElement::Container {
-                name,
-                a,
-                b: Some(b),
-            } => {
+            PartialNetworkElement::Container { a, b: Some(b) }
+                if let NetworkToolStage::ContainerStart { name } = &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let container_view =

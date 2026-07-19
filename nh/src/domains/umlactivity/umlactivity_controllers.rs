@@ -1196,17 +1196,15 @@ mod buttons {
         PartialUmlActivityElement,
         bool,
     ) {
-        let link_type = LinkType::Edge {
-            name: "".to_owned(),
-            kind: UmlActivityEdgeKind::Regular,
-        };
         (
             UmlActivityToolStage::LinkStart {
-                link_type: link_type.clone(),
+                link_type: LinkType::Edge {
+                    name: "".to_owned(),
+                    kind: UmlActivityEdgeKind::Regular,
+                },
             },
             UmlActivityToolStage::LinkEnd,
             PartialUmlActivityElement::Link {
-                link_type,
                 source: m,
                 dest: None,
             },
@@ -1836,29 +1834,18 @@ pub enum PartialUmlActivityElement {
         b: Option<egui::Pos2>,
     },
     Link {
-        link_type: LinkType,
         source: UmlActivityNonFinalNode,
         dest: Option<UmlActivityNonInitialNode>,
     },
     Activity {
-        // TODO: are these necessary?
-        name: String,
-        stereotype: String,
-        parameters: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
     InterruptibleRegion {
-        // TODO: are these necessary?
-        name: String,
-        stereotype: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
     Partition {
-        // TODO: are these necessary?
-        section_name: String,
-        section_stereotype: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -2125,21 +2112,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (
-                UmlActivityToolStage::ActivityStart {
-                    name,
-                    stereotype,
-                    parameters,
-                },
-                _,
-            ) => {
-                self.result = PartialUmlActivityElement::Activity {
-                    name: name.clone(),
-                    stereotype: stereotype.clone(),
-                    parameters: parameters.clone(),
-                    a: pos,
-                    b: None,
-                };
+            (UmlActivityToolStage::ActivityStart { .. }, _) => {
+                self.result = PartialUmlActivityElement::Activity { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::ActivityEnd;
                 self.event_lock = true;
             }
@@ -2147,13 +2121,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::InterruptibleRegionStart { name, stereotype }, _) => {
-                self.result = PartialUmlActivityElement::InterruptibleRegion {
-                    name: name.clone(),
-                    stereotype: stereotype.clone(),
-                    a: pos,
-                    b: None,
-                };
+            (UmlActivityToolStage::InterruptibleRegionStart { .. }, _) => {
+                self.result = PartialUmlActivityElement::InterruptibleRegion { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::InterruptibleRegionEnd;
                 self.event_lock = true;
             }
@@ -2164,19 +2133,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (
-                UmlActivityToolStage::PartitionStart {
-                    section_stereotype,
-                    section_name,
-                },
-                _,
-            ) => {
-                self.result = PartialUmlActivityElement::Partition {
-                    section_name: section_name.clone(),
-                    section_stereotype: section_stereotype.clone(),
-                    a: pos,
-                    b: None,
-                };
+            (UmlActivityToolStage::PartitionStart { .. }, _) => {
+                self.result = PartialUmlActivityElement::Partition { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::PartitionEnd;
                 self.event_lock = true;
             }
@@ -2208,7 +2166,6 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         PartialUmlActivityElement::None,
                     ) if let Some(e) = e.as_nonfinal() => {
                         self.result = PartialUmlActivityElement::Link {
-                            link_type: link_type.clone(),
                             source: e,
                             dest: None,
                         };
@@ -2356,11 +2313,10 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 Ok(None)
             }
             PartialUmlActivityElement::Link {
-                link_type,
                 source,
                 dest: Some(dest),
                 ..
-            } => {
+            } if let UmlActivityToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -2402,13 +2358,13 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     Err(())
                 }
             }
-            PartialUmlActivityElement::Activity {
-                name,
-                stereotype,
-                parameters,
-                a,
-                b: Some(b),
-            } => {
+            PartialUmlActivityElement::Activity { a, b: Some(b) }
+                if let UmlActivityToolStage::ActivityStart {
+                    stereotype,
+                    name,
+                    parameters,
+                } = &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let activity_view = new_umlactivity_activity(
@@ -2429,12 +2385,10 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 });
                 Ok(None)
             }
-            PartialUmlActivityElement::InterruptibleRegion {
-                name,
-                stereotype,
-                a,
-                b: Some(b),
-            } => {
+            PartialUmlActivityElement::InterruptibleRegion { a, b: Some(b) }
+                if let UmlActivityToolStage::InterruptibleRegionStart { stereotype, name } =
+                    &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let interruptible_view = new_umlactivity_interruptibleregion(
@@ -2454,12 +2408,12 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 });
                 Ok(None)
             }
-            PartialUmlActivityElement::Partition {
-                section_name,
-                section_stereotype,
-                a,
-                b: Some(b),
-            } => {
+            PartialUmlActivityElement::Partition { a, b: Some(b) }
+                if let UmlActivityToolStage::PartitionStart {
+                    section_stereotype,
+                    section_name,
+                } = &self.initial_stage =>
+            {
                 self.current_stage = self.initial_stage.clone();
 
                 let r = egui::Rect::from_two_pos(*a, *b);
