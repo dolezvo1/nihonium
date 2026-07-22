@@ -2560,7 +2560,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassElement::Association(..)
                 | UmlClassElement::UseCaseGeneralization(..)
                 | UmlClassElement::CommentLink(..),
-            ) => todo!(),
+            ) => unreachable!(),
         }
     }
     fn draw_status_hint(

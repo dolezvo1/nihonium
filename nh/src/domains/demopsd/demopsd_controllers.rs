@@ -1330,7 +1330,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 | DemoPsdToolStage::PackageStart
                 | DemoPsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(TS::Link(..)) => todo!(),
+            Some(TS::Link(..)) => unreachable!(),
         }
     }
     fn draw_status_hint(

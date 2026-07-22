@@ -7193,7 +7193,7 @@ impl ElementController<UmlSequenceElement> for UmlSequenceMessageView {
     }
 
     fn position(&self) -> egui::Pos2 {
-        todo!()
+        unreachable!()
     }
 }
 
@@ -8236,7 +8236,7 @@ impl ElementController<UmlSequenceElement> for UmlSequenceDurationConstraintView
     }
 
     fn position(&self) -> egui::Pos2 {
-        todo!()
+        unreachable!()
     }
 }
 

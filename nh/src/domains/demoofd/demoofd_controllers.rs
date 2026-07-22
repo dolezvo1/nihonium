@@ -1427,7 +1427,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdElement::DemoOfdAggregation(..)
                 | DemoOfdElement::DemoOfdPrecedence(..)
                 | DemoOfdElement::DemoOfdExclusion(..),
-            ) => todo!(),
+            ) => unreachable!(),
         }
     }
     fn draw_status_hint(

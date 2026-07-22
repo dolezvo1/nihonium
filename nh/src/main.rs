@@ -3892,14 +3892,12 @@ impl eframe::App for NHApp {
                         );
 
                         let fh = fh.take().unwrap();
-                        match svg_canvas.into_bytes() {
-                            Err(_) => todo!(),
-                            Ok(bytes) => execute(async move {
+                        if let Ok(bytes) = svg_canvas.into_bytes() {
+                            execute(async move {
                                 let _ = fh.write(&bytes).await;
-                            }),
+                            });
+                            hide_svg_export_modal = true;
                         }
-
-                        hide_svg_export_modal = true;
                     }
                     if ui
                         .button(

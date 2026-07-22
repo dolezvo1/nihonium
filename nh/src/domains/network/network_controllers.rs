@@ -1531,7 +1531,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(NetworkElement::Association(_)) => todo!(),
+            Some(NetworkElement::Association(_)) => unreachable!(),
         }
     }
     fn draw_status_hint(

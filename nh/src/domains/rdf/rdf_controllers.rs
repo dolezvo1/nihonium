@@ -1070,7 +1070,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(RdfElement::RdfPredicate(..)) => todo!(),
+            Some(RdfElement::RdfPredicate(..)) => unreachable!(),
         }
     }
     fn draw_status_hint(

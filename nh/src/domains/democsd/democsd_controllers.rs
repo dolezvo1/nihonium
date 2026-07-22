@@ -1230,7 +1230,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::PackageStart { .. }
                 | DemoCsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoCsdElement::DemoCsdLink(..)) => todo!(),
+            Some(DemoCsdElement::DemoCsdLink(..)) => unreachable!(),
         }
     }
     fn draw_status_hint(
