@@ -2652,6 +2652,19 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             );
         }
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
+            draw_nonfinal_node_button_rects(
+                settings,
+                canvas,
+                self.bounds_rect.right_top(),
+                ui_scale,
+            );
+        }
+
         // Draw resize/drag handles
         if let Some(ui_scale) = canvas
             .ui_scale()
@@ -2903,9 +2916,25 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(pos) if self.temporaries.highlight.selected && false => {
-                todo!("buttons");
-
+            InputEvent::Click(pos)
+                if self.temporaries.highlight.selected
+                    && let Some(f) = handle_nonfinal_node_button_click(
+                        settings,
+                        self.bounds_rect.right_top(),
+                        ehc.ui_scale,
+                        pos,
+                    ) =>
+            {
+                let (initial_stage, current_stage, result, event_lock) =
+                    f(self.model.clone().into());
+                *tool = Some(NaiveUmlStateMachineTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) => {
