@@ -8,4 +8,5 @@ pub mod rdf;
 pub mod umlactivity;
 pub mod umlclass;
 pub mod umlsequence;
+pub mod umlstatemachine;
 pub mod usecase;
