@@ -590,14 +590,16 @@ impl UmlStateMachineDiagram {
                 }
                 UmlStateMachineElement::CompositeState(inner) => {
                     let mut w = inner.write();
-                    for (idx, e) in w.regions.iter().enumerate() {
-                        if uuids.contains(&e.read().uuid) {
-                            undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
-                        } else {
-                            r(&e.clone().into(), uuids, undo);
+                    if w.regions.iter().any(|e| !uuids.contains(&e.read().uuid)) {
+                        for (idx, e) in w.regions.iter().enumerate() {
+                            if uuids.contains(&e.read().uuid) {
+                                undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+                            } else {
+                                r(&e.clone().into(), uuids, undo);
+                            }
                         }
+                        w.regions.retain(|e| !uuids.contains(&e.read().uuid));
                     }
-                    w.regions.retain(|e| !uuids.contains(&e.read().uuid));
                 }
                 UmlStateMachineElement::CompositeStateRegion(inner) => {
                     let mut w = inner.write();

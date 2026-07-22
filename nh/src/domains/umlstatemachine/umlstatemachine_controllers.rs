@@ -33,7 +33,7 @@ use crate::{
     CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
-use eframe::egui;
+use eframe::{egui, epaint};
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
@@ -1606,17 +1606,18 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
 
     fn targetting_for_section(&self, element: Option<UmlStateMachineElement>) -> egui::Color32 {
         match element {
-            None | Some(UmlStateMachineElement::StateMachine(_)) => match self.current_stage {
+            None
+            | Some(
+                UmlStateMachineElement::StateMachine(_)
+                | UmlStateMachineElement::CompositeStateRegion(_),
+            ) => match self.current_stage {
                 UmlStateMachineToolStage::LinkStart { .. }
                 | UmlStateMachineToolStage::LinkEnd
                 | UmlStateMachineToolStage::CommentLinkStart
                 | UmlStateMachineToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
                 _ => TARGETTABLE_COLOR,
             },
-            Some(
-                UmlStateMachineElement::CompositeState(_)
-                | UmlStateMachineElement::CompositeStateRegion(_),
-            ) => TARGETTABLE_COLOR,
+            Some(UmlStateMachineElement::CompositeState(_)) => TARGETTABLE_COLOR,
             Some(UmlStateMachineElement::InitialPseudostate(_)) => match self.current_stage {
                 UmlStateMachineToolStage::LinkStart { .. }
                 | UmlStateMachineToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
@@ -1817,8 +1818,22 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     }
                     (
                         UmlStateMachineToolStage::LinkEnd,
-                        PartialUmlStateMachineElement::Link { dest, .. },
+                        PartialUmlStateMachineElement::Link { source, dest, .. },
                     ) if let Some(e) = e.as_noninitial() => {
+                        if source
+                            .clone()
+                            .to_element()
+                            .find_element(&e.uuid())
+                            .is_some()
+                            || e.clone()
+                                .to_element()
+                                .find_element(&source.uuid())
+                                .is_some()
+                        {
+                            self.event_lock = true;
+                            return;
+                        }
+
                         *dest = Some(e);
                         self.event_lock = true;
                     }
@@ -2467,7 +2482,7 @@ struct UmlStateMachineCompositeStateViewTemporaries {
     name_buffer: String,
     activities_buffer: String,
 
-    dragged_type_and_shape: Option<(PackageDragType, NHShape)>,
+    dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     highlight: canvas::Highlight,
     selected_direct_elements: HashSet<ViewUuid>,
 }
@@ -2633,6 +2648,61 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                         canvas::LineType::Solid
                     },
                 },
+                canvas::Highlight::NONE,
+            );
+        }
+
+        // Draw resize/drag handles
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
+            let handle_size = self.handle_size(ui_scale);
+            let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
+            for (h, c) in [
+                (handles_rect.left_center(), "<"),
+                (handles_rect.right_center(), ">"),
+            ] {
+                canvas.draw_rectangle(
+                    egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    h,
+                    egui::Align2::CENTER_CENTER,
+                    c,
+                    10.0 / ui_scale,
+                    egui::Color32::BLACK,
+                );
+            }
+
+            let dc = self.drag_handle_position(ui_scale);
+            canvas.draw_rectangle(
+                egui::Rect::from_center_size(dc, egui::Vec2::splat(handle_size / ui_scale)),
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+
+            let da_radius = (handle_size / 2.0 - 1.0) / ui_scale;
+            canvas.draw_line(
+                [
+                    dc - egui::Vec2::new(0.0, da_radius),
+                    dc + egui::Vec2::new(0.0, da_radius),
+                ],
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_line(
+                [
+                    dc - egui::Vec2::new(da_radius, 0.0),
+                    dc + egui::Vec2::new(da_radius, 0.0),
+                ],
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
         }
@@ -2804,12 +2874,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                         )
                         .contains(pos)
                         {
-                            self.temporaries.dragged_type_and_shape = Some((
-                                PackageDragType::Resize(a),
-                                canvas::NHShape::Rect {
-                                    inner: self.bounds_rect,
-                                },
-                            ));
+                            self.temporaries.dragged_type_and_shape =
+                                Some((PackageDragType::Resize(a), self.bounds_rect));
                             return EventHandlingStatus::HandledByElement;
                         }
                     }
@@ -2822,12 +2888,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     )
                     .contains(pos)
                 {
-                    self.temporaries.dragged_type_and_shape = Some((
-                        PackageDragType::Move,
-                        canvas::NHShape::Rect {
-                            inner: self.bounds_rect,
-                        },
-                    ));
+                    self.temporaries.dragged_type_and_shape =
+                        Some((PackageDragType::Move, self.bounds_rect));
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -2854,9 +2916,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
-
                     if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
                         && ehc
                             .modifier_settings
@@ -2865,6 +2924,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     {
                         *element_setup_modal = esm;
                     }
+
+                    tool.add_position(*event.mouse_position());
+                    tool.add_section(self.model.clone().into());
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
@@ -2896,38 +2958,96 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     EventHandlingStatus::HandledByElement
                 }
             }
-            InputEvent::Drag { delta, .. }
-                if let Some((dt, rs)) = self.temporaries.dragged_type_and_shape =>
-            {
-                let translated_real_shape = rs.translate(delta);
-                self.temporaries.dragged_type_and_shape = Some((dt, translated_real_shape));
-                let coerced_pos = if self.temporaries.highlight.selected {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| {
-                        !ehc.all_elements
-                            .get(e)
-                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
-                    })
-                } else {
-                    ehc.snap_manager
-                        .coerce(translated_real_shape, |e| *e != *self.uuid)
-                };
-                let coerced_delta = coerced_pos - self.bounds_rect.center();
+            InputEvent::Drag { delta, .. } => match self.temporaries.dragged_type_and_shape {
+                Some((PackageDragType::Move, real_bounds)) => {
+                    let translated_bounds = real_bounds.translate(delta);
+                    self.temporaries.dragged_type_and_shape =
+                        Some((PackageDragType::Move, translated_bounds));
+                    let translated_real_shape = canvas::NHShape::Rect {
+                        inner: translated_bounds,
+                    };
+                    let coerced_pos = ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        if self.temporaries.highlight.selected {
+                            !ehc.all_elements
+                                .get(e)
+                                .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                        } else {
+                            *e != *self.uuid
+                        }
+                    });
+                    let coerced_delta = coerced_pos - self.position();
 
-                if self.temporaries.highlight.selected {
-                    commands.push(InsensitiveCommand::MovePositional(
-                        q.selected_views(),
-                        coerced_delta,
-                    ));
-                } else {
-                    commands.push(InsensitiveCommand::MovePositional(
-                        std::iter::once(*self.uuid).collect(),
-                        coerced_delta,
-                    ));
+                    if self.temporaries.highlight.selected {
+                        commands.push(InsensitiveCommand::MovePositional(
+                            q.selected_views(),
+                            coerced_delta,
+                        ));
+                    } else {
+                        commands.push(InsensitiveCommand::MovePositional(
+                            std::iter::once(*self.uuid).collect(),
+                            coerced_delta,
+                        ));
+                    }
+                    EventHandlingStatus::HandledByElement
                 }
+                Some((PackageDragType::Resize(align), real_bounds)) => {
+                    let (left, right) = match align.x() {
+                        egui::Align::Min => (0.0, delta.x),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.x, 0.0),
+                    };
+                    let (top, bottom) = match align.y() {
+                        egui::Align::Min => (0.0, delta.y),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.y, 0.0),
+                    };
+                    let new_real_bounds = real_bounds
+                        + epaint::MarginF32 {
+                            left,
+                            right,
+                            top,
+                            bottom,
+                        };
+                    self.temporaries.dragged_type_and_shape =
+                        Some((PackageDragType::Resize(align), new_real_bounds));
+                    let handle_x = match align.x() {
+                        egui::Align::Min => (new_real_bounds.right(), self.bounds_rect.right()),
+                        egui::Align::Center => {
+                            (new_real_bounds.center().x, self.bounds_rect.center().x)
+                        }
+                        egui::Align::Max => (new_real_bounds.left(), self.bounds_rect.left()),
+                    };
+                    let handle_y = match align.y() {
+                        egui::Align::Min => (new_real_bounds.bottom(), self.bounds_rect.bottom()),
+                        egui::Align::Center => {
+                            (new_real_bounds.center().y, self.bounds_rect.center().y)
+                        }
+                        egui::Align::Max => (new_real_bounds.top(), self.bounds_rect.top()),
+                    };
+                    let coerced_point = ehc.snap_manager.coerce(
+                        canvas::NHShape::Rect {
+                            inner: egui::Rect::from_min_size(
+                                egui::Pos2::new(handle_x.0, handle_y.0),
+                                egui::Vec2::ZERO,
+                            ),
+                        },
+                        |e| {
+                            !ehc.all_elements
+                                .get(e)
+                                .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                        },
+                    );
+                    let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
 
-                EventHandlingStatus::HandledByElement
-            }
-            _ => EventHandlingStatus::NotHandled,
+                    commands.push(InsensitiveCommand::ResizeElementsBy(
+                        q.selected_views(),
+                        align,
+                        coerced_delta,
+                    ));
+                    EventHandlingStatus::HandledByElement
+                }
+                None => EventHandlingStatus::NotHandled,
+            },
         }
     }
 
@@ -3023,6 +3143,22 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 });
             }
             InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
+                if uuids.contains(&self.uuid) {
+                    undo_accumulator.push(InsensitiveCommand::ResizeElementTo(
+                        *self.uuid,
+                        self.bounds_rect,
+                    ));
+
+                    for e in self.region_views.iter() {
+                        let mut w = e.write();
+                        match align.x() {
+                            egui::Align::Min => w.bounds_rect.max.x += delta.x,
+                            egui::Align::Max => w.bounds_rect.min.x += delta.x,
+                            _ => {}
+                        }
+                    }
+                }
+
                 if self
                     .region_views
                     .iter()
@@ -3077,6 +3213,19 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 recurse!();
             }
             InsensitiveCommand::ResizeElementTo(uuid, rect) => {
+                if *uuid == *self.uuid {
+                    undo_accumulator.push(InsensitiveCommand::ResizeElementTo(
+                        *self.uuid,
+                        self.bounds_rect,
+                    ));
+
+                    for e in self.region_views.iter() {
+                        let mut w = e.write();
+                        w.bounds_rect.min.x = rect.min.x;
+                        w.bounds_rect.max.x = rect.max.x;
+                    }
+                }
+
                 if let Some((idx, br)) = self
                     .region_views
                     .iter()
@@ -3125,46 +3274,52 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
-                for element in self
+                if self
                     .region_views
                     .iter()
-                    .filter(|v| uuids.contains(&v.read().uuid))
+                    .any(|e| !uuids.contains(&e.read().uuid))
                 {
-                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
-                        (1, None)
-                    } else if let Some((b, pos)) = self
-                        .model
-                        .read()
-                        .get_element_pos(&element.read().model_uuid())
+                    for element in self
+                        .region_views
+                        .iter()
+                        .filter(|v| uuids.contains(&v.read().uuid))
                     {
-                        (b, Some(pos))
-                    } else {
-                        continue;
-                    };
+                        let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                            (0, None)
+                        } else if let Some((b, pos)) = self
+                            .model
+                            .read()
+                            .get_element_pos(&element.read().model_uuid())
+                        {
+                            (b, Some(pos))
+                        } else {
+                            continue;
+                        };
 
-                    undo_accumulator.push(InsensitiveCommand::AddDependency {
-                        target: *self.uuid,
-                        bucket: b,
-                        position: pos,
-                        element: UmlStateMachineElementView::from(element.clone()).into(),
-                        into_model: false,
-                    });
-                }
-                let mut delta = egui::Vec2::ZERO;
-                let (mut u, mut m) = Default::default();
-                let old_sections = std::mem::take(&mut self.region_views);
-                for e in old_sections {
-                    let mut w = e.write();
-                    if uuids.contains(&w.uuid) {
-                        delta.y += w.bounds_rect.height();
-                    } else {
-                        w.apply_command(
-                            &InsensitiveCommand::MovePositionalAll(-delta),
-                            &mut u,
-                            &mut m,
-                        );
-                        drop(w);
-                        self.region_views.push(e);
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: b,
+                            position: pos,
+                            element: UmlStateMachineElementView::from(element.clone()).into(),
+                            into_model: false,
+                        });
+                    }
+                    let mut delta = egui::Vec2::ZERO;
+                    let (mut u, mut m) = Default::default();
+                    let old_sections = std::mem::take(&mut self.region_views);
+                    for e in old_sections {
+                        let mut w = e.write();
+                        if uuids.contains(&w.uuid) {
+                            delta.y += w.bounds_rect.height();
+                        } else {
+                            w.apply_command(
+                                &InsensitiveCommand::MovePositionalAll(-delta),
+                                &mut u,
+                                &mut m,
+                            );
+                            drop(w);
+                            self.region_views.push(e);
+                        }
                     }
                 }
 
@@ -3628,13 +3783,6 @@ impl UmlStateMachineCompositeStateRegionView {
             .min(self.bounds_rect.width() * ui_scale / 6.0)
             .min(self.bounds_rect.height() * ui_scale / 3.0)
     }
-    fn drag_handle_position(&self, ui_scale: f32) -> egui::Pos2 {
-        egui::Pos2::new(
-            (self.bounds_rect.right() - 2.0 * self.handle_size(ui_scale) / ui_scale)
-                .max((self.bounds_rect.center().x + self.bounds_rect.right()) / 2.0),
-            self.bounds_rect.top(),
-        )
-    }
 
     fn show_properties_inner(
         &mut self,
@@ -3769,7 +3917,15 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlStateMachineTool)>,
     ) -> TargettingStatus {
-        // Draw resize/drag handles
+        canvas.draw_rectangle(
+            self.bounds_rect.shrink(2.0),
+            egui::CornerRadius::ZERO,
+            egui::Color32::TRANSPARENT,
+            canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+            self.temporaries.highlight,
+        );
+
+        // Draw resize handles
         if let Some(ui_scale) = canvas
             .ui_scale()
             .filter(|_| self.temporaries.highlight.selected)
@@ -3777,14 +3933,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             let handle_size = self.handle_size(ui_scale);
             let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
             for (h, c) in [
-                (handles_rect.left_top(), "↖"),
                 (handles_rect.center_top(), "^"),
-                (handles_rect.right_top(), "↗"),
-                (handles_rect.left_center(), "<"),
-                (handles_rect.right_center(), ">"),
-                (handles_rect.left_bottom(), "↙"),
                 (handles_rect.center_bottom(), "v"),
-                (handles_rect.right_bottom(), "↘"),
             ] {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
@@ -3801,33 +3951,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     egui::Color32::BLACK,
                 );
             }
-
-            let dc = self.drag_handle_position(ui_scale);
-            canvas.draw_rectangle(
-                egui::Rect::from_center_size(dc, egui::Vec2::splat(handle_size / ui_scale)),
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-
-            let da_radius = (handle_size / 2.0 - 1.0) / ui_scale;
-            canvas.draw_line(
-                [
-                    dc - egui::Vec2::new(0.0, da_radius),
-                    dc + egui::Vec2::new(0.0, da_radius),
-                ],
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_line(
-                [
-                    dc - egui::Vec2::new(da_radius, 0.0),
-                    dc + egui::Vec2::new(da_radius, 0.0),
-                ],
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
         }
 
         macro_rules! draw_header_and_children {
@@ -3900,14 +4023,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
                 if self.temporaries.highlight.selected {
                     for (a, h) in [
-                        (egui::Align2::RIGHT_BOTTOM, handles_rect.left_top()),
                         (egui::Align2::CENTER_BOTTOM, handles_rect.center_top()),
-                        (egui::Align2::LEFT_BOTTOM, handles_rect.right_top()),
-                        (egui::Align2::RIGHT_CENTER, handles_rect.left_center()),
-                        (egui::Align2::LEFT_CENTER, handles_rect.right_center()),
-                        (egui::Align2::RIGHT_TOP, handles_rect.left_bottom()),
                         (egui::Align2::CENTER_TOP, handles_rect.center_bottom()),
-                        (egui::Align2::LEFT_TOP, handles_rect.right_bottom()),
                     ] {
                         if egui::Rect::from_center_size(
                             h,
@@ -3922,19 +4039,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     }
                 }
 
-                if self.min_shape().border_distance(pos) <= 2.0 / ehc.ui_scale
-                    || egui::Rect::from_center_size(
-                        self.drag_handle_position(ehc.ui_scale),
-                        egui::Vec2::splat(handle_size) / ehc.ui_scale,
-                    )
-                    .contains(pos)
-                {
-                    self.temporaries.dragged_type_and_shape =
-                        Some((PackageDragType::Move, self.bounds_rect));
-                    EventHandlingStatus::HandledByElement
-                } else {
-                    EventHandlingStatus::NotHandled
-                }
+                EventHandlingStatus::NotHandled
             }
             InputEvent::MouseUp(_pos) => {
                 if self.temporaries.dragged_type_and_shape.is_some() {
@@ -4171,7 +4276,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     .filter(|e| uuids.contains(&e.0))
                 {
                     let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
-                        (1, None)
+                        (0, None)
                     } else if let Some((b, pos)) =
                         self.model.read().get_element_pos(&element.model_uuid())
                     {
