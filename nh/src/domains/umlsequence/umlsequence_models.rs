@@ -710,19 +710,21 @@ impl UmlSequenceDiagramBoard {
                 }
                 UmlSequenceElement::CombinedFragment(inner) => {
                     let mut w = inner.write();
-                    for (idx, e) in w.sections.iter().enumerate() {
-                        if uuids.contains(&e.read().uuid()) {
-                            undo.push((
-                                *w.uuid,
-                                e.clone().into(),
-                                HORIZONTALS_BUCKET,
-                                idx.try_into().unwrap(),
-                            ));
-                        } else {
-                            r(&e.clone().into(), uuids, undo);
+                    if w.sections.iter().any(|e| !uuids.contains(&e.read().uuid)) {
+                        for (idx, e) in w.sections.iter().enumerate() {
+                            if uuids.contains(&e.read().uuid()) {
+                                undo.push((
+                                    *w.uuid,
+                                    e.clone().into(),
+                                    HORIZONTALS_BUCKET,
+                                    idx.try_into().unwrap(),
+                                ));
+                            } else {
+                                r(&e.clone().into(), uuids, undo);
+                            }
                         }
+                        w.sections.retain(|e| !uuids.contains(&e.read().uuid()));
                     }
-                    w.sections.retain(|e| !uuids.contains(&e.read().uuid()));
                 }
                 UmlSequenceElement::CombinedFragmentSection(inner) => {
                     let mut w = inner.write();

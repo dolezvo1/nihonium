@@ -4799,32 +4799,38 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
-                for element in self
+                if self
                     .sections
                     .iter()
-                    .filter(|v| uuids.contains(&v.read().uuid))
+                    .any(|e| !uuids.contains(&e.read().uuid))
                 {
-                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
-                        (1, None)
-                    } else if let Some((b, pos)) = self
-                        .model
-                        .read()
-                        .get_element_pos(&element.read().model_uuid())
+                    for element in self
+                        .sections
+                        .iter()
+                        .filter(|v| uuids.contains(&v.read().uuid))
                     {
-                        (b, Some(pos))
-                    } else {
-                        continue;
-                    };
+                        let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                            (HORIZONTALS_BUCKET, None)
+                        } else if let Some((b, pos)) = self
+                            .model
+                            .read()
+                            .get_element_pos(&element.read().model_uuid())
+                        {
+                            (b, Some(pos))
+                        } else {
+                            continue;
+                        };
 
-                    undo_accumulator.push(InsensitiveCommand::AddDependency {
-                        target: *self.uuid,
-                        bucket: b,
-                        position: pos,
-                        element: UmlSequenceElementView::from(element.clone()).into(),
-                        into_model: false,
-                    });
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: b,
+                            position: pos,
+                            element: UmlSequenceElementView::from(element.clone()).into(),
+                            into_model: false,
+                        });
+                    }
+                    self.sections.retain(|v| !uuids.contains(&v.read().uuid));
                 }
-                self.sections.retain(|v| !uuids.contains(&v.read().uuid));
 
                 recurse!();
             }
