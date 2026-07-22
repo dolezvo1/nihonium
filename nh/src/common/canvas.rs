@@ -3,6 +3,36 @@ use eframe::egui;
 use std::io::Write;
 use std::ops::{BitAnd, BitOr};
 
+/// Shortest distance between a point and a line segment specified by two points
+/// ```rust
+/// let (a, b, c) = ((0, 0), (0, 1), (1, 0)).into();
+/// assert_eq!(point_to_segment_distance(c, a, b), 1.0);
+/// assert_eq!(point_to_segment_distance(a, b, c), 2.0.sqrt() / 2.0);
+/// ```
+fn point_to_segment_distance(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
+    let abx = b.x - a.x;
+    let aby = b.y - a.y;
+    let apx = p.x - a.x;
+    let apy = p.y - a.y;
+
+    let ab_len2 = abx * abx + aby * aby;
+    if ab_len2 == 0.0 {
+        return p.distance(a);
+    }
+
+    fn dot(ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
+        ax * bx + ay * by
+    }
+
+    let t = (dot(apx, apy, abx, aby) / ab_len2).clamp(0.0, 1.0);
+    let proj = egui::Pos2 {
+        x: a.x + t * abx,
+        y: a.y + t * aby,
+    };
+
+    p.distance(proj)
+}
+
 // find unique intersection between segments (s1a, s1b) and (s2a, s2b)
 // based on https://stackoverflow.com/a/1968345
 fn unique_segments_intersection(
@@ -279,6 +309,7 @@ impl NHShape {
             (ci_s + ci_o) / 2.0
         }
     }
+    /// Should return the smallest possible distance from given point to any point on the border
     pub fn border_distance(&self, point: egui::Pos2) -> f32 {
         match &self {
             NHShape::Rect { inner } => {
@@ -296,13 +327,36 @@ impl NHShape {
                     point.distance(clamped_point)
                 }
             }
-            NHShape::Ellipse { .. } => {
-                // TODO: This is actually hard to do.
-                todo!()
+            // TODO: This is actually hard to do for ellipse, so just approximate it as a rhombus
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
             }
-            NHShape::Rhombus { .. } => {
-                // TODO: I'm not sure if this is needed for anything
-                todo!()
+            | NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => {
+                let v0 = egui::Pos2 {
+                    x: position.x + bounds_radius.x,
+                    y: position.y,
+                };
+                let v1 = egui::Pos2 {
+                    x: position.x,
+                    y: position.y + bounds_radius.y,
+                };
+                let v2 = egui::Pos2 {
+                    x: position.x - bounds_radius.x,
+                    y: position.y,
+                };
+                let v3 = egui::Pos2 {
+                    x: position.x,
+                    y: position.y - bounds_radius.y,
+                };
+
+                [(v0, v1), (v1, v2), (v2, v3), (v3, v0)]
+                    .iter()
+                    .map(|&(a, b)| point_to_segment_distance(point, a, b))
+                    .fold(f32::INFINITY, f32::min)
             }
         }
     }
