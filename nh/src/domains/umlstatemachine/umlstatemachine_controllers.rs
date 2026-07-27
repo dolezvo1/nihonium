@@ -26,8 +26,9 @@ use crate::domains::umlstatemachine::umlstatemachine_models::{
     UmlStateMachine, UmlStateMachineComment, UmlStateMachineCommentLink,
     UmlStateMachineCompositeState, UmlStateMachineCompositeStateRegion, UmlStateMachineDiagram,
     UmlStateMachineEdge, UmlStateMachineElement, UmlStateMachineFinalState,
-    UmlStateMachineInitialPseudostate, UmlStateMachineNonFinalNode, UmlStateMachineNonInitialNode,
-    UmlStateMachineSimpleState, UmlStateMachineTerminatePseudostate,
+    UmlStateMachineInitialPseudostate, UmlStateMachineInternalTransition,
+    UmlStateMachineNonFinalNode, UmlStateMachineNonInitialNode, UmlStateMachineSimpleState,
+    UmlStateMachineTerminatePseudostate,
 };
 use crate::{
     CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -80,7 +81,8 @@ pub enum UmlStateMachinePropChange {
     NameChange(Arc<String>),
     StereotypeChange(Arc<String>),
 
-    StateActivitiesChange(Arc<String>),
+    TransitionGuardChange(Arc<String>),
+    TransitionBehaviorChange(Arc<String>),
     StateMachineIsProtocolChange(bool),
 
     FlipMulticonnection(FlipMulticonnection),
@@ -131,7 +133,8 @@ impl TryMerge for UmlStateMachinePropChange {
         match (self, newer) {
             (Self::NameChange(_), newer @ Self::NameChange(_))
             | (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_))
-            | (Self::StateActivitiesChange(_), newer @ Self::StateActivitiesChange(_))
+            | (Self::TransitionGuardChange(_), newer @ Self::TransitionGuardChange(_))
+            | (Self::TransitionBehaviorChange(_), newer @ Self::TransitionBehaviorChange(_))
             | (Self::CommentChange(_), newer @ Self::CommentChange(_)) => Some(newer.clone()),
             _ => None,
         }
@@ -180,6 +183,7 @@ pub enum UmlStateMachineElementView {
     CompositeState(ERef<UmlStateMachineCompositeStateView>),
     CompositeStateRegion(ERef<UmlStateMachineCompositeStateRegionView>),
     SimpleState(ERef<UmlStateMachineSimpleStateView>),
+    InternalTransition(ERef<UmlStateMachineInternalTransitionView>),
     InitialPseudostate(ERef<UmlStateMachineInitialPseudostateView>),
     TerminatePseudostate(ERef<UmlStateMachineTerminatePseudostateView>),
     FinalState(ERef<UmlStateMachineFinalStateView>),
@@ -312,6 +316,11 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
             .into(),
             UmlStateMachineElement::CompositeState(inner) => {
                 let r = inner.read();
+                let internal_transition_views = r
+                    .internal_transitions
+                    .iter()
+                    .map(|e| new_umlstatemachine_internaltransition_view(e.clone()))
+                    .collect();
                 let section_views: Result<Vec<_>, _> = r
                     .regions
                     .iter()
@@ -325,6 +334,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                     .collect();
                 new_umlstatemachine_compositestate_view(
                     inner.clone(),
+                    internal_transition_views,
                     section_views?,
                     MGlobalColor::None,
                 )
@@ -338,8 +348,22 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 .into()
             }
             UmlStateMachineElement::SimpleState(inner) => {
-                new_umlstatemachine_simplestate_view(inner, egui::Pos2::ZERO, MGlobalColor::None)
-                    .into()
+                let r = inner.read();
+                let internal_transition_views = r
+                    .internal_transitions
+                    .iter()
+                    .map(|e| new_umlstatemachine_internaltransition_view(e.clone()))
+                    .collect();
+                new_umlstatemachine_simplestate_view(
+                    inner.clone(),
+                    internal_transition_views,
+                    egui::Pos2::ZERO,
+                    MGlobalColor::None,
+                )
+                .into()
+            }
+            UmlStateMachineElement::InternalTransition(inner) => {
+                new_umlstatemachine_internaltransition_view(inner).into()
             }
             UmlStateMachineElement::InitialPseudostate(inner) => {
                 new_umlstatemachine_initialpseudostate_view(inner, egui::Pos2::ZERO).into()
@@ -421,6 +445,10 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 }
                 s.push(')');
                 s.into()
+            }
+            UmlStateMachineElement::InternalTransition(inner) => {
+                let r = inner.read();
+                format!("Internal Transition ({})", r.trigger).into()
             }
             UmlStateMachineElement::InitialPseudostate(..) => {
                 "Initial Pseudostate".to_owned().into()
@@ -677,28 +705,28 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (operand1, operand1_view) = new_umlstatemachine_simplestate(
         "operand1",
         "",
-        "",
+        Vec::new(),
         egui::Pos2::new(450.0, 275.0),
         MGlobalColor::None,
     );
     let (opentered, opentered_view) = new_umlstatemachine_simplestate(
         "opEntered",
         "",
-        "",
+        Vec::new(),
         egui::Pos2::new(300.0, 400.0),
         MGlobalColor::None,
     );
     let (operand2, operand2_view) = new_umlstatemachine_simplestate(
         "operand2",
         "",
-        "",
+        Vec::new(),
         egui::Pos2::new(450.0, 525.0),
         MGlobalColor::None,
     );
     let (result, result_view) = new_umlstatemachine_simplestate(
         "result",
         "",
-        "",
+        Vec::new(),
         egui::Pos2::new(575.0, 400.0),
         MGlobalColor::None,
     );
@@ -776,7 +804,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (composite, composite_view) = new_umlstatemachine_compositestate(
         "on",
         "",
-        "",
+        Vec::new(),
         vec![(composite_region, composite_region_view)],
         MGlobalColor::None,
     );
@@ -853,6 +881,8 @@ pub struct UmlStateMachineSettings {
     palette_edit_buffer:
         RwLock<PaletteEditBuffer<UmlStateMachineToolStage, UmlStateMachineElementView>>,
     nonfinal_buttons: Vec<(usize, usize, &'static str, &'static NonFinalStateButtonF)>,
+    compositestate_buttons: Vec<(usize, usize, &'static str, &'static NonFinalStateButtonF)>,
+    simplestate_buttons: Vec<(usize, usize, &'static str, &'static NonFinalStateButtonF)>,
     vertical_header: canvas::HeaderMode,
 }
 
@@ -924,7 +954,6 @@ impl DiagramSettings for UmlStateMachineSettings {
                         UmlStateMachineToolStage::CompositeStateStart {
                             stereotype,
                             name,
-                            activities,
                             background_color,
                         } => {
                             modified |= columns[1]
@@ -932,9 +961,6 @@ impl DiagramSettings for UmlStateMachineSettings {
                                 .changed();
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_multiline("Activities", activities)
                                 .changed();
 
                             if let Some(new_color) =
@@ -951,7 +977,6 @@ impl DiagramSettings for UmlStateMachineSettings {
                         UmlStateMachineToolStage::SimpleState {
                             stereotype,
                             name,
-                            activities,
                             background_color,
                             with_edge_from: _,
                         } => {
@@ -960,9 +985,6 @@ impl DiagramSettings for UmlStateMachineSettings {
                                 .changed();
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_multiline("Activities", activities)
                                 .changed();
 
                             if let Some(new_color) =
@@ -1143,7 +1165,6 @@ mod buttons {
         let stage = UmlStateMachineToolStage::SimpleState {
             stereotype: "".to_owned(),
             name: "Simple State".to_owned(),
-            activities: "".to_owned(),
             background_color: MGlobalColor::None,
             with_edge_from: Some(*m.uuid()),
         };
@@ -1205,6 +1226,66 @@ mod buttons {
             ),
         ]
     });
+
+    fn state_internaltransition(
+        _m: UmlStateMachineNonFinalNode,
+    ) -> (
+        UmlStateMachineToolStage,
+        UmlStateMachineToolStage,
+        PartialUmlStateMachineElement,
+        bool,
+    ) {
+        let stage = UmlStateMachineToolStage::InternalTransition {
+            trigger: "entry".to_owned(),
+            guard: "".to_owned(),
+            behavior: "doThing()".to_owned(),
+        };
+        (
+            stage.clone(),
+            stage,
+            PartialUmlStateMachineElement::None,
+            false,
+        )
+    }
+    fn compositestate_region(
+        _m: UmlStateMachineNonFinalNode,
+    ) -> (
+        UmlStateMachineToolStage,
+        UmlStateMachineToolStage,
+        PartialUmlStateMachineElement,
+        bool,
+    ) {
+        let stage = UmlStateMachineToolStage::CompositeStateRegion {};
+        (
+            stage.clone(),
+            stage,
+            PartialUmlStateMachineElement::None,
+            false,
+        )
+    }
+    pub const COMPOSITE_STATE_BUTTONS: LazyLock<
+        Vec<(usize, usize, &'static str, &'static NonFinalStateButtonF)>,
+    > = LazyLock::new(|| {
+        vec![
+            (
+                3,
+                0,
+                "T",
+                &state_internaltransition as &NonFinalStateButtonF,
+            ),
+            (3, 1, "R", &compositestate_region as &NonFinalStateButtonF),
+        ]
+    });
+    pub const SIMPLE_STATE_BUTTONS: LazyLock<
+        Vec<(usize, usize, &'static str, &'static NonFinalStateButtonF)>,
+    > = LazyLock::new(|| {
+        vec![(
+            3,
+            0,
+            "T",
+            &state_internaltransition as &NonFinalStateButtonF,
+        )]
+    });
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
@@ -1216,7 +1297,6 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     UmlStateMachineToolStage::SimpleState {
                         stereotype: "".to_owned(),
                         name: "Simple State".to_owned(),
-                        activities: "".to_owned(),
                         background_color: MGlobalColor::None,
                         with_edge_from: None,
                     },
@@ -1227,7 +1307,6 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     UmlStateMachineToolStage::CompositeStateStart {
                         stereotype: "".to_owned(),
                         name: "Composite State".to_owned(),
-                        activities: "".to_owned(),
                         background_color: MGlobalColor::None,
                     },
                     "Composite State",
@@ -1328,6 +1407,16 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
         nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
+        compositestate_buttons: buttons::NONFINAL_BUTTONS
+            .iter()
+            .cloned()
+            .chain(buttons::COMPOSITE_STATE_BUTTONS.iter().cloned())
+            .collect(),
+        simplestate_buttons: buttons::NONFINAL_BUTTONS
+            .iter()
+            .cloned()
+            .chain(buttons::SIMPLE_STATE_BUTTONS.iter().cloned())
+            .collect(),
         vertical_header: canvas::HeaderMode::Compact,
     })
 }
@@ -1337,18 +1426,26 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
         UmlStateMachineToolStage::SimpleState {
             stereotype,
             name,
-            activities,
             background_color,
             with_edge_from: _,
         } => {
             let view = new_umlstatemachine_simplestate(
                 name,
                 stereotype,
-                activities,
+                Vec::new(),
                 egui::Pos2::ZERO,
                 *background_color,
             )
             .1;
+            view.write().refresh_buffers();
+            view.into()
+        }
+        UmlStateMachineToolStage::InternalTransition {
+            trigger,
+            guard,
+            behavior,
+        } => {
+            let view = new_umlstatemachine_internaltransition(trigger, guard, behavior).1;
             view.write().refresh_buffers();
             view.into()
         }
@@ -1407,7 +1504,6 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
         UmlStateMachineToolStage::CompositeStateStart {
             stereotype,
             name,
-            activities,
             background_color,
         } => {
             let ps = new_umlstatemachine_compositestateregion(egui::Rect {
@@ -1418,7 +1514,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
             let view = new_umlstatemachine_compositestate(
                 name,
                 stereotype,
-                activities,
+                Vec::new(),
                 vec![ps],
                 *background_color,
             )
@@ -1453,7 +1549,8 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
             .1;
             view.into()
         }
-        UmlStateMachineToolStage::LinkEnd
+        UmlStateMachineToolStage::CompositeStateRegion {}
+        | UmlStateMachineToolStage::LinkEnd
         | UmlStateMachineToolStage::StateMachineEnd
         | UmlStateMachineToolStage::CompositeStateEnd
         | UmlStateMachineToolStage::CommentLinkEnd => unreachable!(),
@@ -1469,6 +1566,16 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
             .into(),
         palette_edit_buffer: PaletteEditBuffer::None.into(),
         nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
+        compositestate_buttons: buttons::NONFINAL_BUTTONS
+            .iter()
+            .cloned()
+            .chain(buttons::COMPOSITE_STATE_BUTTONS.iter().cloned())
+            .collect(),
+        simplestate_buttons: buttons::NONFINAL_BUTTONS
+            .iter()
+            .cloned()
+            .chain(buttons::SIMPLE_STATE_BUTTONS.iter().cloned())
+            .collect(),
         vertical_header: value
             .get("vertical_header")
             .cloned()
@@ -1503,9 +1610,13 @@ pub enum UmlStateMachineToolStage {
     SimpleState {
         stereotype: String,
         name: String,
-        activities: String,
         background_color: MGlobalColor,
         with_edge_from: Option<ModelUuid>,
+    },
+    InternalTransition {
+        trigger: String,
+        guard: String,
+        behavior: String,
     },
     InitialPseudostate {},
     TerminatePseudostate {
@@ -1527,10 +1638,10 @@ pub enum UmlStateMachineToolStage {
     CompositeStateStart {
         stereotype: String,
         name: String,
-        activities: String,
         background_color: MGlobalColor,
     },
     CompositeStateEnd,
+    CompositeStateRegion {},
     Comment {
         stereotype: String,
         text: String,
@@ -1638,6 +1749,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 | UmlStateMachineToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
+            Some(UmlStateMachineElement::InternalTransition(_)) => NON_TARGETTABLE_COLOR,
             Some(UmlStateMachineElement::Comment(_)) => match self.current_stage {
                 UmlStateMachineToolStage::CommentLinkStart => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
@@ -1722,7 +1834,6 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 UmlStateMachineToolStage::SimpleState {
                     stereotype,
                     name,
-                    activities,
                     background_color,
                     with_edge_from: _,
                 },
@@ -1731,7 +1842,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 let (_model, view) = new_umlstatemachine_simplestate(
                     name,
                     stereotype,
-                    activities,
+                    Vec::new(),
                     pos,
                     *background_color,
                 );
@@ -1795,6 +1906,33 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
     fn add_section(&mut self, element: UmlStateMachineElement) {
         if self.event_lock {
             return;
+        }
+
+        match &self.current_stage {
+            UmlStateMachineToolStage::CompositeStateRegion {}
+                if let UmlStateMachineElement::CompositeState(_) = element =>
+            {
+                let (_model, view) = new_umlstatemachine_compositestateregion(
+                    egui::Rect::from_x_y_ranges(0.0..=50.0, 0.0..=100.0),
+                );
+                self.result = PartialUmlStateMachineElement::Some(view.into());
+                self.event_lock = true;
+                return;
+            }
+            UmlStateMachineToolStage::InternalTransition {
+                trigger,
+                guard,
+                behavior,
+            } if let UmlStateMachineElement::CompositeState(_)
+            | UmlStateMachineElement::SimpleState(_) = element =>
+            {
+                let (_model, view) =
+                    new_umlstatemachine_internaltransition(trigger, guard, behavior);
+                self.result = PartialUmlStateMachineElement::Some(view.into());
+                self.event_lock = true;
+                return;
+            }
+            _ => {}
         }
 
         match element {
@@ -2020,7 +2158,6 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 if let UmlStateMachineToolStage::CompositeStateStart {
                     stereotype,
                     name,
-                    activities,
                     background_color,
                 } = &self.initial_stage =>
             {
@@ -2031,7 +2168,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 let view = new_umlstatemachine_compositestate(
                     name,
                     stereotype,
-                    activities,
+                    Vec::new(),
                     vec![s],
                     *background_color,
                 )
@@ -2422,8 +2559,11 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
 pub fn new_umlstatemachine_compositestate(
     name: &str,
     stereotype: &str,
-    activities: &str,
-    sections: Vec<(
+    internal_transitions: Vec<(
+        ERef<UmlStateMachineInternalTransition>,
+        ERef<UmlStateMachineInternalTransitionView>,
+    )>,
+    regions: Vec<(
         ERef<UmlStateMachineCompositeStateRegion>,
         ERef<UmlStateMachineCompositeStateRegionView>,
     )>,
@@ -2432,28 +2572,35 @@ pub fn new_umlstatemachine_compositestate(
     ERef<UmlStateMachineCompositeState>,
     ERef<UmlStateMachineCompositeStateView>,
 ) {
-    let (section_models, section_views) = sections.into_iter().collect();
+    let (it_models, it_views) = internal_transitions.into_iter().collect();
+    let (region_models, region_views) = regions.into_iter().collect();
     let model = ERef::new(UmlStateMachineCompositeState::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         name.to_owned(),
-        activities.to_owned(),
-        section_models,
+        it_models,
+        region_models,
     ));
-    let view =
-        new_umlstatemachine_compositestate_view(model.clone(), section_views, background_color);
+    let view = new_umlstatemachine_compositestate_view(
+        model.clone(),
+        it_views,
+        region_views,
+        background_color,
+    );
 
     (model, view)
 }
 pub fn new_umlstatemachine_compositestate_view(
     model: ERef<UmlStateMachineCompositeState>,
-    section_views: Vec<ERef<UmlStateMachineCompositeStateRegionView>>,
+    internal_transition_views: Vec<ERef<UmlStateMachineInternalTransitionView>>,
+    region_views: Vec<ERef<UmlStateMachineCompositeStateRegionView>>,
     background_color: MGlobalColor,
 ) -> ERef<UmlStateMachineCompositeStateView> {
     ERef::new(UmlStateMachineCompositeStateView {
         uuid: ViewUuid::now_v7().into(),
         model,
-        region_views: section_views,
+        internal_transition_views,
+        region_views,
         bounds_rect: egui::Rect::ZERO,
         background_color,
         temporaries: Default::default(),
@@ -2466,6 +2613,8 @@ pub struct UmlStateMachineCompositeStateView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     model: ERef<UmlStateMachineCompositeState>,
+    #[nh_context_serde(entity)]
+    internal_transition_views: Vec<ERef<UmlStateMachineInternalTransitionView>>,
     #[nh_context_serde(entity)]
     region_views: Vec<ERef<UmlStateMachineCompositeStateRegionView>>,
 
@@ -2480,7 +2629,6 @@ struct UmlStateMachineCompositeStateViewTemporaries {
     stereotype_in_guillemets: String,
     stereotype_buffer: String,
     name_buffer: String,
-    activities_buffer: String,
 
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     highlight: canvas::Highlight,
@@ -2537,12 +2685,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
     fn draw_in(
         &mut self,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
-        context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlStateMachineDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        let background_color = context
+        let background_color = gdc
             .global_colors
             .get(&self.background_color)
             .unwrap_or(egui::Color32::WHITE);
@@ -2553,18 +2701,10 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             .fold(egui::Rect::NOTHING, |b, e| b.union(e.read().bounds_rect));
         self.bounds_rect.max.y += 10.0;
 
-        let activities_center_top = if !self.temporaries.activities_buffer.is_empty() {
-            let r = canvas.measure_text(
-                self.bounds_rect.center_top(),
-                egui::Align2::CENTER_BOTTOM,
-                &self.temporaries.activities_buffer,
-                canvas::CLASS_TOP_FONT_SIZE,
-            );
-            self.bounds_rect = self.bounds_rect.union(r);
-            r.center_top()
-        } else {
-            self.bounds_rect.center_top()
-        };
+        for e in &self.internal_transition_views {
+            self.bounds_rect.min.y -= e.read().bounds_rect.height();
+        }
+        let activities_center_top = self.bounds_rect.center_top();
         self.bounds_rect = self.bounds_rect.union(canvas.measure_text(
             self.bounds_rect.center_top(),
             egui::Align2::CENTER_BOTTOM,
@@ -2605,7 +2745,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
-        if !self.temporaries.activities_buffer.is_empty() {
+        if !self.internal_transition_views.is_empty() {
             canvas.draw_line(
                 [
                     (self.bounds_rect.left(), activities_center_top.y).into(),
@@ -2614,13 +2754,19 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
-            canvas.draw_text(
-                activities_center_top,
+        }
+        let mut top_mut = activities_center_top;
+        for e in &self.internal_transition_views {
+            let (r, _t) = e.write().draw_inner(
+                top_mut,
                 egui::Align2::CENTER_TOP,
-                &self.temporaries.activities_buffer,
-                canvas::CLASS_TOP_FONT_SIZE,
-                egui::Color32::BLACK,
+                q,
+                gdc,
+                settings,
+                canvas,
+                tool,
             );
+            top_mut = r.center_bottom();
         }
 
         let (mut first, mut child_targetting_drawn) = (true, false);
@@ -2628,7 +2774,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         while let Some(e) = iter.next() {
             let mut w = e.write();
             child_targetting_drawn |=
-                w.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
+                w.draw_in(q, gdc, settings, canvas, tool) != TargettingStatus::NotDrawn;
             if first {
                 canvas.draw_line(
                     [w.bounds_rect.left_top(), w.bounds_rect.right_top()],
@@ -2657,8 +2803,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             .ui_scale()
             .filter(|_| self.temporaries.highlight.selected)
         {
-            draw_nonfinal_node_button_rects(
-                settings,
+            draw_button_rects(
+                &settings.compositestate_buttons,
                 canvas,
                 self.bounds_rect.right_top(),
                 ui_scale,
@@ -2754,6 +2900,30 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             >,
         >,
     ) -> PropertiesStatus<UmlStateMachineDomain> {
+        for (idx, e) in self.internal_transition_views.iter().enumerate() {
+            let mut w = e.write();
+            let child = w.show_properties_inner(gdc, q, ui, commands);
+
+            if let Some(add_sibling) = child.1 {
+                let idx = match add_sibling {
+                    UmlStateMachineOrdinalMovement::Up => idx,
+                    UmlStateMachineOrdinalMovement::Down => idx + 1,
+                };
+                let sibling = new_umlstatemachine_internaltransition("trigger", "", "doThing()");
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *self.uuid,
+                    bucket: 0,
+                    position: Some(idx.try_into().unwrap()),
+                    element: UmlStateMachineElementOrVertex::Element(sibling.1.into()),
+                    into_model: true,
+                });
+            }
+
+            if let Some(child) = child.0.non_default() {
+                return child;
+            }
+        }
+
         for (idx, e) in self.region_views.iter().enumerate() {
             let mut w = e.write();
             let child = w.show_properties_inner(gdc, q, ui, commands);
@@ -2818,18 +2988,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             ));
         }
 
-        if ui
-            .labeled_text_edit_multiline("Activities:", &mut self.temporaries.activities_buffer)
-            .changed()
-        {
-            commands.push(InsensitiveCommand::PropertyChange(
-                q.selected_views(),
-                UmlStateMachinePropChange::StateActivitiesChange(Arc::new(
-                    self.temporaries.activities_buffer.clone(),
-                )),
-            ));
-        }
-
         PropertiesStatus::Shown
     }
 
@@ -2856,7 +3014,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         >,
     ) -> EventHandlingStatus {
         let k_status = self
-            .region_views
+            .internal_transition_views
             .iter()
             .flat_map(|v| {
                 let mut w = v.write();
@@ -2868,7 +3026,29 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     None
                 }
             })
-            .next();
+            .next()
+            .or_else(|| {
+                self.region_views
+                    .iter()
+                    .flat_map(|v| {
+                        let mut w = v.write();
+                        let s = w.handle_event(
+                            event,
+                            ehc,
+                            settings,
+                            q,
+                            tool,
+                            element_setup_modal,
+                            commands,
+                        );
+                        if s != EventHandlingStatus::NotHandled {
+                            Some((*w.uuid(), s))
+                        } else {
+                            None
+                        }
+                    })
+                    .next()
+            });
 
         match event {
             InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if k_status.is_some() => {
@@ -2918,8 +3098,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             }
             InputEvent::Click(pos)
                 if self.temporaries.highlight.selected
-                    && let Some(f) = handle_nonfinal_node_button_click(
-                        settings,
+                    && let Some(f) = handle_button_click(
+                        &settings.compositestate_buttons,
                         self.bounds_rect.right_top(),
                         ehc.ui_scale,
                         pos,
@@ -2935,6 +3115,19 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     event_lock,
                     is_spent: Some(false),
                 });
+
+                if let Some(tool) = tool {
+                    tool.add_section(self.model());
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
+                            .modifier_settings
+                            .alternative_tool_mode
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                    {
+                        *element_setup_modal = esm;
+                    }
+                }
+
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) => {
@@ -3098,6 +3291,10 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
     ) {
         macro_rules! recurse {
             () => {
+                self.internal_transition_views.iter().for_each(|t| {
+                    t.write()
+                        .apply_command(command, undo_accumulator, affected_models);
+                });
                 self.region_views.iter().for_each(|s| {
                     s.write()
                         .apply_command(command, undo_accumulator, affected_models)
@@ -3111,8 +3308,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 if h.selected {
                     match set {
                         true => {
-                            self.temporaries.selected_direct_elements =
-                                self.region_views.iter().map(|v| *v.read().uuid).collect();
+                            self.temporaries.selected_direct_elements = self
+                                .internal_transition_views
+                                .iter()
+                                .map(|v| *v.read().uuid)
+                                .chain(self.region_views.iter().map(|v| *v.read().uuid))
+                                .collect();
                         }
                         false => self.temporaries.selected_direct_elements.clear(),
                     }
@@ -3126,9 +3327,10 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
 
                 if h.selected {
                     for k in self
-                        .region_views
+                        .internal_transition_views
                         .iter()
                         .map(|v| *v.read().uuid)
+                        .chain(self.region_views.iter().map(|v| *v.read().uuid))
                         .filter(|k| uuids.contains(k))
                     {
                         match set {
@@ -3303,6 +3505,34 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
+                for element in self
+                    .internal_transition_views
+                    .iter()
+                    .filter(|v| uuids.contains(&v.read().uuid))
+                {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (0, None)
+                    } else if let Some((b, pos)) = self
+                        .model
+                        .read()
+                        .get_element_pos(&element.read().model_uuid())
+                    {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: UmlStateMachineElementView::from(element.clone()).into(),
+                        into_model: false,
+                    });
+                }
+                self.internal_transition_views
+                    .retain(|e| !uuids.contains(&e.read().uuid));
+
                 if self
                     .region_views
                     .iter()
@@ -3363,7 +3593,62 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == 0
+                    if (*bucket == 0
+                        || *bucket == UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET)
+                        && let Ok(UmlStateMachineElementView::InternalTransition(view)) =
+                            element.clone().try_into()
+                    {
+                        let mut vw = view.write();
+                        if let Some(model_pos) = w
+                            .get_element_pos(&vw.model_uuid())
+                            .map(|e| e.1)
+                            .or_else(|| {
+                                if *into_model {
+                                    w.insert_element(*bucket, *position, vw.model()).ok()
+                                } else {
+                                    None
+                                }
+                            })
+                        {
+                            let uuid = *vw.uuid;
+
+                            let mut model_transitives = HashMap::new();
+                            vw.head_count(
+                                &mut HashMap::new(),
+                                &mut HashMap::new(),
+                                &mut model_transitives,
+                            );
+                            affected_models.extend(model_transitives.into_keys());
+
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: uuid,
+                                including_model: *into_model,
+                            });
+                            affected_models.insert(*w.uuid);
+
+                            let view_pos = {
+                                let mut view_pos: PositionNoT = 0;
+                                for e in &self.internal_transition_views {
+                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    else {
+                                        unreachable!()
+                                    };
+                                    if pos < model_pos {
+                                        view_pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                view_pos
+                            };
+                            self.internal_transition_views
+                                .insert(view_pos, view.clone());
+                        }
+                    }
+
+                    if (*bucket == 0 || *bucket == UmlStateMachineCompositeState::REGIONS_BUCKET)
                         && let Ok(UmlStateMachineElementView::CompositeStateRegion(view)) =
                             element.clone().try_into()
                     {
@@ -3486,8 +3771,37 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
+
                     if *bucket == 0
+                        || *bucket == UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET
+                    {
+                        self.internal_transition_views.retain(|e| {
+                            let r = e.read();
+                            if *r.uuid == *element
+                                && let Some((b, pos)) =
+                                    self.model.write().remove_element(&r.model_uuid())
+                            {
+                                undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                    target: *self.uuid,
+                                    bucket: b,
+                                    position: Some(pos),
+                                    element: UmlStateMachineElementOrVertex::Element(
+                                        e.clone().into(),
+                                    ),
+                                    into_model: true,
+                                });
+                                if *including_model {
+                                    affected_models.insert(model_uuid);
+                                }
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+
+                    if (*bucket == 0 || *bucket == UmlStateMachineCompositeState::REGIONS_BUCKET)
                         && let Some(view) = self
                             .region_views
                             .iter()
@@ -3495,6 +3809,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             .cloned()
                     {
                         let model_uuid = *view.read().model_uuid();
+                        let mut w = self.model.write();
 
                         if let Some((_b, pos)) = w.remove_element(&model_uuid) {
                             undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -3506,7 +3821,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             });
 
                             if *including_model {
-                                affected_models.insert(*w.uuid);
+                                affected_models.insert(model_uuid);
                             }
 
                             let mut delta = egui::Vec2::ZERO;
@@ -3618,15 +3933,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             ));
                             model.name = name.clone();
                         }
-                        UmlStateMachinePropChange::StateActivitiesChange(activities) => {
-                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                std::iter::once(*self.uuid).collect(),
-                                UmlStateMachinePropChange::StateActivitiesChange(
-                                    model.activities.clone(),
-                                ),
-                            ));
-                            model.activities = activities.clone();
-                        }
                         _ => {}
                     }
                 }
@@ -3645,7 +3951,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         }
         self.temporaries.stereotype_buffer = (*r.stereotype).clone();
         self.temporaries.name_buffer = (*r.name).clone();
-        self.temporaries.activities_buffer = (*r.activities).clone();
     }
 
     fn head_count(
@@ -3656,6 +3961,16 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
     ) {
         flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+
+        self.internal_transition_views.iter().for_each(|s| {
+            let mut w = s.write();
+            w.head_count(
+                flattened_views,
+                flattened_views_status,
+                flattened_represented_models,
+            );
+            flattened_views.insert(*w.uuid(), (s.clone().into(), *self.uuid));
+        });
 
         self.region_views.iter().for_each(|s| {
             let mut w = s.write();
@@ -3679,6 +3994,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
+            self.internal_transition_views
+                .iter()
+                .for_each(|v| v.read().deep_copy_walk(requested, uuid_present, tlc, c, m));
             self.region_views
                 .iter()
                 .for_each(|v| v.read().deep_copy_walk(requested, uuid_present, tlc, c, m));
@@ -3710,6 +4028,18 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         };
 
         let mut inner = HashMap::new();
+        let new_internal_transitions = self
+            .internal_transition_views
+            .iter()
+            .map(|v| {
+                let v = v.read();
+                v.deep_copy_clone(uuid_present, &mut inner, c, m);
+                let Some(UmlStateMachineElementView::InternalTransition(s)) = c.get(&v.uuid) else {
+                    unreachable!()
+                };
+                s.clone()
+            })
+            .collect();
         let new_sections = self
             .region_views
             .iter()
@@ -3727,6 +4057,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model,
+            internal_transition_views: new_internal_transitions,
             region_views: new_sections,
 
             bounds_rect: self.bounds_rect,
@@ -3742,11 +4073,20 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         c: &HashMap<ViewUuid, <UmlStateMachineDomain as Domain>::CommonElementViewT>,
         m: &HashMap<ModelUuid, <UmlStateMachineDomain as Domain>::CommonElementT>,
     ) {
+        self.internal_transition_views
+            .iter_mut()
+            .for_each(|v| v.write().deep_copy_relink(c, m));
         self.region_views
             .iter_mut()
             .for_each(|v| v.write().deep_copy_relink(c, m));
 
         let mut w = self.model.write();
+        for e in w.internal_transitions.iter_mut() {
+            let uuid = *e.read().uuid;
+            if let Some(UmlStateMachineElement::InternalTransition(new_model)) = m.get(&uuid) {
+                *e = new_model.clone();
+            }
+        }
         for e in w.regions.iter_mut() {
             let uuid = *e.read().uuid;
             if let Some(UmlStateMachineElement::CompositeStateRegion(new_model)) = m.get(&uuid) {
@@ -4517,13 +4857,13 @@ fn nonfinal_node_button_rect(
         );
     egui::Rect::from_center_size(b_center, egui::Vec2::splat(2.0 * BUTTON_RADIUS / ui_scale))
 }
-fn draw_nonfinal_node_button_rects(
-    settings: &<UmlStateMachineDomain as Domain>::SettingsT,
+fn draw_button_rects(
+    buttons: &[(usize, usize, &'static str, &NonFinalStateButtonF)],
     canvas: &mut dyn NHCanvas,
     origin: egui::Pos2,
     ui_scale: f32,
 ) {
-    for (row_idx, col_idx, l, _f) in settings.nonfinal_buttons.iter() {
+    for (row_idx, col_idx, l, _f) in buttons {
         let r = nonfinal_node_button_rect(origin, ui_scale, *row_idx, *col_idx);
         canvas.draw_rectangle(
             r,
@@ -4541,13 +4881,13 @@ fn draw_nonfinal_node_button_rects(
         );
     }
 }
-fn handle_nonfinal_node_button_click(
-    settings: &<UmlStateMachineDomain as Domain>::SettingsT,
+fn handle_button_click<'a>(
+    buttons: &'a [(usize, usize, &'static str, &'static NonFinalStateButtonF)],
     origin: egui::Pos2,
     ui_scale: f32,
     click_pos: egui::Pos2,
-) -> Option<&NonFinalStateButtonF> {
-    for (row_idx, col_idx, _l, f) in settings.nonfinal_buttons.iter() {
+) -> Option<&'a NonFinalStateButtonF> {
+    for (row_idx, col_idx, _l, f) in buttons {
         let r = nonfinal_node_button_rect(origin, ui_scale, *row_idx, *col_idx);
         if r.contains(click_pos) {
             return Some(f);
@@ -4559,38 +4899,39 @@ fn handle_nonfinal_node_button_click(
 fn new_umlstatemachine_simplestate(
     name: &str,
     stereotype: &str,
-    activities: &str,
+    internal_transitions: Vec<(
+        ERef<UmlStateMachineInternalTransition>,
+        ERef<UmlStateMachineInternalTransitionView>,
+    )>,
     position: egui::Pos2,
     background_color: MGlobalColor,
 ) -> (
     ERef<UmlStateMachineSimpleState>,
     ERef<UmlStateMachineSimpleStateView>,
 ) {
+    let (it_models, it_views) = internal_transitions.into_iter().collect();
     let model = ERef::new(UmlStateMachineSimpleState::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         name.to_owned(),
-        activities.to_owned(),
+        it_models,
     ));
-    let view = new_umlstatemachine_simplestate_view(model.clone(), position, background_color);
+    let view =
+        new_umlstatemachine_simplestate_view(model.clone(), it_views, position, background_color);
 
     (model, view)
 }
 fn new_umlstatemachine_simplestate_view(
     model: ERef<UmlStateMachineSimpleState>,
+    internal_transition_views: Vec<ERef<UmlStateMachineInternalTransitionView>>,
     position: egui::Pos2,
     background_color: MGlobalColor,
 ) -> ERef<UmlStateMachineSimpleStateView> {
-    let m = model.read();
     ERef::new(UmlStateMachineSimpleStateView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
-        stereotype_in_guillemets: String::new(),
-        stereotype_buffer: (*m.stereotype).clone(),
-        name_buffer: (*m.name).clone(),
-        activities_buffer: (*m.name).clone(),
-        dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        internal_transition_views,
+        temporaries: Default::default(),
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color,
@@ -4603,23 +4944,26 @@ pub struct UmlStateMachineSimpleStateView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     pub model: ERef<UmlStateMachineSimpleState>,
+    #[nh_context_serde(entity)]
+    internal_transition_views: Vec<ERef<UmlStateMachineInternalTransitionView>>,
 
     #[nh_context_serde(skip_and_default)]
-    stereotype_in_guillemets: String,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    activities_buffer: String,
+    temporaries: UmlStateMachineSimpleStateViewTemporaries,
 
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+}
+
+#[derive(Clone, Default)]
+struct UmlStateMachineSimpleStateViewTemporaries {
+    stereotype_in_guillemets: String,
+    stereotype_buffer: String,
+    name_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
+    selected_direct_elements: HashSet<ViewUuid>,
 }
 
 impl Entity for UmlStateMachineSimpleStateView {
@@ -4667,42 +5011,56 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
             >,
         >,
     ) -> PropertiesStatus<UmlStateMachineDomain> {
-        if !self.highlight.selected {
+        for (idx, e) in self.internal_transition_views.iter().enumerate() {
+            let mut w = e.write();
+            let child = w.show_properties_inner(gdc, q, ui, commands);
+
+            if let Some(add_sibling) = child.1 {
+                let idx = match add_sibling {
+                    UmlStateMachineOrdinalMovement::Up => idx,
+                    UmlStateMachineOrdinalMovement::Down => idx + 1,
+                };
+                let sibling = new_umlstatemachine_internaltransition("trigger", "", "doThing()");
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *self.uuid,
+                    bucket: 0,
+                    position: Some(idx.try_into().unwrap()),
+                    element: UmlStateMachineElementOrVertex::Element(sibling.1.into()),
+                    into_model: true,
+                });
+            }
+
+            if let Some(child) = child.0.non_default() {
+                return child;
+            }
+        }
+
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_singleline("Stereotype:", &mut self.stereotype_buffer)
+            .labeled_text_edit_singleline("Stereotype:", &mut self.temporaries.stereotype_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlStateMachinePropChange::StereotypeChange(Arc::new(
-                    self.stereotype_buffer.clone(),
+                    self.temporaries.stereotype_buffer.clone(),
                 )),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline("Name:", &mut self.temporaries.name_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ));
-        }
-
-        if ui
-            .labeled_text_edit_multiline("Activities:", &mut self.activities_buffer)
-            .changed()
-        {
-            commands.push(InsensitiveCommand::PropertyChange(
-                q.selected_views(),
-                UmlStateMachinePropChange::StateActivitiesChange(Arc::new(
-                    self.activities_buffer.clone(),
+                UmlStateMachinePropChange::NameChange(Arc::new(
+                    self.temporaries.name_buffer.clone(),
                 )),
             ));
         }
@@ -4743,41 +5101,36 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
 
     fn draw_in(
         &mut self,
-        _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
-        context: &GlobalDrawingContext,
+        q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
+        gdc: &GlobalDrawingContext,
         settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlStateMachineTool)>,
     ) -> TargettingStatus {
-        let background_color = context
+        let background_color = gdc
             .global_colors
             .get(&self.background_color)
             .unwrap_or(egui::Color32::WHITE);
         self.bounds_rect = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.name_buffer,
+            &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
 
         let stereotype_bottom = self.bounds_rect.center_top();
         let activities_top = self.bounds_rect.center_bottom();
 
-        if !self.stereotype_in_guillemets.is_empty() {
+        if !self.temporaries.stereotype_in_guillemets.is_empty() {
             self.bounds_rect = self.bounds_rect.union(canvas.measure_text(
                 stereotype_bottom,
                 egui::Align2::CENTER_BOTTOM,
-                &self.stereotype_in_guillemets,
+                &self.temporaries.stereotype_in_guillemets,
                 canvas::CLASS_TOP_FONT_SIZE,
             ));
         }
-        if !self.activities_buffer.is_empty() {
-            self.bounds_rect = self.bounds_rect.union(canvas.measure_text(
-                activities_top,
-                egui::Align2::CENTER_TOP,
-                &self.activities_buffer,
-                canvas::CLASS_TOP_FONT_SIZE,
-            ));
+        for e in &self.internal_transition_views {
+            self.bounds_rect = self.bounds_rect.union(e.read().bounds_rect);
         }
 
         self.bounds_rect = self.bounds_rect.expand(10.0);
@@ -4786,14 +5139,14 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
             egui::CornerRadius::same(10),
             background_color,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
 
-        if !self.stereotype_in_guillemets.is_empty() {
+        if !self.temporaries.stereotype_in_guillemets.is_empty() {
             canvas.draw_text(
                 stereotype_bottom,
                 egui::Align2::CENTER_BOTTOM,
-                &self.stereotype_in_guillemets,
+                &self.temporaries.stereotype_in_guillemets,
                 canvas::CLASS_TOP_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -4801,11 +5154,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
         canvas.draw_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.name_buffer,
+            &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
-        if !self.activities_buffer.is_empty() {
+
+        if !self.internal_transition_views.is_empty() {
             canvas.draw_line(
                 [
                     (self.bounds_rect.left(), activities_top.y).into(),
@@ -4814,19 +5168,28 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
-            canvas.draw_text(
-                activities_top,
+        }
+        let mut top_mut = activities_top;
+        for e in &self.internal_transition_views {
+            let (r, _t) = e.write().draw_inner(
+                top_mut,
                 egui::Align2::CENTER_TOP,
-                &self.activities_buffer,
-                canvas::CLASS_TOP_FONT_SIZE,
-                egui::Color32::BLACK,
+                q,
+                gdc,
+                settings,
+                canvas,
+                tool,
             );
+            top_mut = r.center_bottom();
         }
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            draw_nonfinal_node_button_rects(
-                settings,
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
+            draw_button_rects(
+                &settings.simplestate_buttons,
                 canvas,
                 self.bounds_rect.right_top(),
                 ui_scale,
@@ -4863,7 +5226,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
         settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlStateMachineTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlStateMachineOrdinalMovement,
@@ -4872,26 +5235,44 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
             >,
         >,
     ) -> EventHandlingStatus {
+        let k_status = self
+            .internal_transition_views
+            .iter()
+            .flat_map(|v| {
+                let mut w = v.write();
+                let s =
+                    w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+                if s != EventHandlingStatus::NotHandled {
+                    Some((*w.uuid(), s))
+                } else {
+                    None
+                }
+            })
+            .next();
+
         match event {
+            InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if k_status.is_some() => {
+                EventHandlingStatus::HandledByContainer
+            }
             InputEvent::MouseDown(pos) => {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
-                    && let Some(f) = handle_nonfinal_node_button_click(
-                        settings,
+                if self.temporaries.highlight.selected
+                    && let Some(f) = handle_button_click(
+                        &settings.simplestate_buttons,
                         self.bounds_rect.right_top(),
                         ehc.ui_scale,
                         pos,
@@ -4907,29 +5288,76 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                     event_lock,
                     is_spent: Some(false),
                 });
-                EventHandlingStatus::HandledByContainer
-            }
-            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
+
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                } else {
-                    if ehc
-                        .modifier_settings
-                        .hold_selection
-                        .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
+                            .modifier_settings
+                            .alternative_tool_mode
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                     {
-                        self.highlight.selected = true;
-                    } else {
-                        self.highlight.selected = !self.highlight.selected;
+                        *element_setup_modal = esm;
                     }
                 }
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Click(pos) => {
+                if !self.bounds_rect.contains(pos) {
+                    return k_status
+                        .map(|e| e.1)
+                        .unwrap_or(EventHandlingStatus::NotHandled);
+                }
+
+                if let Some(tool) = tool {
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
+                            .modifier_settings
+                            .alternative_tool_mode
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                    {
+                        *element_setup_modal = esm;
+                    }
+
+                    tool.add_position(*event.mouse_position());
+                    tool.add_section(self.model.clone().into());
+
+                    EventHandlingStatus::HandledByContainer
+                } else if let Some((k, status)) = k_status {
+                    if status == EventHandlingStatus::HandledByElement {
+                        if ehc
+                            .modifier_settings
+                            .hold_selection
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                        {
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ));
+                        } else {
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ));
+                        }
+                    }
+                    EventHandlingStatus::HandledByContainer
+                } else {
+                    EventHandlingStatus::HandledByElement
+                }
+            }
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -4941,7 +5369,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                 };
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -4975,18 +5403,59 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
         >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
+        macro_rules! recurse {
+            () => {
+                self.internal_transition_views.iter().for_each(|t| {
+                    t.write()
+                        .apply_command(command, undo_accumulator, affected_models);
+                });
+            };
+        }
+
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                if h.selected {
+                    match set {
+                        true => {
+                            self.temporaries.selected_direct_elements = self
+                                .internal_transition_views
+                                .iter()
+                                .map(|v| *v.read().uuid)
+                                .collect();
+                        }
+                        false => self.temporaries.selected_direct_elements.clear(),
+                    }
+                }
+                recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
+
+                if h.selected {
+                    for k in self
+                        .internal_transition_views
+                        .iter()
+                        .map(|v| *v.read().uuid)
+                        .filter(|k| uuids.contains(k))
+                    {
+                        match set {
+                            true => self.temporaries.selected_direct_elements.insert(k),
+                            false => self.temporaries.selected_direct_elements.remove(&k),
+                        };
+                    }
+                }
+
+                recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
+
+                recurse!();
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -4997,12 +5466,146 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeElementsBy(..)
-            | InsensitiveCommand::ResizeElementTo(..)
-            | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddDependency { .. }
-            | InsensitiveCommand::RemoveDependency { .. }
-            | InsensitiveCommand::ArrangeSpecificElements(..)
+            InsensitiveCommand::ResizeElementsBy(..) | InsensitiveCommand::ResizeElementTo(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
+                for element in self
+                    .internal_transition_views
+                    .iter()
+                    .filter(|v| uuids.contains(&v.read().uuid))
+                {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (0, None)
+                    } else if let Some((b, pos)) = self
+                        .model
+                        .read()
+                        .get_element_pos(&element.read().model_uuid())
+                    {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: UmlStateMachineElementView::from(element.clone()).into(),
+                        into_model: false,
+                    });
+                }
+                self.internal_transition_views
+                    .retain(|e| !uuids.contains(&e.read().uuid));
+
+                recurse!();
+            }
+            InsensitiveCommand::AddDependency {
+                target,
+                bucket,
+                position,
+                element,
+                into_model,
+            } => {
+                if *target == *self.uuid {
+                    let mut w = self.model.write();
+                    if (*bucket == 0
+                        || *bucket == UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET)
+                        && let Ok(UmlStateMachineElementView::InternalTransition(view)) =
+                            element.clone().try_into()
+                    {
+                        let mut vw = view.write();
+                        if let Some(model_pos) = w
+                            .get_element_pos(&vw.model_uuid())
+                            .map(|e| e.1)
+                            .or_else(|| {
+                                if *into_model {
+                                    w.insert_element(*bucket, *position, vw.model()).ok()
+                                } else {
+                                    None
+                                }
+                            })
+                        {
+                            let uuid = *vw.uuid;
+
+                            let mut model_transitives = HashMap::new();
+                            vw.head_count(
+                                &mut HashMap::new(),
+                                &mut HashMap::new(),
+                                &mut model_transitives,
+                            );
+                            affected_models.extend(model_transitives.into_keys());
+
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: uuid,
+                                including_model: *into_model,
+                            });
+                            affected_models.insert(*w.uuid);
+
+                            let view_pos = {
+                                let mut view_pos: PositionNoT = 0;
+                                for e in &self.internal_transition_views {
+                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    else {
+                                        unreachable!()
+                                    };
+                                    if pos < model_pos {
+                                        view_pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                view_pos
+                            };
+                            self.internal_transition_views
+                                .insert(view_pos, view.clone());
+                        }
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::RemoveDependency {
+                target,
+                bucket,
+                element,
+                including_model,
+            } => {
+                if *target == *self.uuid {
+                    let model_uuid = *self.model_uuid();
+
+                    if *bucket == 0
+                        || *bucket == UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET
+                    {
+                        self.internal_transition_views.retain(|e| {
+                            let r = e.read();
+                            if *r.uuid == *element
+                                && let Some((b, pos)) =
+                                    self.model.write().remove_element(&r.model_uuid())
+                            {
+                                undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                    target: *self.uuid,
+                                    bucket: b,
+                                    position: Some(pos),
+                                    element: UmlStateMachineElementOrVertex::Element(
+                                        e.clone().into(),
+                                    ),
+                                    into_model: true,
+                                });
+                                if *including_model {
+                                    affected_models.insert(model_uuid);
+                                }
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
@@ -5025,15 +5628,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                             ));
                             model.name = name.clone();
                         }
-                        UmlStateMachinePropChange::StateActivitiesChange(entry) => {
-                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                std::iter::once(*self.uuid).collect(),
-                                UmlStateMachinePropChange::StateActivitiesChange(
-                                    model.activities.clone(),
-                                ),
-                            ));
-                            model.activities = entry.clone();
-                        }
                         UmlStateMachinePropChange::ColorChange(ColorChangeData {
                             slot: 0,
                             color,
@@ -5050,6 +5644,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                         _ => {}
                     }
                 }
+
+                recurse!();
             }
             InsensitiveCommand::Macro(..) => unreachable!(),
         }
@@ -5057,26 +5653,51 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.stereotype_in_guillemets = if model.stereotype.is_empty() {
+        self.temporaries.stereotype_in_guillemets = if model.stereotype.is_empty() {
             String::new()
         } else {
             format!("«{}»", model.stereotype)
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
-        self.activities_buffer = (*model.activities).clone();
+        self.temporaries.stereotype_buffer = (*model.stereotype).clone();
+        self.temporaries.name_buffer = (*model.name).clone();
     }
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, (UmlStateMachineElementView, ViewUuid)>,
+        flattened_views: &mut HashMap<ViewUuid, (UmlStateMachineElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+
+        self.internal_transition_views.iter().for_each(|s| {
+            let mut w = s.write();
+            w.head_count(
+                flattened_views,
+                flattened_views_status,
+                flattened_represented_models,
+            );
+            flattened_views.insert(*w.uuid(), (s.clone().into(), *self.uuid));
+        });
     }
 
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlStateMachineDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlStateMachineDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlStateMachineDomain as Domain>::CommonElementT>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid)) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            self.internal_transition_views
+                .iter()
+                .for_each(|v| v.read().deep_copy_walk(requested, uuid_present, tlc, c, m));
+        }
+    }
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
@@ -5101,18 +5722,506 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
             modelish
         };
 
+        let mut inner = HashMap::new();
+        let new_internal_transitions = self
+            .internal_transition_views
+            .iter()
+            .map(|v| {
+                let v = v.read();
+                v.deep_copy_clone(uuid_present, &mut inner, c, m);
+                let Some(UmlStateMachineElementView::InternalTransition(s)) = c.get(&v.uuid) else {
+                    unreachable!()
+                };
+                s.clone()
+            })
+            .collect();
+
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
-            stereotype_buffer: self.stereotype_buffer.clone(),
-            name_buffer: self.name_buffer.clone(),
-            activities_buffer: self.activities_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            internal_transition_views: new_internal_transitions,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
+    }
+
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, <UmlStateMachineDomain as Domain>::CommonElementViewT>,
+        m: &HashMap<ModelUuid, <UmlStateMachineDomain as Domain>::CommonElementT>,
+    ) {
+        self.internal_transition_views
+            .iter_mut()
+            .for_each(|v| v.write().deep_copy_relink(c, m));
+
+        let mut w = self.model.write();
+        for e in w.internal_transitions.iter_mut() {
+            let uuid = *e.read().uuid;
+            if let Some(UmlStateMachineElement::InternalTransition(new_model)) = m.get(&uuid) {
+                *e = new_model.clone();
+            }
+        }
+    }
+}
+
+fn new_umlstatemachine_internaltransition(
+    trigger: &str,
+    guard: &str,
+    behavior: &str,
+) -> (
+    ERef<UmlStateMachineInternalTransition>,
+    ERef<UmlStateMachineInternalTransitionView>,
+) {
+    let model = ERef::new(UmlStateMachineInternalTransition::new(
+        ModelUuid::now_v7(),
+        trigger.to_owned(),
+        guard.to_owned(),
+        behavior.to_owned(),
+    ));
+    let view = new_umlstatemachine_internaltransition_view(model.clone());
+
+    (model, view)
+}
+fn new_umlstatemachine_internaltransition_view(
+    model: ERef<UmlStateMachineInternalTransition>,
+) -> ERef<UmlStateMachineInternalTransitionView> {
+    ERef::new(UmlStateMachineInternalTransitionView {
+        uuid: ViewUuid::now_v7().into(),
+        model,
+
+        display_text: String::new(),
+        trigger_buffer: String::new(),
+        guard_buffer: String::new(),
+        behavior_buffer: String::new(),
+
+        highlight: canvas::Highlight::NONE,
+        bounds_rect: egui::Rect::ZERO,
+    })
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlStateMachineInternalTransitionView {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    pub model: ERef<UmlStateMachineInternalTransition>,
+
+    #[nh_context_serde(skip_and_default)]
+    display_text: String,
+    #[nh_context_serde(skip_and_default)]
+    trigger_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    guard_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    behavior_buffer: String,
+
+    #[nh_context_serde(skip_and_default)]
+    highlight: canvas::Highlight,
+    bounds_rect: egui::Rect,
+}
+
+impl UmlStateMachineInternalTransitionView {
+    fn show_properties_inner(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                <UmlStateMachineDomain as Domain>::OrdinalMovementT,
+                <UmlStateMachineDomain as Domain>::AddCommandElementT,
+                <UmlStateMachineDomain as Domain>::PropChangeT,
+            >,
+        >,
+    ) -> (
+        PropertiesStatus<UmlStateMachineDomain>,
+        Option<UmlStateMachineOrdinalMovement>,
+    ) {
+        let mut add_sibling = None::<UmlStateMachineOrdinalMovement>;
+
+        if !self.highlight.selected {
+            return (PropertiesStatus::NotShown, add_sibling);
+        }
+
+        if ui
+            .labeled_text_edit_singleline("Trigger:", &mut self.trigger_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlStateMachinePropChange::NameChange(Arc::new(self.trigger_buffer.clone())),
+            ));
+        }
+
+        let mut guard_label = egui::RichText::new("Guard:");
+        if matches!(self.trigger_buffer.as_str(), "entry" | "do" | "exit") {
+            guard_label = guard_label.strikethrough();
+        }
+        if ui
+            .labeled_text_edit_singleline(guard_label, &mut self.guard_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlStateMachinePropChange::TransitionGuardChange(Arc::new(
+                    self.guard_buffer.clone(),
+                )),
+            ));
+        }
+
+        if ui
+            .labeled_text_edit_singleline("Behavior:", &mut self.behavior_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlStateMachinePropChange::TransitionBehaviorChange(Arc::new(
+                    self.behavior_buffer.clone(),
+                )),
+            ));
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(
+                    q.selected_views(),
+                    UmlStateMachineOrdinalMovement::Up,
+                ));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(
+                    q.selected_views(),
+                    UmlStateMachineOrdinalMovement::Down,
+                ));
+            }
+        });
+
+        ui.horizontal(|ui| {
+            if ui.button("Add sibling up").clicked() {
+                add_sibling = Some(UmlStateMachineOrdinalMovement::Up);
+            }
+            if ui.button("Add sibling down").clicked() {
+                add_sibling = Some(UmlStateMachineOrdinalMovement::Down);
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(
+                    std::iter::once(*self.uuid).collect(),
+                    UmlStateMachineOrdinalMovement::Up,
+                ));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(
+                    std::iter::once(*self.uuid).collect(),
+                    UmlStateMachineOrdinalMovement::Down,
+                ));
+            }
+        });
+
+        (PropertiesStatus::Shown, add_sibling)
+    }
+
+    fn draw_inner(
+        &mut self,
+        at: egui::Pos2,
+        align: egui::Align2,
+        _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
+        _gdc: &GlobalDrawingContext,
+        _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveUmlStateMachineTool)>,
+    ) -> (egui::Rect, TargettingStatus) {
+        self.bounds_rect =
+            canvas.measure_text(at, align, &self.display_text, canvas::CLASS_ITEM_FONT_SIZE);
+        canvas.draw_rectangle(
+            self.bounds_rect,
+            egui::CornerRadius::ZERO,
+            egui::Color32::TRANSPARENT,
+            canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+            self.highlight,
+        );
+        canvas.draw_text(
+            at,
+            align,
+            &self.display_text,
+            canvas::CLASS_ITEM_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+        if canvas.ui_scale().is_some()
+            && let Some((pos, tool)) = tool
+            && self.bounds_rect.contains(*pos)
+        {
+            canvas.draw_rectangle(
+                self.bounds_rect,
+                egui::CornerRadius::ZERO,
+                tool.targetting_for_section(Some(self.model.clone().into())),
+                canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                canvas::Highlight::NONE,
+            );
+
+            (self.bounds_rect, TargettingStatus::Drawn)
+        } else {
+            (self.bounds_rect, TargettingStatus::NotDrawn)
+        }
+    }
+}
+
+impl Entity for UmlStateMachineInternalTransitionView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl View for UmlStateMachineInternalTransitionView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl ElementController<UmlStateMachineElement> for UmlStateMachineInternalTransitionView {
+    fn model(&self) -> UmlStateMachineElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: self.bounds_rect,
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.bounds_rect.center()
+    }
+}
+
+impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTransitionView {
+    fn show_properties(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<
+            InsensitiveCommand<
+                UmlStateMachineOrdinalMovement,
+                <UmlStateMachineDomain as Domain>::AddCommandElementT,
+                <UmlStateMachineDomain as Domain>::PropChangeT,
+            >,
+        >,
+    ) -> PropertiesStatus<UmlStateMachineDomain> {
+        unreachable!()
+    }
+
+    fn draw_in(
+        &mut self,
+        q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
+        context: &GlobalDrawingContext,
+        settings: &<UmlStateMachineDomain as Domain>::SettingsT,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &<UmlStateMachineDomain as Domain>::ToolT)>,
+    ) -> TargettingStatus {
+        self.draw_inner(
+            self.bounds_rect.center_top(),
+            egui::Align2::CENTER_TOP,
+            q,
+            context,
+            settings,
+            canvas,
+            tool,
+        )
+        .1
+    }
+
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
+        _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
+        _tool: &mut Option<<UmlStateMachineDomain as Domain>::ToolT>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _commands: &mut Vec<
+            InsensitiveCommand<
+                UmlStateMachineOrdinalMovement,
+                <UmlStateMachineDomain as Domain>::AddCommandElementT,
+                <UmlStateMachineDomain as Domain>::PropChangeT,
+            >,
+        >,
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
+                if ehc
+                    .modifier_settings
+                    .hold_selection
+                    .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                {
+                    self.highlight.selected = true;
+                } else {
+                    self.highlight.selected = !self.highlight.selected;
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            _ => EventHandlingStatus::NotHandled,
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<
+            UmlStateMachineOrdinalMovement,
+            <UmlStateMachineDomain as Domain>::AddCommandElementT,
+            <UmlStateMachineDomain as Domain>::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<
+                UmlStateMachineOrdinalMovement,
+                <UmlStateMachineDomain as Domain>::AddCommandElementT,
+                <UmlStateMachineDomain as Domain>::PropChangeT,
+            >,
+        >,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.highlight = self.highlight.combine(*set, *h);
+                }
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MovePositional(..)
+            | InsensitiveCommand::MovePositionalAll(..)
+            | InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, property) => {
+                if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
+                    let mut model = self.model.write();
+                    match property {
+                        UmlStateMachinePropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlStateMachinePropChange::NameChange(model.trigger.clone()),
+                            ));
+                            model.trigger = name.clone();
+                        }
+                        UmlStateMachinePropChange::TransitionGuardChange(guard) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlStateMachinePropChange::TransitionGuardChange(
+                                    model.guard.clone(),
+                                ),
+                            ));
+                            model.guard = guard.clone();
+                        }
+                        UmlStateMachinePropChange::TransitionBehaviorChange(behavior) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlStateMachinePropChange::TransitionBehaviorChange(
+                                    model.behavior.clone(),
+                                ),
+                            ));
+                            model.behavior = behavior.clone();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            InsensitiveCommand::Macro(..) => unreachable!(),
+        }
+    }
+
+    fn refresh_buffers(&mut self) {
+        let m = self.model.read();
+
+        self.display_text = {
+            let mut t = (*m.trigger).clone();
+
+            if !m.guard.is_empty() && !matches!(m.trigger.as_str(), "entry" | "do" | "exit") {
+                t.push_str(" [");
+                t.push_str(&m.guard);
+                t.push_str("]");
+            }
+
+            t.push_str(" / ");
+            t.push_str(&m.behavior);
+
+            t
+        };
+
+        self.trigger_buffer = (*m.trigger).clone();
+        self.guard_buffer = (*m.guard).clone();
+        self.behavior_buffer = (*m.behavior).clone();
+    }
+    fn head_count(
+        &mut self,
+        _flattened_views: &mut HashMap<
+            ViewUuid,
+            (
+                <UmlStateMachineDomain as Domain>::CommonElementViewT,
+                ViewUuid,
+            ),
+        >,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid, self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlStateMachineDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlStateMachineDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlStateMachineDomain as Domain>::CommonElementT>,
+    ) {
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let modelish =
+            if let Some(UmlStateMachineElement::InternalTransition(m)) = m.get(&old_model.uuid) {
+                m.clone()
+            } else {
+                let modelish = old_model.clone_with(model_uuid);
+                m.insert(*old_model.uuid, modelish.clone().into());
+                modelish
+            };
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model: modelish,
+
+            display_text: self.display_text.clone(),
+            trigger_buffer: self.trigger_buffer.clone(),
+            guard_buffer: self.guard_buffer.clone(),
+            behavior_buffer: self.behavior_buffer.clone(),
+
+            highlight: self.highlight,
+            bounds_rect: self.bounds_rect,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -5258,7 +6367,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInitialPseu
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            draw_nonfinal_node_button_rects(settings, canvas, self.buttons_origin(), ui_scale);
+            draw_button_rects(
+                &settings.nonfinal_buttons,
+                canvas,
+                self.buttons_origin(),
+                ui_scale,
+            );
         }
 
         if canvas.ui_scale().is_some()
@@ -5313,8 +6427,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInitialPseu
             }
             InputEvent::Click(pos)
                 if self.highlight.selected
-                    && let Some(f) = handle_nonfinal_node_button_click(
-                        settings,
+                    && let Some(f) = handle_button_click(
+                        &settings.nonfinal_buttons,
                         self.buttons_origin(),
                         ehc.ui_scale,
                         pos,
