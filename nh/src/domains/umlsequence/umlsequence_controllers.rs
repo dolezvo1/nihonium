@@ -1,6 +1,7 @@
 use super::umlsequence_models::{
-    UmlSequenceCombinedFragment, UmlSequenceComment, UmlSequenceCommentLink, UmlSequenceDiagram,
-    UmlSequenceElement, UmlSequenceHorizontalElement, UmlSequenceLifeline, UmlSequenceMessage,
+    UmlSequenceCombinedFragment, UmlSequenceDiagram, UmlSequenceElement,
+    UmlSequenceHorizontalElement, UmlSequenceLifeline, UmlSequenceMessage, UmlSequenceNote,
+    UmlSequenceNoteLink,
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
@@ -68,7 +69,7 @@ impl Into<UmlSequenceElement> for UmlSequenceViewTargettingSection {
     }
 }
 
-type CommentLinkViewT = MulticonnectionView<UmlSequenceDomain, UmlSequenceCommentLinkAdapter>;
+type NoteLinkViewT = MulticonnectionView<UmlSequenceDomain, UmlSequenceNoteLinkAdapter>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum UmlSequenceOrdinalMovement {
@@ -110,7 +111,7 @@ pub enum UmlSequencePropChange {
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    CommentAlignChange(Option<egui::Align>, Option<egui::Align>),
+    NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
 impl Debug for UmlSequencePropChange {
@@ -215,8 +216,8 @@ pub enum UmlSequenceElementView {
     Message(ERef<UmlSequenceMessageView>),
     Ref(ERef<UmlSequenceRefView>),
     DurationConstraint(ERef<UmlSequenceDurationConstraintView>),
-    Comment(ERef<UmlSequenceCommentView>),
-    CommentLink(ERef<CommentLinkViewT>),
+    Note(ERef<UmlSequenceNoteView>),
+    NoteLink(ERef<NoteLinkViewT>),
 }
 
 impl UmlSequenceElementView {
@@ -779,11 +780,11 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 )
                 .into()
             }
-            UmlSequenceElement::Comment(inner) => {
-                new_umlsequence_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
+            UmlSequenceElement::Note(inner) => {
+                new_umlsequence_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
                     .into()
             }
-            UmlSequenceElement::CommentLink(_inner) => todo!(),
+            UmlSequenceElement::NoteLink(_inner) => todo!(),
         };
 
         Ok(v)
@@ -835,16 +836,16 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 };
                 Arc::new(s)
             }
-            UmlSequenceElement::Comment(inner) => {
+            UmlSequenceElement::Note(inner) => {
                 let r = inner.read();
                 let s = if r.text.is_empty() {
-                    "Comment".to_owned()
+                    "Note".to_owned()
                 } else {
-                    format!("Comment ({})", LabelProvider::filter_and_elipsis(&r.text))
+                    format!("Note ({})", LabelProvider::filter_and_elipsis(&r.text))
                 };
                 Arc::new(s)
             }
-            UmlSequenceElement::CommentLink(_inner) => Arc::new("Comment Link".to_string()),
+            UmlSequenceElement::NoteLink(_inner) => Arc::new("Note Link".to_string()),
         }
     }
 
@@ -1323,7 +1324,7 @@ impl DiagramSettings for UmlSequenceSettings {
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
                         }
-                        UmlSequenceToolStage::Comment { text, align } => {
+                        UmlSequenceToolStage::Note { text, align } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
@@ -1623,17 +1624,17 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     None,
                 ),
                 (
-                    UmlSequenceToolStage::Comment {
-                        text: "a comment".to_owned(),
+                    UmlSequenceToolStage::Note {
+                        text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
                     },
-                    "Comment",
+                    "Note",
                     Some(egui::KeyboardShortcut::new(
                         egui::Modifiers::COMMAND,
                         egui::Key::Num9,
                     )),
                 ),
-                //(UmlSequenceToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+                //(UmlSequenceToolStage::NoteLinkStart, "Note Link", notelink.1.into()),
             ],
         ),
     ]
@@ -1763,11 +1764,12 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             view.write().refresh_buffers();
             view.into()
         }
-        UmlSequenceToolStage::Comment { text, align } => {
-            let comment_view = new_umlsequence_comment(text, egui::Pos2::ZERO, *align).1;
-            comment_view.into()
+        UmlSequenceToolStage::Note { text, align } => {
+            new_umlsequence_note(text, egui::Pos2::ZERO, *align)
+                .1
+                .into()
         }
-        UmlSequenceToolStage::CommentLinkStart => todo!(),
+        UmlSequenceToolStage::NoteLinkStart => todo!(),
 
         UmlSequenceToolStage::DiagramEnd
         | UmlSequenceToolStage::CombinedFragmentEnd
@@ -1775,7 +1777,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
         | UmlSequenceToolStage::RefEnd
         | UmlSequenceToolStage::DurationConstraintY2
         | UmlSequenceToolStage::DurationConstraintX
-        | UmlSequenceToolStage::CommentLinkEnd => unreachable!(),
+        | UmlSequenceToolStage::NoteLinkEnd => unreachable!(),
     }
 }
 
@@ -1847,12 +1849,12 @@ pub enum UmlSequenceToolStage {
     },
     DurationConstraintY2,
     DurationConstraintX,
-    Comment {
+    Note {
         text: String,
         align: egui::Align2,
     },
-    CommentLinkStart,
-    CommentLinkEnd,
+    NoteLinkStart,
+    NoteLinkEnd,
 }
 
 enum PartialUmlSequenceElement {
@@ -1879,8 +1881,8 @@ enum PartialUmlSequenceElement {
         y2: Option<(bool, UmlSequenceHorizontalElement)>,
         x: Option<f32>,
     },
-    CommentLink {
-        source: ERef<UmlSequenceComment>,
+    NoteLink {
+        source: ERef<UmlSequenceNote>,
         dest: Option<UmlSequenceElement>,
     },
 }
@@ -1936,11 +1938,11 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 UmlSequenceToolStage::DiagramStart
                 | UmlSequenceToolStage::DiagramEnd
                 | UmlSequenceToolStage::DurationConstraintX
-                | UmlSequenceToolStage::Comment { .. } => TARGETTABLE_COLOR,
+                | UmlSequenceToolStage::Note { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
             Some(UmlSequenceElement::Diagram(_)) => match self.current_stage {
-                UmlSequenceToolStage::Comment { .. }
+                UmlSequenceToolStage::Note { .. }
                 | UmlSequenceToolStage::Lifeline { .. }
                 | UmlSequenceToolStage::LinkStart { .. }
                 | UmlSequenceToolStage::LinkEnd
@@ -2030,7 +2032,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     draw(canvas, pos, y2.0, &y2_v);
                 }
             }
-            PartialUmlSequenceElement::CommentLink { source, .. } => {
+            PartialUmlSequenceElement::NoteLink { source, .. } => {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -2088,9 +2090,9 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 *x = Some(pos.x);
                 self.event_lock = true;
             }
-            (UmlSequenceToolStage::Comment { text, align }, PartialUmlSequenceElement::None) => {
-                let (_comment_model, comment_view) = new_umlsequence_comment(text, pos, *align);
-                self.result = PartialUmlSequenceElement::Some(comment_view.into());
+            (UmlSequenceToolStage::Note { text, align }, PartialUmlSequenceElement::None) => {
+                let view = new_umlsequence_note(text, pos, *align).1;
+                self.result = PartialUmlSequenceElement::Some(view.into());
                 self.event_lock = true;
             }
             _ => {}
@@ -2394,7 +2396,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     Err(())
                 }
             }
-            PartialUmlSequenceElement::CommentLink {
+            PartialUmlSequenceElement::NoteLink {
                 source,
                 dest: Some(dest),
             } => {
@@ -2402,9 +2404,9 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&dest.uuid()))
                 {
-                    self.current_stage = UmlSequenceToolStage::CommentLinkStart;
+                    self.current_stage = UmlSequenceToolStage::NoteLinkStart;
 
-                    let (_link_model, link_view) = new_umlsequence_commentlink(
+                    let (_link_model, link_view) = new_umlsequence_notelink(
                         None,
                         (source.clone(), source_view),
                         (dest.clone(), target_view),
@@ -7674,14 +7676,14 @@ pub fn new_umlsequence_ref(
     text: &str,
     horizontal_span: HashSet<ModelUuid>,
 ) -> (ERef<UmlSequenceRef>, ERef<UmlSequenceRefView>) {
-    let comment_model = ERef::new(UmlSequenceRef::new(
+    let model = ERef::new(UmlSequenceRef::new(
         ModelUuid::now_v7(),
         text.to_owned(),
         horizontal_span,
     ));
-    let comment_view = new_umlsequence_ref_view(comment_model.clone());
+    let view = new_umlsequence_ref_view(model.clone());
 
-    (comment_model, comment_view)
+    (model, view)
 }
 pub fn new_umlsequence_ref_view(model: ERef<UmlSequenceRef>) -> ERef<UmlSequenceRefView> {
     ERef::new(UmlSequenceRefView {
@@ -8563,26 +8565,23 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
     }
 }
 
-pub fn new_umlsequence_comment(
+pub fn new_umlsequence_note(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
-) -> (ERef<UmlSequenceComment>, ERef<UmlSequenceCommentView>) {
-    let comment_model = ERef::new(UmlSequenceComment::new(
-        ModelUuid::now_v7(),
-        text.to_owned(),
-    ));
-    let comment_view = new_umlsequence_comment_view(comment_model.clone(), position, align);
+) -> (ERef<UmlSequenceNote>, ERef<UmlSequenceNoteView>) {
+    let model = ERef::new(UmlSequenceNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let view = new_umlsequence_note_view(model.clone(), position, align);
 
-    (comment_model, comment_view)
+    (model, view)
 }
-pub fn new_umlsequence_comment_view(
-    model: ERef<UmlSequenceComment>,
+pub fn new_umlsequence_note_view(
+    model: ERef<UmlSequenceNote>,
     position: egui::Pos2,
     align: egui::Align2,
-) -> ERef<UmlSequenceCommentView> {
+) -> ERef<UmlSequenceNoteView> {
     let m = model.read();
-    ERef::new(UmlSequenceCommentView {
+    ERef::new(UmlSequenceNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
@@ -8599,10 +8598,10 @@ pub fn new_umlsequence_comment_view(
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlSequenceCommentView {
+pub struct UmlSequenceNoteView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
-    pub model: ERef<UmlSequenceComment>,
+    pub model: ERef<UmlSequenceNote>,
 
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
@@ -8617,17 +8616,17 @@ pub struct UmlSequenceCommentView {
     background_color: MGlobalColor,
 }
 
-impl UmlSequenceCommentView {
+impl UmlSequenceNoteView {
     const CORNER_SIZE: f32 = 10.0;
 }
 
-impl Entity for UmlSequenceCommentView {
+impl Entity for UmlSequenceNoteView {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for UmlSequenceCommentView {
+impl View for UmlSequenceNoteView {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -8636,7 +8635,7 @@ impl View for UmlSequenceCommentView {
     }
 }
 
-impl ElementController<UmlSequenceElement> for UmlSequenceCommentView {
+impl ElementController<UmlSequenceElement> for UmlSequenceNoteView {
     fn model(&self) -> UmlSequenceElement {
         self.model.clone().into()
     }
@@ -8652,7 +8651,7 @@ impl ElementController<UmlSequenceElement> for UmlSequenceCommentView {
     }
 }
 
-impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
+impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
     fn show_properties(
         &mut self,
         drawing_context: &GlobalDrawingContext,
@@ -8714,7 +8713,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            UmlSequencePropChange::CommentAlignChange(Some(tmp_x), None),
+                            UmlSequencePropChange::NoteAlignChange(Some(tmp_x), None),
                         ));
                     }
                 }
@@ -8730,7 +8729,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            UmlSequencePropChange::CommentAlignChange(None, Some(tmp_y)),
+                            UmlSequencePropChange::NoteAlignChange(None, Some(tmp_y)),
                         ));
                     }
                 }
@@ -9047,10 +9046,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                             ));
                             self.background_color = *color;
                         }
-                        UmlSequencePropChange::CommentAlignChange(x, y) => {
+                        UmlSequencePropChange::NoteAlignChange(x, y) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlSequencePropChange::CommentAlignChange(
+                                UmlSequencePropChange::NoteAlignChange(
                                     Some(self.align.x()),
                                     Some(self.align.y()),
                                 ),
@@ -9099,13 +9098,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlSequenceElement::Comment(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlSequenceElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlSequenceComment::new(
-                model_uuid,
-                (*old_model.text).clone(),
-            ));
+            let modelish = ERef::new(UmlSequenceNote::new(model_uuid, (*old_model.text).clone()));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -9126,29 +9122,29 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
     }
 }
 
-pub fn new_umlsequence_commentlink(
+pub fn new_umlsequence_notelink(
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (ERef<UmlSequenceComment>, UmlSequenceElementView),
+    source: (ERef<UmlSequenceNote>, UmlSequenceElementView),
     target: (UmlSequenceElement, UmlSequenceElementView),
-) -> (ERef<UmlSequenceCommentLink>, ERef<CommentLinkViewT>) {
-    let link_model = ERef::new(UmlSequenceCommentLink::new(
+) -> (ERef<UmlSequenceNoteLink>, ERef<NoteLinkViewT>) {
+    let link_model = ERef::new(UmlSequenceNoteLink::new(
         ModelUuid::now_v7(),
         source.0,
         target.0,
     ));
     let link_view =
-        new_umlsequence_commentlink_view(link_model.clone(), center_point, source.1, target.1);
+        new_umlsequence_notelink_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
 }
-pub fn new_umlsequence_commentlink_view(
-    model: ERef<UmlSequenceCommentLink>,
+pub fn new_umlsequence_notelink_view(
+    model: ERef<UmlSequenceNoteLink>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: UmlSequenceElementView,
     target: UmlSequenceElementView,
-) -> ERef<CommentLinkViewT> {
+) -> ERef<NoteLinkViewT> {
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
-        UmlSequenceCommentLinkAdapter {
+        UmlSequenceNoteLinkAdapter {
             model,
             temporaries: Default::default(),
         },
@@ -9161,22 +9157,22 @@ pub fn new_umlsequence_commentlink_view(
 #[derive(
     Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
-pub struct UmlSequenceCommentLinkAdapter {
+pub struct UmlSequenceNoteLinkAdapter {
     #[nh_context_serde(entity)]
-    model: ERef<UmlSequenceCommentLink>,
+    model: ERef<UmlSequenceNoteLink>,
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    temporaries: UmlClassCommentLinkTemporaries,
+    temporaries: UmlClassNoteLinkTemporaries,
 }
 
 #[derive(Clone, Default)]
-struct UmlClassCommentLinkTemporaries {
+struct UmlClassNoteLinkTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 }
 
-impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceCommentLinkAdapter {
+impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceNoteLinkAdapter {
     fn model(&self) -> UmlSequenceElement {
         self.model.clone().into()
     }
@@ -9272,10 +9268,10 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceCommentLinkAdapter
     {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlSequenceElement::CommentLink(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlSequenceElement::NoteLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlSequenceCommentLink::new(
+            let modelish = ERef::new(UmlSequenceNoteLink::new(
                 new_uuid,
                 old_model.source.clone(),
                 old_model.target.clone(),
@@ -9294,7 +9290,7 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceCommentLinkAdapter
         let mut model = self.model.write();
 
         let source_uuid = *model.source.read().uuid();
-        if let Some(UmlSequenceElement::Comment(new_source)) = m.get(&source_uuid) {
+        if let Some(UmlSequenceElement::Note(new_source)) = m.get(&source_uuid) {
             model.source = new_source.clone();
         }
         let target_uuid = *model.target.uuid();

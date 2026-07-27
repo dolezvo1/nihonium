@@ -2,9 +2,9 @@ use crate::{
     common::{model::Model, uuid::ModelUuid},
     domains::umlclass::umlclass_models::{
         UmlClass, UmlClassAssociation, UmlClassAssociationAggregation,
-        UmlClassAssociationNavigability, UmlClassComment, UmlClassCommentLink, UmlClassDependency,
-        UmlClassGeneralization, UmlClassInstance, UmlClassPackage, UmlClassVisitor, UmlUseCase,
-        UmlUseCaseGeneralization,
+        UmlClassAssociationNavigability, UmlClassDependency, UmlClassGeneralization,
+        UmlClassInstance, UmlClassNote, UmlClassNoteLink, UmlClassPackage, UmlClassVisitor,
+        UmlUseCase, UmlUseCaseGeneralization,
     },
 };
 
@@ -200,28 +200,28 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
         }
         self.plantuml_links.push('\n');
     }
-    fn visit_comment(&mut self, comment: &UmlClassComment) {
+    fn visit_note(&mut self, note: &UmlClassNote) {
         let s = {
             let mut s = String::new();
-            if !comment.stereotype.is_empty() {
+            if !note.stereotype.is_empty() {
                 s.push_str("<<");
-                s.push_str(&comment.stereotype);
+                s.push_str(&note.stereotype);
                 s.push_str(">>\n");
             }
-            s.push_str(&comment.text);
+            s.push_str(&note.text);
             s
         };
         self.plantuml_structures.push_str(&format!(
             "note {:?} as {}\n",
             s,
-            Self::stringify_uuid(&comment.uuid)
+            Self::stringify_uuid(&note.uuid)
         ));
     }
-    fn visit_commentlink(&mut self, comment_link: &UmlClassCommentLink) {
+    fn visit_notelink(&mut self, note_link: &UmlClassNoteLink) {
         self.plantuml_links.push_str(&format!(
             "{} .. {}\n",
-            Self::stringify_uuid(&comment_link.source.read().uuid),
-            Self::stringify_uuid(&comment_link.target.uuid()),
+            Self::stringify_uuid(&note_link.source.read().uuid),
+            Self::stringify_uuid(&note_link.target.uuid()),
         ));
     }
 

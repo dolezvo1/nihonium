@@ -23,8 +23,8 @@ pub trait UmlClassVisitor {
     fn visit_dependency(&mut self, dependency: &UmlClassDependency);
     fn visit_association(&mut self, association: &UmlClassAssociation);
     fn visit_usecasegeneralization(&mut self, usecasegen: &UmlUseCaseGeneralization);
-    fn visit_comment(&mut self, comment: &UmlClassComment);
-    fn visit_commentlink(&mut self, commentlink: &UmlClassCommentLink);
+    fn visit_note(&mut self, comment: &UmlClassNote);
+    fn visit_notelink(&mut self, commentlink: &UmlClassNoteLink);
 }
 
 #[derive(
@@ -52,8 +52,8 @@ pub enum UmlClassElement {
     Dependency(ERef<UmlClassDependency>),
     Association(ERef<UmlClassAssociation>),
     UseCaseGeneralization(ERef<UmlUseCaseGeneralization>),
-    Comment(ERef<UmlClassComment>),
-    CommentLink(ERef<UmlClassCommentLink>),
+    Note(ERef<UmlClassNote>),
+    NoteLink(ERef<UmlClassNoteLink>),
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
@@ -86,8 +86,8 @@ impl UmlClassElement {
             | UmlClassElement::Dependency(..)
             | UmlClassElement::Association(..)
             | UmlClassElement::UseCaseGeneralization(..)
-            | UmlClassElement::Comment(..)
-            | UmlClassElement::CommentLink(..) => None,
+            | UmlClassElement::Note(..)
+            | UmlClassElement::NoteLink(..) => None,
         }
     }
 
@@ -104,8 +104,8 @@ impl UmlClassElement {
             UmlClassElement::UseCaseGeneralization(inner) => {
                 visitor.visit_usecasegeneralization(&inner.read())
             }
-            UmlClassElement::Comment(inner) => visitor.visit_comment(&inner.read()),
-            UmlClassElement::CommentLink(inner) => visitor.visit_commentlink(&inner.read()),
+            UmlClassElement::Note(inner) => visitor.visit_note(&inner.read()),
+            UmlClassElement::NoteLink(inner) => visitor.visit_notelink(&inner.read()),
         }
     }
 }
@@ -180,8 +180,8 @@ pub fn deep_copy_diagram(
             UmlClassElement::UseCaseGeneralization(inner) => {
                 inner.read().clone_with(*new_uuid).into()
             }
-            UmlClassElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
@@ -254,12 +254,12 @@ pub fn deep_copy_diagram(
                     }
                 }
             }
-            UmlClassElement::Comment(..) => {}
-            UmlClassElement::CommentLink(inner) => {
+            UmlClassElement::Note(..) => {}
+            UmlClassElement::NoteLink(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.read().uuid();
-                if let Some(UmlClassElement::Comment(s)) = all_models.get(&source_uuid) {
+                if let Some(UmlClassElement::Note(s)) = all_models.get(&source_uuid) {
                     model.source = s.clone();
                 }
                 let target_uuid = *model.target.uuid();
@@ -370,8 +370,8 @@ pub fn transitive_closure(
                 | UmlClassElement::Dependency(..)
                 | UmlClassElement::Association(..)
                 | UmlClassElement::UseCaseGeneralization(..)
-                | UmlClassElement::Comment(..)
-                | UmlClassElement::CommentLink(..) => {}
+                | UmlClassElement::Note(..)
+                | UmlClassElement::NoteLink(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -441,8 +441,8 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                UmlClassElement::Comment(..) => {}
-                UmlClassElement::CommentLink(inner) => {
+                UmlClassElement::Note(..) => {}
+                UmlClassElement::NoteLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
@@ -588,8 +588,8 @@ impl UmlClassDiagram {
                 | UmlClassElement::Dependency(_)
                 | UmlClassElement::Association(_)
                 | UmlClassElement::UseCaseGeneralization(_)
-                | UmlClassElement::Comment(_)
-                | UmlClassElement::CommentLink(_) => {}
+                | UmlClassElement::Note(_)
+                | UmlClassElement::NoteLink(_) => {}
             }
         }
 
@@ -1783,14 +1783,14 @@ impl ContainerModel for UmlUseCaseGeneralization {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassComment {
+pub struct UmlClassNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
     pub text: Arc<String>,
 }
 
-impl UmlClassComment {
+impl UmlClassNote {
     pub fn new(uuid: ModelUuid, stereotype: String, text: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -1807,13 +1807,13 @@ impl UmlClassComment {
     }
 }
 
-impl Entity for UmlClassComment {
+impl Entity for UmlClassNote {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlClassComment {
+impl Model for UmlClassNote {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
@@ -1823,19 +1823,19 @@ impl Model for UmlClassComment {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassCommentLink {
+pub struct UmlClassNoteLink {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub source: ERef<UmlClassComment>,
+    pub source: ERef<UmlClassNote>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlClassElement,
 }
 
-impl UmlClassCommentLink {
-    pub fn new(uuid: ModelUuid, source: ERef<UmlClassComment>, target: UmlClassElement) -> Self {
+impl UmlClassNoteLink {
+    pub fn new(uuid: ModelUuid, source: ERef<UmlClassNote>, target: UmlClassElement) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,
@@ -1851,13 +1851,13 @@ impl UmlClassCommentLink {
     }
 }
 
-impl Entity for UmlClassCommentLink {
+impl Entity for UmlClassNoteLink {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlClassCommentLink {
+impl Model for UmlClassNoteLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

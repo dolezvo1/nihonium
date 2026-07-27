@@ -459,18 +459,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     )),
                 ),
                 (
-                    UmlClassToolStage::Comment {
+                    UmlClassToolStage::Note {
                         stereotype: "".to_owned(),
-                        text: "a comment".to_owned(),
+                        text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
                     },
-                    "Comment",
+                    "Note",
                     Some(egui::KeyboardShortcut::new(
                         egui::Modifiers::COMMAND,
                         egui::Key::Num9,
                     )),
                 ),
-                (UmlClassToolStage::CommentLinkStart, "Comment Link", None),
+                (UmlClassToolStage::NoteLinkStart, "Note Link", None),
             ],
         ),
     ];

@@ -37,28 +37,28 @@ pub enum UmlSequenceElement {
     Message(ERef<UmlSequenceMessage>),
     Ref(ERef<UmlSequenceRef>),
     DurationConstraint(ERef<UmlSequenceDurationConstraint>),
-    Comment(ERef<UmlSequenceComment>),
-    CommentLink(ERef<UmlSequenceCommentLink>),
+    Note(ERef<UmlSequenceNote>),
+    NoteLink(ERef<UmlSequenceNoteLink>),
 }
 
 impl UmlSequenceElement {
     pub fn as_standalone(&self) -> Option<UmlSequenceStandaloneElement> {
         match &self {
             UmlSequenceElement::Diagram(inner) => Some(inner.clone().into()),
-            UmlSequenceElement::Comment(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::Note(inner) => Some(inner.clone().into()),
             UmlSequenceElement::DurationConstraint(inner) => Some(inner.clone().into()),
             UmlSequenceElement::CombinedFragment(..)
             | UmlSequenceElement::CombinedFragmentSection(..)
             | UmlSequenceElement::Lifeline(..)
             | UmlSequenceElement::Message(..)
             | UmlSequenceElement::Ref(..)
-            | UmlSequenceElement::CommentLink(..) => None,
+            | UmlSequenceElement::NoteLink(..) => None,
         }
     }
 
     pub fn as_nondiagram_standalone(&self) -> Option<UmlSequenceNonDiagramStandaloneElement> {
         match &self {
-            UmlSequenceElement::Comment(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::Note(inner) => Some(inner.clone().into()),
             UmlSequenceElement::DurationConstraint(inner) => Some(inner.clone().into()),
             UmlSequenceElement::Diagram(..)
             | UmlSequenceElement::CombinedFragment(..)
@@ -66,7 +66,7 @@ impl UmlSequenceElement {
             | UmlSequenceElement::Lifeline(..)
             | UmlSequenceElement::Message(..)
             | UmlSequenceElement::Ref(..)
-            | UmlSequenceElement::CommentLink(..) => None,
+            | UmlSequenceElement::NoteLink(..) => None,
         }
     }
 
@@ -79,8 +79,8 @@ impl UmlSequenceElement {
             | UmlSequenceElement::CombinedFragmentSection(..)
             | UmlSequenceElement::Lifeline(..)
             | UmlSequenceElement::DurationConstraint(..)
-            | UmlSequenceElement::Comment(..)
-            | UmlSequenceElement::CommentLink(..) => None,
+            | UmlSequenceElement::Note(..)
+            | UmlSequenceElement::NoteLink(..) => None,
         }
     }
 }
@@ -237,8 +237,8 @@ pub fn deep_copy_diagram(
             UmlSequenceElement::DurationConstraint(inner) => {
                 inner.read().clone_with(*new_uuid).into()
             }
-            UmlSequenceElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlSequenceElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlSequenceElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlSequenceElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
@@ -294,12 +294,12 @@ pub fn deep_copy_diagram(
                     model.target.element = t;
                 }
             }
-            UmlSequenceElement::Comment(..) => {}
-            UmlSequenceElement::CommentLink(inner) => {
+            UmlSequenceElement::Note(..) => {}
+            UmlSequenceElement::NoteLink(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.read().uuid();
-                if let Some(UmlSequenceElement::Comment(s)) = all_models.get(&source_uuid) {
+                if let Some(UmlSequenceElement::Note(s)) = all_models.get(&source_uuid) {
                     model.source = s.clone();
                 }
                 let target_uuid = *model.target.uuid();
@@ -370,8 +370,8 @@ fn enumerate_elements(e: &UmlSequenceElement, into: &mut HashMap<ModelUuid, UmlS
         | UmlSequenceElement::Message(..)
         | UmlSequenceElement::Ref(..)
         | UmlSequenceElement::DurationConstraint(..)
-        | UmlSequenceElement::Comment(..)
-        | UmlSequenceElement::CommentLink(..) => {}
+        | UmlSequenceElement::Note(..)
+        | UmlSequenceElement::NoteLink(..) => {}
     }
 }
 
@@ -427,8 +427,8 @@ pub fn transitive_closure(
             | UmlSequenceElement::Message(..)
             | UmlSequenceElement::Ref(..)
             | UmlSequenceElement::DurationConstraint(..)
-            | UmlSequenceElement::Comment(..)
-            | UmlSequenceElement::CommentLink(..) => {}
+            | UmlSequenceElement::Note(..)
+            | UmlSequenceElement::NoteLink(..) => {}
         }
     }
 
@@ -486,8 +486,8 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                UmlSequenceElement::Comment(..) => {}
-                UmlSequenceElement::CommentLink(inner) => {
+                UmlSequenceElement::Note(..) => {}
+                UmlSequenceElement::NoteLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
@@ -529,7 +529,7 @@ pub const NONDIAGRAM_STANDALONE_BUCKET: BucketNoT = 3;
 pub enum UmlSequenceStandaloneElement {
     #[container_model(passthrough = "eref")]
     Diagram(ERef<UmlSequenceDiagram>),
-    Comment(ERef<UmlSequenceComment>),
+    Note(ERef<UmlSequenceNote>),
     DurationConstraint(ERef<UmlSequenceDurationConstraint>),
 }
 
@@ -537,7 +537,7 @@ impl UmlSequenceStandaloneElement {
     pub fn to_element(self) -> UmlSequenceElement {
         match self {
             UmlSequenceStandaloneElement::Diagram(inner) => inner.into(),
-            UmlSequenceStandaloneElement::Comment(inner) => inner.into(),
+            UmlSequenceStandaloneElement::Note(inner) => inner.into(),
             UmlSequenceStandaloneElement::DurationConstraint(inner) => inner.into(),
         }
     }
@@ -556,14 +556,14 @@ impl UmlSequenceStandaloneElement {
 #[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlSequenceNonDiagramStandaloneElement {
-    Comment(ERef<UmlSequenceComment>),
+    Note(ERef<UmlSequenceNote>),
     DurationConstraint(ERef<UmlSequenceDurationConstraint>),
 }
 
 impl UmlSequenceNonDiagramStandaloneElement {
     pub fn to_element(self) -> UmlSequenceElement {
         match self {
-            UmlSequenceNonDiagramStandaloneElement::Comment(inner) => inner.into(),
+            UmlSequenceNonDiagramStandaloneElement::Note(inner) => inner.into(),
             UmlSequenceNonDiagramStandaloneElement::DurationConstraint(inner) => inner.into(),
         }
     }
@@ -746,8 +746,8 @@ impl UmlSequenceDiagramBoard {
                 | UmlSequenceElement::Message(..)
                 | UmlSequenceElement::Ref(..)
                 | UmlSequenceElement::DurationConstraint(..)
-                | UmlSequenceElement::Comment(..)
-                | UmlSequenceElement::CommentLink(..) => {}
+                | UmlSequenceElement::Note(..)
+                | UmlSequenceElement::NoteLink(..) => {}
             }
         }
 
@@ -1707,13 +1707,13 @@ impl Model for UmlSequenceDurationConstraint {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlSequenceComment {
+pub struct UmlSequenceNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub text: Arc<String>,
 }
 
-impl UmlSequenceComment {
+impl UmlSequenceNote {
     pub fn new(uuid: ModelUuid, text: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -1728,13 +1728,13 @@ impl UmlSequenceComment {
     }
 }
 
-impl Entity for UmlSequenceComment {
+impl Entity for UmlSequenceNote {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlSequenceComment {
+impl Model for UmlSequenceNote {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
@@ -1744,23 +1744,19 @@ impl Model for UmlSequenceComment {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlSequenceCommentLink {
+pub struct UmlSequenceNoteLink {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub source: ERef<UmlSequenceComment>,
+    pub source: ERef<UmlSequenceNote>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlSequenceElement,
 }
 
-impl UmlSequenceCommentLink {
-    pub fn new(
-        uuid: ModelUuid,
-        source: ERef<UmlSequenceComment>,
-        target: UmlSequenceElement,
-    ) -> Self {
+impl UmlSequenceNoteLink {
+    pub fn new(uuid: ModelUuid, source: ERef<UmlSequenceNote>, target: UmlSequenceElement) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,
@@ -1776,13 +1772,13 @@ impl UmlSequenceCommentLink {
     }
 }
 
-impl Entity for UmlSequenceCommentLink {
+impl Entity for UmlSequenceNoteLink {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlSequenceCommentLink {
+impl Model for UmlSequenceNoteLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

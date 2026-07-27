@@ -118,8 +118,8 @@ pub fn deep_copy_diagram(
             UmlActivityElement::ForkNode(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlActivityElement::ObjectNode(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlActivityElement::Edge(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlActivityElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlActivityElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
@@ -155,7 +155,7 @@ pub fn deep_copy_diagram(
             | UmlActivityElement::DecisionNode(..)
             | UmlActivityElement::ForkNode(..)
             | UmlActivityElement::ObjectNode(..)
-            | UmlActivityElement::Comment(..) => {}
+            | UmlActivityElement::Note(..) => {}
             UmlActivityElement::Edge(inner) => {
                 let mut model = inner.write();
 
@@ -168,11 +168,11 @@ pub fn deep_copy_diagram(
                     model.target = t;
                 }
             }
-            UmlActivityElement::CommentLink(inner) => {
+            UmlActivityElement::NoteLink(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.read().uuid();
-                if let Some(UmlActivityElement::Comment(s)) = all_models.get(&source_uuid) {
+                if let Some(UmlActivityElement::Note(s)) = all_models.get(&source_uuid) {
                     model.source = s.clone();
                 }
                 let target_uuid = *model.target.uuid();
@@ -336,7 +336,7 @@ pub fn transitive_closure(
                 | UmlActivityElement::DecisionNode(..)
                 | UmlActivityElement::ForkNode(..)
                 | UmlActivityElement::ObjectNode(..)
-                | UmlActivityElement::Comment(..) => {}
+                | UmlActivityElement::Note(..) => {}
                 UmlActivityElement::Edge(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
@@ -346,7 +346,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                UmlActivityElement::CommentLink(inner) => {
+                UmlActivityElement::NoteLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
@@ -397,8 +397,8 @@ pub enum UmlActivityElement {
     ForkNode(ERef<UmlActivityForkNode>),
     ObjectNode(ERef<UmlActivityObjectNode>),
     Edge(ERef<UmlActivityFlowEdge>),
-    Comment(ERef<UmlActivityComment>),
-    CommentLink(ERef<UmlActivityCommentLink>),
+    Note(ERef<UmlActivityNote>),
+    NoteLink(ERef<UmlActivityNoteLink>),
 }
 
 impl UmlActivityElement {
@@ -415,8 +415,8 @@ impl UmlActivityElement {
             UmlActivityElement::ForkNode(inner) => Some(inner.clone().into()),
             UmlActivityElement::ObjectNode(inner) => Some(inner.clone().into()),
             UmlActivityElement::Edge(inner) => Some(inner.clone().into()),
-            UmlActivityElement::Comment(inner) => Some(inner.clone().into()),
-            UmlActivityElement::CommentLink(inner) => Some(inner.clone().into()),
+            UmlActivityElement::Note(inner) => Some(inner.clone().into()),
+            UmlActivityElement::NoteLink(inner) => Some(inner.clone().into()),
         }
     }
 }
@@ -447,8 +447,8 @@ pub enum UmlActivityStandaloneElement {
     ForkNode(ERef<UmlActivityForkNode>),
     ObjectNode(ERef<UmlActivityObjectNode>),
     Edge(ERef<UmlActivityFlowEdge>),
-    Comment(ERef<UmlActivityComment>),
-    CommentLink(ERef<UmlActivityCommentLink>),
+    Note(ERef<UmlActivityNote>),
+    NoteLink(ERef<UmlActivityNoteLink>),
 }
 
 impl UmlActivityStandaloneElement {
@@ -464,8 +464,8 @@ impl UmlActivityStandaloneElement {
             UmlActivityStandaloneElement::ForkNode(inner) => inner.into(),
             UmlActivityStandaloneElement::ObjectNode(inner) => inner.into(),
             UmlActivityStandaloneElement::Edge(inner) => inner.into(),
-            UmlActivityStandaloneElement::Comment(inner) => inner.into(),
-            UmlActivityStandaloneElement::CommentLink(inner) => inner.into(),
+            UmlActivityStandaloneElement::Note(inner) => inner.into(),
+            UmlActivityStandaloneElement::NoteLink(inner) => inner.into(),
         }
     }
 }
@@ -1649,14 +1649,14 @@ impl Entity for UmlActivityFlowEdge {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlActivityComment {
+pub struct UmlActivityNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
     pub text: Arc<String>,
 }
 
-impl UmlActivityComment {
+impl UmlActivityNote {
     pub fn new(uuid: ModelUuid, stereotype: String, text: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -1673,13 +1673,13 @@ impl UmlActivityComment {
     }
 }
 
-impl Entity for UmlActivityComment {
+impl Entity for UmlActivityNote {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlActivityComment {
+impl Model for UmlActivityNote {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
@@ -1689,23 +1689,19 @@ impl Model for UmlActivityComment {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlActivityCommentLink {
+pub struct UmlActivityNoteLink {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub source: ERef<UmlActivityComment>,
+    pub source: ERef<UmlActivityNote>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlActivityElement,
 }
 
-impl UmlActivityCommentLink {
-    pub fn new(
-        uuid: ModelUuid,
-        source: ERef<UmlActivityComment>,
-        target: UmlActivityElement,
-    ) -> Self {
+impl UmlActivityNoteLink {
+    pub fn new(uuid: ModelUuid, source: ERef<UmlActivityNote>, target: UmlActivityElement) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,
@@ -1721,13 +1717,13 @@ impl UmlActivityCommentLink {
     }
 }
 
-impl Entity for UmlActivityCommentLink {
+impl Entity for UmlActivityNoteLink {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlActivityCommentLink {
+impl Model for UmlActivityNoteLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

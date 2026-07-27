@@ -1,7 +1,7 @@
 use super::umlclass_models::{
     UmlClass, UmlClassAssociable, UmlClassAssociation, UmlClassAssociationAggregation,
-    UmlClassAssociationNavigability, UmlClassComment, UmlClassCommentLink, UmlClassDependency,
-    UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassInstance, UmlClassPackage,
+    UmlClassAssociationNavigability, UmlClassDependency, UmlClassDiagram, UmlClassElement,
+    UmlClassGeneralization, UmlClassInstance, UmlClassNote, UmlClassNoteLink, UmlClassPackage,
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
@@ -67,7 +67,7 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
     type DependencyStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type AssociationStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type PackageStereotypeController: StereotypeController = UnrestrictedStereotypeController;
-    type CommentStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+    type NoteStereotypeController: StereotypeController = UnrestrictedStereotypeController;
 
     fn menubar_options_fun(
         model: &ERef<UmlClassDiagram>,
@@ -133,7 +133,7 @@ type DependencyViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassDepende
 type AssociationViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassAssocationAdapter<P>>;
 type UseCaseGeneralizationViewT<P> =
     MulticonnectionView<UmlClassDomain<P>, UmlUseCaseGeneralizationAdapter>;
-type CommentLinkViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassCommentLinkAdapter>;
+type NoteLinkViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassNoteLinkAdapter>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum UmlClassOrdinalMovement {
@@ -194,7 +194,7 @@ pub enum UmlClassPropChange {
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    CommentAlignChange(Option<egui::Align>, Option<egui::Align>),
+    NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
 impl Debug for UmlClassPropChange {
@@ -309,8 +309,8 @@ pub enum UmlClassElementView<P: UmlClassProfile> {
     Dependency(ERef<DependencyViewT<P>>),
     Association(ERef<AssociationViewT<P>>),
     UseCaseGeneralization(ERef<UseCaseGeneralizationViewT<P>>),
-    Comment(ERef<UmlClassCommentView<P>>),
-    CommentLink(ERef<CommentLinkViewT<P>>),
+    Note(ERef<UmlClassNoteView<P>>),
+    NoteLink(ERef<NoteLinkViewT<P>>),
 }
 
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -563,10 +563,12 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     tv,
                 ))
             }
-            UmlClassElement::Comment(inner) => UmlClassElementView::from(
-                new_umlclass_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER),
-            ),
-            UmlClassElement::CommentLink(inner) => {
+            UmlClassElement::Note(inner) => UmlClassElementView::from(new_umlclass_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+            )),
+            UmlClassElement::NoteLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
@@ -574,7 +576,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                UmlClassElementView::from(new_umlclass_commentlink_view(
+                UmlClassElementView::from(new_umlclass_notelink_view(
                     inner.clone(),
                     None,
                     source_view,
@@ -651,16 +653,16 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             }
-            UmlClassElement::Comment(inner) => {
+            UmlClassElement::Note(inner) => {
                 let r = inner.read();
                 let s = if r.text.is_empty() {
-                    "Comment".to_owned()
+                    "Note".to_owned()
                 } else {
-                    format!("Comment ({})", LabelProvider::filter_and_elipsis(&r.text))
+                    format!("Note ({})", LabelProvider::filter_and_elipsis(&r.text))
                 };
                 Arc::new(s)
             }
-            UmlClassElement::CommentLink(_inner) => Arc::new("Comment Link".to_string()),
+            UmlClassElement::NoteLink(_inner) => Arc::new("Note Link".to_string()),
         }
     }
 
@@ -1060,23 +1062,23 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         ),
     );
 
-    let (comment, comment_view) = new_umlclass_comment(
-        "This is a comment\nwith multiple lines",
+    let (note, note_view) = new_umlclass_note(
+        "This is a note\nwith multiple lines",
         "",
         egui::Pos2::new(650.0, 250.0),
         egui::Align2::CENTER_CENTER,
     );
-    let (commentlink1, commentlink1_view) = new_umlclass_commentlink(
+    let (notelink1, notelink1_view) = new_umlclass_notelink(
         None,
-        (comment.clone(), comment_view.clone().into()),
+        (note.clone(), note_view.clone().into()),
         (
             class_producta.clone().into(),
             class_producta_view.clone().into(),
         ),
     );
-    let (commentlink2, commentlink2_view) = new_umlclass_commentlink(
+    let (notelink2, notelink2_view) = new_umlclass_notelink(
         None,
-        (comment.clone(), comment_view.clone().into()),
+        (note.clone(), note_view.clone().into()),
         (
             class_productb.clone().into(),
             class_productb_view.clone().into(),
@@ -1211,15 +1213,15 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     point_assoc_model.write().target_label_multiplicity = Arc::new("3..*".to_owned());
     point_assoc_model.write().target_navigability = UmlClassAssociationNavigability::Navigable;
 
-    let (comment2, comment2_view) = new_umlclass_comment(
+    let (note2, note2_view) = new_umlclass_note(
         "{radius >= 0}",
         "",
         egui::Pos2::new(300.0, 650.0),
         egui::Align2::CENTER_CENTER,
     );
-    let (commentlink3, commentlink3_view) = new_umlclass_commentlink(
+    let (notelink3, notelink3_view) = new_umlclass_notelink(
         None,
-        (comment2.clone(), comment2_view.clone().into()),
+        (note2.clone(), note2_view.clone().into()),
         (circle_model.clone().into(), circle_view.clone().into()),
     );
 
@@ -1247,17 +1249,17 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             usage_client_producta.into(),
             class_productb.into(),
             usage_client_productb.into(),
-            comment.into(),
-            commentlink1.into(),
-            commentlink2.into(),
+            note.into(),
+            notelink1.into(),
+            notelink2.into(),
             shape_model.into(),
             polygon_model.into(),
             circle_model.into(),
             gen_model.into(),
             point_model.into(),
             point_assoc_model.into(),
-            comment2.into(),
-            commentlink3.into(),
+            note2.into(),
+            notelink3.into(),
             instance.into(),
         ],
     ));
@@ -1276,17 +1278,17 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             usage_client_producta_view.into(),
             class_productb_view.into(),
             usage_client_productb_view.into(),
-            comment_view.into(),
-            commentlink1_view.into(),
-            commentlink2_view.into(),
+            note_view.into(),
+            notelink1_view.into(),
+            notelink2_view.into(),
             shape_view.into(),
             polygon_view.into(),
             circle_view.into(),
             gen_view.into(),
             point_view.into(),
             point_assoc_view.into(),
-            comment2_view.into(),
-            commentlink3_view.into(),
+            note2_view.into(),
+            notelink3_view.into(),
             instance_view.into(),
         ],
     )
@@ -1583,12 +1585,12 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                                     }
                                 });
                         }
-                        UmlClassToolStage::Comment {
+                        UmlClassToolStage::Note {
                             stereotype,
                             text,
                             align,
                         } => {
-                            let mut sc = P::CommentStereotypeController::default();
+                            let mut sc = P::NoteStereotypeController::default();
                             sc.refresh(stereotype);
                             if sc.show(&mut columns[1]) {
                                 modified = true;
@@ -1629,11 +1631,11 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                                     }
                                 });
                         }
-                        UmlClassToolStage::CommentLinkStart => {}
+                        UmlClassToolStage::NoteLinkStart => {}
                         UmlClassToolStage::LinkEnd
                         | UmlClassToolStage::LinkAddEnding { .. }
                         | UmlClassToolStage::PackageEnd
-                        | UmlClassToolStage::CommentLinkEnd => unreachable!(),
+                        | UmlClassToolStage::NoteLinkEnd => unreachable!(),
                     }
 
                     if modified {
@@ -1915,17 +1917,17 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             package_view.write().refresh_buffers();
             package_view.into()
         }
-        UmlClassToolStage::Comment {
+        UmlClassToolStage::Note {
             stereotype,
             text,
             align,
         } => {
-            let comment_view = new_umlclass_comment(text, stereotype, egui::Pos2::ZERO, *align).1;
-            comment_view.write().refresh_buffers();
-            comment_view.into()
+            let note_view = new_umlclass_note(text, stereotype, egui::Pos2::ZERO, *align).1;
+            note_view.write().refresh_buffers();
+            note_view.into()
         }
-        UmlClassToolStage::CommentLinkStart => {
-            let d1 = new_umlclass_comment("", "", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
+        UmlClassToolStage::NoteLinkStart => {
+            let d1 = new_umlclass_note("", "", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
             let d2 = new_umlclass_class(
                 "dummy",
                 "",
@@ -1936,14 +1938,14 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 UmlClassRenderStyle::Class,
                 MGlobalColor::None,
             );
-            let commentlink =
-                new_umlclass_commentlink(None, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
-            commentlink.into()
+            let notelink =
+                new_umlclass_notelink(None, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
+            notelink.into()
         }
         UmlClassToolStage::LinkEnd
         | UmlClassToolStage::LinkAddEnding { .. }
         | UmlClassToolStage::PackageEnd
-        | UmlClassToolStage::CommentLinkEnd => unreachable!(),
+        | UmlClassToolStage::NoteLinkEnd => unreachable!(),
     }
 }
 
@@ -2207,18 +2209,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     )),
                 ),
                 (
-                    UmlClassToolStage::Comment {
+                    UmlClassToolStage::Note {
                         stereotype: "".to_owned(),
-                        text: "a comment".to_owned(),
+                        text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
                     },
-                    "Comment",
+                    "Note",
                     Some(egui::KeyboardShortcut::new(
                         egui::Modifiers::COMMAND,
                         egui::Key::Num9,
                     )),
                 ),
-                (UmlClassToolStage::CommentLinkStart, "Comment Link", None),
+                (UmlClassToolStage::NoteLinkStart, "Note Link", None),
             ],
         ),
     ];
@@ -2362,13 +2364,13 @@ pub enum UmlClassToolStage {
         kind: UmlClassPackageKind,
     },
     PackageEnd,
-    Comment {
+    Note {
         stereotype: String,
         text: String,
         align: egui::Align2,
     },
-    CommentLinkStart,
-    CommentLinkEnd,
+    NoteLinkStart,
+    NoteLinkEnd,
 }
 
 pub enum PartialUmlClassElement<P: UmlClassProfile> {
@@ -2387,8 +2389,8 @@ pub enum PartialUmlClassElement<P: UmlClassProfile> {
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
-    CommentLink {
-        source: ERef<UmlClassComment>,
+    NoteLink {
+        source: ERef<UmlClassNote>,
         dest: Option<UmlClassElement>,
     },
 }
@@ -2443,15 +2445,15 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
-                | UmlClassToolStage::Comment { .. }
-                | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
+                | UmlClassToolStage::Note { .. }
+                | UmlClassToolStage::NoteLinkEnd => TARGETTABLE_COLOR,
 
                 UmlClassToolStage::ClassProperty { .. }
                 | UmlClassToolStage::ClassOperation { .. }
                 | UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
                 | UmlClassToolStage::LinkAddEnding { .. }
-                | UmlClassToolStage::CommentLinkStart => NON_TARGETTABLE_COLOR,
+                | UmlClassToolStage::NoteLinkStart => NON_TARGETTABLE_COLOR,
             },
             Some(UmlClassElement::Instance(..)) => match self.current_stage {
                 UmlClassToolStage::Instance { .. }
@@ -2461,14 +2463,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
-                | UmlClassToolStage::Comment { .. }
-                | UmlClassToolStage::CommentLinkStart
+                | UmlClassToolStage::Note { .. }
+                | UmlClassToolStage::NoteLinkStart
                 | UmlClassToolStage::LinkStart {
                     link_type: LinkType::Generalization { .. },
                 }
                 | UmlClassToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
-                UmlClassToolStage::LinkStart { .. } | UmlClassToolStage::CommentLinkEnd => {
+                UmlClassToolStage::LinkStart { .. } | UmlClassToolStage::NoteLinkEnd => {
                     TARGETTABLE_COLOR
                 }
                 UmlClassToolStage::LinkEnd => match &self.initial_stage {
@@ -2484,14 +2486,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 UmlClassToolStage::ClassProperty { .. }
                 | UmlClassToolStage::ClassOperation { .. }
                 | UmlClassToolStage::LinkStart { .. }
-                | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
+                | UmlClassToolStage::NoteLinkEnd => TARGETTABLE_COLOR,
                 UmlClassToolStage::Instance { .. }
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
-                | UmlClassToolStage::Comment { .. }
-                | UmlClassToolStage::CommentLinkStart => NON_TARGETTABLE_COLOR,
+                | UmlClassToolStage::Note { .. }
+                | UmlClassToolStage::NoteLinkStart => NON_TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkAddEnding { .. } | UmlClassToolStage::LinkEnd => {
                     match &self.result {
@@ -2518,10 +2520,10 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
-                | UmlClassToolStage::Comment { .. }
-                | UmlClassToolStage::CommentLinkStart => NON_TARGETTABLE_COLOR,
+                | UmlClassToolStage::Note { .. }
+                | UmlClassToolStage::NoteLinkStart => NON_TARGETTABLE_COLOR,
 
-                UmlClassToolStage::LinkStart { .. } | UmlClassToolStage::CommentLinkEnd => {
+                UmlClassToolStage::LinkStart { .. } | UmlClassToolStage::NoteLinkEnd => {
                     TARGETTABLE_COLOR
                 }
 
@@ -2539,8 +2541,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     }
                 }
             },
-            Some(UmlClassElement::Comment(..)) => match self.current_stage {
-                UmlClassToolStage::CommentLinkStart => TARGETTABLE_COLOR,
+            Some(UmlClassElement::Note(..)) => match self.current_stage {
+                UmlClassToolStage::NoteLinkStart => TARGETTABLE_COLOR,
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
                 | UmlClassToolStage::LinkAddEnding { .. }
@@ -2551,15 +2553,15 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
-                | UmlClassToolStage::Comment { .. }
-                | UmlClassToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
+                | UmlClassToolStage::Note { .. }
+                | UmlClassToolStage::NoteLinkEnd => NON_TARGETTABLE_COLOR,
             },
             Some(
                 UmlClassElement::Generalization(..)
                 | UmlClassElement::Dependency(..)
                 | UmlClassElement::Association(..)
                 | UmlClassElement::UseCaseGeneralization(..)
-                | UmlClassElement::CommentLink(..),
+                | UmlClassElement::NoteLink(..),
             ) => unreachable!(),
         }
     }
@@ -2588,7 +2590,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     );
                 }
             }
-            PartialUmlClassElement::CommentLink { source, .. } => {
+            PartialUmlClassElement::NoteLink { source, .. } => {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -2683,16 +2685,15 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.event_lock = true;
             }
             (
-                UmlClassToolStage::Comment {
+                UmlClassToolStage::Note {
                     stereotype,
                     text,
                     align,
                 },
                 _,
             ) => {
-                let (_comment_model, comment_view) =
-                    new_umlclass_comment(text, stereotype, pos, *align);
-                self.result = PartialUmlClassElement::Some(comment_view.into());
+                let note_view = new_umlclass_note(text, stereotype, pos, *align).1;
+                self.result = PartialUmlClassElement::Some(note_view.into());
                 self.event_lock = true;
             }
             _ => {}
@@ -2706,8 +2707,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         match element {
             UmlClassElement::Package(inner) => {
                 if let (
-                    UmlClassToolStage::CommentLinkEnd,
-                    PartialUmlClassElement::CommentLink { dest, .. },
+                    UmlClassToolStage::NoteLinkEnd,
+                    PartialUmlClassElement::NoteLink { dest, .. },
                 ) = (&self.current_stage, &mut self.result)
                 {
                     *dest = Some(inner.into());
@@ -2733,10 +2734,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     }
                     self.event_lock = true;
                 }
-                (
-                    UmlClassToolStage::CommentLinkEnd,
-                    PartialUmlClassElement::CommentLink { dest, .. },
-                ) => {
+                (UmlClassToolStage::NoteLinkEnd, PartialUmlClassElement::NoteLink { dest, .. }) => {
                     *dest = Some(inner.into());
                     self.event_lock = true;
                 }
@@ -2813,10 +2811,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         self.event_lock = true;
                     }
                 }
-                (
-                    UmlClassToolStage::CommentLinkEnd,
-                    PartialUmlClassElement::CommentLink { dest, .. },
-                ) => {
+                (UmlClassToolStage::NoteLinkEnd, PartialUmlClassElement::NoteLink { dest, .. }) => {
                     *dest = Some(inner.into());
                     self.event_lock = true;
                 }
@@ -2862,24 +2857,21 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         self.event_lock = true;
                     }
                 }
-                (
-                    UmlClassToolStage::CommentLinkEnd,
-                    PartialUmlClassElement::CommentLink { dest, .. },
-                ) => {
+                (UmlClassToolStage::NoteLinkEnd, PartialUmlClassElement::NoteLink { dest, .. }) => {
                     *dest = Some(inner.into());
                     self.event_lock = true;
                 }
                 _ => {}
             },
-            UmlClassElement::Comment(inner) => {
-                if let (UmlClassToolStage::CommentLinkStart, PartialUmlClassElement::None) =
+            UmlClassElement::Note(inner) => {
+                if let (UmlClassToolStage::NoteLinkStart, PartialUmlClassElement::None) =
                     (&self.current_stage, &mut self.result)
                 {
-                    self.result = PartialUmlClassElement::CommentLink {
+                    self.result = PartialUmlClassElement::NoteLink {
                         source: inner,
                         dest: None,
                     };
-                    self.current_stage = UmlClassToolStage::CommentLinkEnd;
+                    self.current_stage = UmlClassToolStage::NoteLinkEnd;
                     self.event_lock = true;
                 }
             }
@@ -2887,7 +2879,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             | UmlClassElement::Dependency(..)
             | UmlClassElement::Association(..)
             | UmlClassElement::UseCaseGeneralization(..)
-            | UmlClassElement::CommentLink(..) => {}
+            | UmlClassElement::NoteLink(..) => {}
         }
     }
 
@@ -3059,7 +3051,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     Err(())
                 }
             }
-            PartialUmlClassElement::CommentLink {
+            PartialUmlClassElement::NoteLink {
                 source,
                 dest: Some(dest),
             } => {
@@ -3069,9 +3061,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     && q.is_contained(&source_view.uuid(), preferred_container)
                     && q.is_contained(&target_view.uuid(), preferred_container)
                 {
-                    self.current_stage = UmlClassToolStage::CommentLinkStart;
+                    self.current_stage = UmlClassToolStage::NoteLinkStart;
 
-                    let link_view = new_umlclass_commentlink(
+                    let link_view = new_umlclass_notelink(
                         None,
                         (source.clone(), source_view),
                         (dest.clone(), target_view),
@@ -9634,28 +9626,28 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
 }
 
-pub fn new_umlclass_comment<P: UmlClassProfile>(
+pub fn new_umlclass_note<P: UmlClassProfile>(
     text: &str,
     stereotype: &str,
     position: egui::Pos2,
     align: egui::Align2,
-) -> (ERef<UmlClassComment>, ERef<UmlClassCommentView<P>>) {
-    let comment_model = ERef::new(UmlClassComment::new(
+) -> (ERef<UmlClassNote>, ERef<UmlClassNoteView<P>>) {
+    let model = ERef::new(UmlClassNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let comment_view = new_umlclass_comment_view(comment_model.clone(), position, align);
+    let view = new_umlclass_note_view(model.clone(), position, align);
 
-    (comment_model, comment_view)
+    (model, view)
 }
-pub fn new_umlclass_comment_view<P: UmlClassProfile>(
-    model: ERef<UmlClassComment>,
+pub fn new_umlclass_note_view<P: UmlClassProfile>(
+    model: ERef<UmlClassNote>,
     position: egui::Pos2,
     align: egui::Align2,
-) -> ERef<UmlClassCommentView<P>> {
+) -> ERef<UmlClassNoteView<P>> {
     let m = model.read();
-    ERef::new(UmlClassCommentView {
+    ERef::new(UmlClassNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
@@ -9675,15 +9667,15 @@ pub fn new_umlclass_comment_view<P: UmlClassProfile>(
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassCommentView<P: UmlClassProfile> {
+pub struct UmlClassNoteView<P: UmlClassProfile> {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
-    pub model: ERef<UmlClassComment>,
+    pub model: ERef<UmlClassNote>,
 
     #[nh_context_serde(skip_and_default)]
     display_text: String,
     #[nh_context_serde(skip_and_default)]
-    stereotype_controller: P::CommentStereotypeController,
+    stereotype_controller: P::NoteStereotypeController,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -9700,23 +9692,23 @@ pub struct UmlClassCommentView<P: UmlClassProfile> {
     _profile: PhantomData<P>,
 }
 
-impl<P: UmlClassProfile> UmlClassCommentView<P> {
+impl<P: UmlClassProfile> UmlClassNoteView<P> {
     const CORNER_SIZE: f32 = 10.0;
 
-    fn comment_link_button_rect(&self, ui_scale: f32) -> egui::Rect {
+    fn note_link_button_rect(&self, ui_scale: f32) -> egui::Rect {
         let b_radius = 8.0;
         let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
         egui::Rect::from_center_size(b_center, egui::Vec2::splat(2.0 * b_radius / ui_scale))
     }
 }
 
-impl<P: UmlClassProfile> Entity for UmlClassCommentView<P> {
+impl<P: UmlClassProfile> Entity for UmlClassNoteView<P> {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl<P: UmlClassProfile> View for UmlClassCommentView<P> {
+impl<P: UmlClassProfile> View for UmlClassNoteView<P> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -9725,7 +9717,7 @@ impl<P: UmlClassProfile> View for UmlClassCommentView<P> {
     }
 }
 
-impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassCommentView<P> {
+impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassNoteView<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -9741,7 +9733,7 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassCommentV
     }
 }
 
-impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCommentView<P> {
+impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNoteView<P> {
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
@@ -9810,7 +9802,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            UmlClassPropChange::CommentAlignChange(Some(tmp_x), None),
+                            UmlClassPropChange::NoteAlignChange(Some(tmp_x), None),
                         ));
                     }
                 }
@@ -9826,7 +9818,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            UmlClassPropChange::CommentAlignChange(None, Some(tmp_y)),
+                            UmlClassPropChange::NoteAlignChange(None, Some(tmp_y)),
                         ));
                     }
                 }
@@ -9935,7 +9927,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            let b_rect = self.comment_link_button_rect(ui_scale);
+            let b_rect = self.note_link_button_rect(ui_scale);
             canvas.draw_rectangle(
                 b_rect,
                 egui::CornerRadius::ZERO,
@@ -10039,12 +10031,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(pos) if self.comment_link_button_rect(ehc.ui_scale).contains(pos) => {
+            InputEvent::Click(pos) if self.note_link_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
                     uuid: uuid::Uuid::nil(),
-                    initial_stage: UmlClassToolStage::CommentLinkStart,
-                    current_stage: UmlClassToolStage::CommentLinkEnd,
-                    result: PartialUmlClassElement::CommentLink {
+                    initial_stage: UmlClassToolStage::NoteLinkStart,
+                    current_stage: UmlClassToolStage::NoteLinkEnd,
+                    result: PartialUmlClassElement::NoteLink {
                         source: self.model.clone(),
                         dest: None,
                     },
@@ -10182,10 +10174,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                             ));
                             self.background_color = *color;
                         }
-                        UmlClassPropChange::CommentAlignChange(x, y) => {
+                        UmlClassPropChange::NoteAlignChange(x, y) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlClassPropChange::CommentAlignChange(
+                                UmlClassPropChange::NoteAlignChange(
                                     Some(self.align.x()),
                                     Some(self.align.y()),
                                 ),
@@ -10246,7 +10238,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlClassElement::Comment(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlClassElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -10273,29 +10265,29 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
     }
 }
 
-pub fn new_umlclass_commentlink<P: UmlClassProfile>(
+pub fn new_umlclass_notelink<P: UmlClassProfile>(
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (ERef<UmlClassComment>, UmlClassElementView<P>),
+    source: (ERef<UmlClassNote>, UmlClassElementView<P>),
     target: (UmlClassElement, UmlClassElementView<P>),
-) -> (ERef<UmlClassCommentLink>, ERef<CommentLinkViewT<P>>) {
-    let link_model = ERef::new(UmlClassCommentLink::new(
+) -> (ERef<UmlClassNoteLink>, ERef<NoteLinkViewT<P>>) {
+    let link_model = ERef::new(UmlClassNoteLink::new(
         ModelUuid::now_v7(),
         source.0,
         target.0,
     ));
     let link_view =
-        new_umlclass_commentlink_view(link_model.clone(), center_point, source.1, target.1);
+        new_umlclass_notelink_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
 }
-pub fn new_umlclass_commentlink_view<P: UmlClassProfile>(
-    model: ERef<UmlClassCommentLink>,
+pub fn new_umlclass_notelink_view<P: UmlClassProfile>(
+    model: ERef<UmlClassNoteLink>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: UmlClassElementView<P>,
     target: UmlClassElementView<P>,
-) -> ERef<CommentLinkViewT<P>> {
+) -> ERef<NoteLinkViewT<P>> {
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
-        UmlClassCommentLinkAdapter {
+        UmlClassNoteLinkAdapter {
             model,
             temporaries: Default::default(),
         },
@@ -10308,22 +10300,22 @@ pub fn new_umlclass_commentlink_view<P: UmlClassProfile>(
 #[derive(
     Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
-pub struct UmlClassCommentLinkAdapter {
+pub struct UmlClassNoteLinkAdapter {
     #[nh_context_serde(entity)]
-    model: ERef<UmlClassCommentLink>,
+    model: ERef<UmlClassNoteLink>,
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    temporaries: UmlClassCommentLinkTemporaries,
+    temporaries: UmlClassNoteLinkTemporaries,
 }
 
 #[derive(Clone, Default)]
-struct UmlClassCommentLinkTemporaries {
+struct UmlClassNoteLinkTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 }
 
-impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassCommentLinkAdapter {
+impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassNoteLinkAdapter {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -10419,7 +10411,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
     {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlClassElement::CommentLink(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlClassElement::NoteLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -10437,7 +10429,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
         let mut model = self.model.write();
 
         let source_uuid = *model.source.read().uuid();
-        if let Some(UmlClassElement::Comment(new_source)) = m.get(&source_uuid) {
+        if let Some(UmlClassElement::Note(new_source)) = m.get(&source_uuid) {
             model.source = new_source.clone();
         }
         let target_uuid = *model.target.uuid();

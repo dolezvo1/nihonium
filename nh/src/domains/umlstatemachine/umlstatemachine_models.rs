@@ -140,8 +140,8 @@ pub fn deep_copy_diagram(
             }
             UmlStateMachineElement::FinalState(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlStateMachineElement::Edge(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlStateMachineElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlStateMachineElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlStateMachineElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlStateMachineElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
@@ -181,7 +181,7 @@ pub fn deep_copy_diagram(
             | UmlStateMachineElement::InitialPseudostate(..)
             | UmlStateMachineElement::TerminatePseudostate(..)
             | UmlStateMachineElement::FinalState(..)
-            | UmlStateMachineElement::Comment(..) => {}
+            | UmlStateMachineElement::Note(..) => {}
             UmlStateMachineElement::Edge(inner) => {
                 let mut model = inner.write();
 
@@ -194,11 +194,11 @@ pub fn deep_copy_diagram(
                     model.target = t;
                 }
             }
-            UmlStateMachineElement::CommentLink(inner) => {
+            UmlStateMachineElement::NoteLink(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.read().uuid();
-                if let Some(UmlStateMachineElement::Comment(s)) = all_models.get(&source_uuid) {
+                if let Some(UmlStateMachineElement::Note(s)) = all_models.get(&source_uuid) {
                     model.source = s.clone();
                 }
                 let target_uuid = *model.target.uuid();
@@ -374,7 +374,7 @@ pub fn transitive_closure(
                 | UmlStateMachineElement::InitialPseudostate(..)
                 | UmlStateMachineElement::TerminatePseudostate(..)
                 | UmlStateMachineElement::FinalState(..)
-                | UmlStateMachineElement::Comment(..) => {}
+                | UmlStateMachineElement::Note(..) => {}
                 UmlStateMachineElement::Edge(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
@@ -384,7 +384,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                UmlStateMachineElement::CommentLink(inner) => {
+                UmlStateMachineElement::NoteLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
@@ -432,8 +432,8 @@ pub enum UmlStateMachineElement {
     TerminatePseudostate(ERef<UmlStateMachineTerminatePseudostate>),
     FinalState(ERef<UmlStateMachineFinalState>),
     Edge(ERef<UmlStateMachineEdge>),
-    Comment(ERef<UmlStateMachineComment>),
-    CommentLink(ERef<UmlStateMachineCommentLink>),
+    Note(ERef<UmlStateMachineNote>),
+    NoteLink(ERef<UmlStateMachineNoteLink>),
 }
 
 impl UmlStateMachineElement {
@@ -448,8 +448,8 @@ impl UmlStateMachineElement {
             UmlStateMachineElement::TerminatePseudostate(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::FinalState(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::Edge(inner) => Some(inner.clone().into()),
-            UmlStateMachineElement::Comment(inner) => Some(inner.clone().into()),
-            UmlStateMachineElement::CommentLink(inner) => Some(inner.clone().into()),
+            UmlStateMachineElement::Note(inner) => Some(inner.clone().into()),
+            UmlStateMachineElement::NoteLink(inner) => Some(inner.clone().into()),
         }
     }
 }
@@ -476,8 +476,8 @@ pub enum UmlStateMachineStandaloneElement {
     TerminatePseudostate(ERef<UmlStateMachineTerminatePseudostate>),
     FinalState(ERef<UmlStateMachineFinalState>),
     Edge(ERef<UmlStateMachineEdge>),
-    Comment(ERef<UmlStateMachineComment>),
-    CommentLink(ERef<UmlStateMachineCommentLink>),
+    Note(ERef<UmlStateMachineNote>),
+    NoteLink(ERef<UmlStateMachineNoteLink>),
 }
 
 impl UmlStateMachineStandaloneElement {
@@ -490,8 +490,8 @@ impl UmlStateMachineStandaloneElement {
             UmlStateMachineStandaloneElement::TerminatePseudostate(inner) => inner.into(),
             UmlStateMachineStandaloneElement::FinalState(inner) => inner.into(),
             UmlStateMachineStandaloneElement::Edge(inner) => inner.into(),
-            UmlStateMachineStandaloneElement::Comment(inner) => inner.into(),
-            UmlStateMachineStandaloneElement::CommentLink(inner) => inner.into(),
+            UmlStateMachineStandaloneElement::Note(inner) => inner.into(),
+            UmlStateMachineStandaloneElement::NoteLink(inner) => inner.into(),
         }
     }
 }
@@ -1570,14 +1570,14 @@ impl Entity for UmlStateMachineEdge {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlStateMachineComment {
+pub struct UmlStateMachineNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
     pub text: Arc<String>,
 }
 
-impl UmlStateMachineComment {
+impl UmlStateMachineNote {
     pub fn new(uuid: ModelUuid, stereotype: String, text: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -1594,13 +1594,13 @@ impl UmlStateMachineComment {
     }
 }
 
-impl Entity for UmlStateMachineComment {
+impl Entity for UmlStateMachineNote {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlStateMachineComment {
+impl Model for UmlStateMachineNote {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
@@ -1610,21 +1610,21 @@ impl Model for UmlStateMachineComment {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct UmlStateMachineCommentLink {
+pub struct UmlStateMachineNoteLink {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub source: ERef<UmlStateMachineComment>,
+    pub source: ERef<UmlStateMachineNote>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlStateMachineElement,
 }
 
-impl UmlStateMachineCommentLink {
+impl UmlStateMachineNoteLink {
     pub fn new(
         uuid: ModelUuid,
-        source: ERef<UmlStateMachineComment>,
+        source: ERef<UmlStateMachineNote>,
         target: UmlStateMachineElement,
     ) -> Self {
         Self {
@@ -1642,13 +1642,13 @@ impl UmlStateMachineCommentLink {
     }
 }
 
-impl Entity for UmlStateMachineCommentLink {
+impl Entity for UmlStateMachineNoteLink {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for UmlStateMachineCommentLink {
+impl Model for UmlStateMachineNoteLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

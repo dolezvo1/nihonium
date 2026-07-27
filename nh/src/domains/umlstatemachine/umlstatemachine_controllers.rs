@@ -23,12 +23,11 @@ use crate::common::views::multiconnection_view::{
 use crate::common::views::ordered_views::OrderedViews;
 use crate::common::views::package_view::{PackageAdapter, PackageDragType, PackageView};
 use crate::domains::umlstatemachine::umlstatemachine_models::{
-    UmlStateMachine, UmlStateMachineComment, UmlStateMachineCommentLink,
-    UmlStateMachineCompositeState, UmlStateMachineCompositeStateRegion, UmlStateMachineDiagram,
-    UmlStateMachineEdge, UmlStateMachineElement, UmlStateMachineFinalState,
+    UmlStateMachine, UmlStateMachineCompositeState, UmlStateMachineCompositeStateRegion,
+    UmlStateMachineDiagram, UmlStateMachineEdge, UmlStateMachineElement, UmlStateMachineFinalState,
     UmlStateMachineInitialPseudostate, UmlStateMachineInternalTransition,
-    UmlStateMachineNonFinalNode, UmlStateMachineNonInitialNode, UmlStateMachineSimpleState,
-    UmlStateMachineTerminatePseudostate,
+    UmlStateMachineNonFinalNode, UmlStateMachineNonInitialNode, UmlStateMachineNote,
+    UmlStateMachineNoteLink, UmlStateMachineSimpleState, UmlStateMachineTerminatePseudostate,
 };
 use crate::{
     CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -58,8 +57,7 @@ impl Domain for UmlStateMachineDomain {
 
 type StateMachineViewT = PackageView<UmlStateMachineDomain, UmlStateMachineAdapter>;
 type EdgeViewT = MulticonnectionView<UmlStateMachineDomain, UmlStateMachineEdgeAdapter>;
-type CommentLinkViewT =
-    MulticonnectionView<UmlStateMachineDomain, UmlStateMachineCommentLinkAdapter>;
+type NoteLinkViewT = MulticonnectionView<UmlStateMachineDomain, UmlStateMachineNoteLinkAdapter>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum UmlStateMachineOrdinalMovement {
@@ -89,7 +87,7 @@ pub enum UmlStateMachinePropChange {
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    CommentAlignChange(Option<egui::Align>, Option<egui::Align>),
+    NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
 impl Debug for UmlStateMachinePropChange {
@@ -188,8 +186,8 @@ pub enum UmlStateMachineElementView {
     TerminatePseudostate(ERef<UmlStateMachineTerminatePseudostateView>),
     FinalState(ERef<UmlStateMachineFinalStateView>),
     Edge(ERef<EdgeViewT>),
-    Comment(ERef<UmlStateMachineCommentView>),
-    CommentLink(ERef<CommentLinkViewT>),
+    Note(ERef<UmlStateMachineNoteView>),
+    NoteLink(ERef<NoteLinkViewT>),
 }
 
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -384,13 +382,11 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 };
                 new_umlstatemachine_edge_view(inner.clone(), None, source_view, target_view).into()
             }
-            UmlStateMachineElement::Comment(inner) => new_umlstatemachine_comment_view(
-                inner,
-                egui::Pos2::ZERO,
-                egui::Align2::CENTER_CENTER,
-            )
-            .into(),
-            UmlStateMachineElement::CommentLink(inner) => {
+            UmlStateMachineElement::Note(inner) => {
+                new_umlstatemachine_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
+                    .into()
+            }
+            UmlStateMachineElement::NoteLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
@@ -398,7 +394,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                new_umlactivity_commentlink_view(inner.clone(), None, source_view, target_view)
+                new_umlstatemachine_notelink_view(inner.clone(), None, source_view, target_view)
                     .into()
             }
         };
@@ -468,16 +464,16 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 }
                 Arc::new(s)
             }
-            UmlStateMachineElement::Comment(inner) => {
+            UmlStateMachineElement::Note(inner) => {
                 let r = inner.read();
                 let s = if r.text.is_empty() {
-                    "Comment".to_owned()
+                    "Note".to_owned()
                 } else {
-                    format!("Comment ({})", LabelProvider::filter_and_elipsis(&r.text))
+                    format!("Note ({})", LabelProvider::filter_and_elipsis(&r.text))
                 };
                 Arc::new(s)
             }
-            UmlStateMachineElement::CommentLink(_inner) => Arc::new("Comment Link".to_string()),
+            UmlStateMachineElement::NoteLink(_inner) => Arc::new("Note Link".to_string()),
         }
     }
 
@@ -1005,7 +1001,7 @@ impl DiagramSettings for UmlStateMachineSettings {
                                 .labeled_text_edit_singleline("Name", name)
                                 .changed();
                         }
-                        UmlStateMachineToolStage::Comment {
+                        UmlStateMachineToolStage::Note {
                             stereotype,
                             text,
                             align,
@@ -1370,20 +1366,20 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             "Other",
             vec![
                 (
-                    UmlStateMachineToolStage::Comment {
+                    UmlStateMachineToolStage::Note {
                         stereotype: "".to_owned(),
-                        text: "a comment".to_owned(),
+                        text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
                     },
-                    "Comment",
+                    "Note",
                     Some(egui::KeyboardShortcut::new(
                         egui::Modifiers::COMMAND,
                         egui::Key::Num9,
                     )),
                 ),
                 (
-                    UmlStateMachineToolStage::CommentLinkStart {},
-                    "Comment Link",
+                    UmlStateMachineToolStage::NoteLinkStart {},
+                    "Note Link",
                     None,
                 ),
             ],
@@ -1522,17 +1518,17 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
             view.write().refresh_buffers();
             view.into()
         }
-        UmlStateMachineToolStage::Comment {
+        UmlStateMachineToolStage::Note {
             stereotype,
             text,
             align,
         } => {
-            let view = new_umlstatemachine_comment(text, stereotype, egui::Pos2::ZERO, *align).1;
+            let view = new_umlstatemachine_note(text, stereotype, egui::Pos2::ZERO, *align).1;
             view.write().refresh_buffers();
             view.into()
         }
-        UmlStateMachineToolStage::CommentLinkStart => {
-            let (comment, comment_view) = new_umlstatemachine_comment(
+        UmlStateMachineToolStage::NoteLinkStart => {
+            let (comment, comment_view) = new_umlstatemachine_note(
                 "dummy",
                 "",
                 egui::Pos2::ZERO,
@@ -1541,7 +1537,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
             let (d, dv) = new_umlstatemachine_terminatepseudostate(egui::Pos2::new(200.0, 150.0));
             let dummy_2_element = (d.into(), dv.into());
 
-            let view = new_umlactivity_commentlink(
+            let view = new_umlstatemachine_notelink(
                 None,
                 (comment.clone(), comment_view.clone().into()),
                 dummy_2_element.clone(),
@@ -1553,7 +1549,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
         | UmlStateMachineToolStage::LinkEnd
         | UmlStateMachineToolStage::StateMachineEnd
         | UmlStateMachineToolStage::CompositeStateEnd
-        | UmlStateMachineToolStage::CommentLinkEnd => unreachable!(),
+        | UmlStateMachineToolStage::NoteLinkEnd => unreachable!(),
     }
 }
 
@@ -1642,13 +1638,13 @@ pub enum UmlStateMachineToolStage {
     },
     CompositeStateEnd,
     CompositeStateRegion {},
-    Comment {
+    Note {
         stereotype: String,
         text: String,
         align: egui::Align2,
     },
-    CommentLinkStart,
-    CommentLinkEnd,
+    NoteLinkStart,
+    NoteLinkEnd,
 }
 
 pub enum PartialUmlStateMachineElement {
@@ -1667,8 +1663,8 @@ pub enum PartialUmlStateMachineElement {
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
-    CommentLink {
-        source: ERef<UmlStateMachineComment>,
+    NoteLink {
+        source: ERef<UmlStateMachineNote>,
         dest: Option<UmlStateMachineElement>,
     },
 }
@@ -1724,21 +1720,21 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
             ) => match self.current_stage {
                 UmlStateMachineToolStage::LinkStart { .. }
                 | UmlStateMachineToolStage::LinkEnd
-                | UmlStateMachineToolStage::CommentLinkStart
-                | UmlStateMachineToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
+                | UmlStateMachineToolStage::NoteLinkStart
+                | UmlStateMachineToolStage::NoteLinkEnd => NON_TARGETTABLE_COLOR,
                 _ => TARGETTABLE_COLOR,
             },
             Some(UmlStateMachineElement::CompositeState(_)) => TARGETTABLE_COLOR,
             Some(UmlStateMachineElement::InitialPseudostate(_)) => match self.current_stage {
                 UmlStateMachineToolStage::LinkStart { .. }
-                | UmlStateMachineToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
+                | UmlStateMachineToolStage::NoteLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
             Some(
                 UmlStateMachineElement::TerminatePseudostate(_)
                 | UmlStateMachineElement::FinalState(_),
             ) => match self.current_stage {
-                UmlStateMachineToolStage::LinkEnd | UmlStateMachineToolStage::CommentLinkEnd => {
+                UmlStateMachineToolStage::LinkEnd | UmlStateMachineToolStage::NoteLinkEnd => {
                     TARGETTABLE_COLOR
                 }
                 _ => NON_TARGETTABLE_COLOR,
@@ -1746,15 +1742,15 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
             Some(UmlStateMachineElement::SimpleState(_)) => match self.current_stage {
                 UmlStateMachineToolStage::LinkStart { .. }
                 | UmlStateMachineToolStage::LinkEnd
-                | UmlStateMachineToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
+                | UmlStateMachineToolStage::NoteLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
             Some(UmlStateMachineElement::InternalTransition(_)) => NON_TARGETTABLE_COLOR,
-            Some(UmlStateMachineElement::Comment(_)) => match self.current_stage {
-                UmlStateMachineToolStage::CommentLinkStart => TARGETTABLE_COLOR,
+            Some(UmlStateMachineElement::Note(_)) => match self.current_stage {
+                UmlStateMachineToolStage::NoteLinkStart => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlStateMachineElement::Edge(_) | UmlStateMachineElement::CommentLink(_)) => {
+            Some(UmlStateMachineElement::Edge(_) | UmlStateMachineElement::NoteLink(_)) => {
                 unreachable!()
             }
         }
@@ -1811,7 +1807,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     canvas::Highlight::NONE,
                 );
             }
-            (_, PartialUmlStateMachineElement::CommentLink { source, .. }) => {
+            (_, PartialUmlStateMachineElement::NoteLink { source, .. }) => {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1865,14 +1861,14 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 self.event_lock = true;
             }
             (
-                UmlStateMachineToolStage::Comment {
+                UmlStateMachineToolStage::Note {
                     stereotype,
                     text,
                     align,
                 },
                 _,
             ) => {
-                let (_model, view) = new_umlstatemachine_comment(text, stereotype, pos, *align);
+                let (_model, view) = new_umlstatemachine_note(text, stereotype, pos, *align);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1976,8 +1972,8 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                         self.event_lock = true;
                     }
                     (
-                        UmlStateMachineToolStage::CommentLinkEnd,
-                        PartialUmlStateMachineElement::CommentLink { dest, .. },
+                        UmlStateMachineToolStage::NoteLinkEnd,
+                        PartialUmlStateMachineElement::NoteLink { dest, .. },
                     ) => {
                         *dest = Some(e);
                         self.event_lock = true;
@@ -1985,13 +1981,13 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     _ => {}
                 }
             }
-            UmlStateMachineElement::Comment(inner) => {
-                if let UmlStateMachineToolStage::CommentLinkStart = &self.current_stage {
-                    self.result = PartialUmlStateMachineElement::CommentLink {
+            UmlStateMachineElement::Note(inner) => {
+                if let UmlStateMachineToolStage::NoteLinkStart = &self.current_stage {
+                    self.result = PartialUmlStateMachineElement::NoteLink {
                         source: inner,
                         dest: None,
                     };
-                    self.current_stage = UmlStateMachineToolStage::CommentLinkEnd;
+                    self.current_stage = UmlStateMachineToolStage::NoteLinkEnd;
                     self.event_lock = true;
                 }
             }
@@ -2184,7 +2180,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 });
                 Ok(None)
             }
-            PartialUmlStateMachineElement::CommentLink {
+            PartialUmlStateMachineElement::NoteLink {
                 source,
                 dest: Some(dest),
                 ..
@@ -2205,7 +2201,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let link_view = new_umlactivity_commentlink(
+                    let link_view = new_umlstatemachine_notelink(
                         None,
                         (source.clone(), source_view),
                         (dest.clone(), target_view),
@@ -7529,31 +7525,28 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
     }
 }
 
-pub fn new_umlstatemachine_comment(
+pub fn new_umlstatemachine_note(
     text: &str,
     stereotype: &str,
     position: egui::Pos2,
     align: egui::Align2,
-) -> (
-    ERef<UmlStateMachineComment>,
-    ERef<UmlStateMachineCommentView>,
-) {
-    let comment_model = ERef::new(UmlStateMachineComment::new(
+) -> (ERef<UmlStateMachineNote>, ERef<UmlStateMachineNoteView>) {
+    let comment_model = ERef::new(UmlStateMachineNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let comment_view = new_umlstatemachine_comment_view(comment_model.clone(), position, align);
+    let comment_view = new_umlstatemachine_note_view(comment_model.clone(), position, align);
 
     (comment_model, comment_view)
 }
-pub fn new_umlstatemachine_comment_view(
-    model: ERef<UmlStateMachineComment>,
+pub fn new_umlstatemachine_note_view(
+    model: ERef<UmlStateMachineNote>,
     position: egui::Pos2,
     align: egui::Align2,
-) -> ERef<UmlStateMachineCommentView> {
+) -> ERef<UmlStateMachineNoteView> {
     let m = model.read();
-    ERef::new(UmlStateMachineCommentView {
+    ERef::new(UmlStateMachineNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
@@ -7572,10 +7565,10 @@ pub fn new_umlstatemachine_comment_view(
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlStateMachineCommentView {
+pub struct UmlStateMachineNoteView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
-    pub model: ERef<UmlStateMachineComment>,
+    pub model: ERef<UmlStateMachineNote>,
 
     #[nh_context_serde(skip_and_default)]
     display_text: String,
@@ -7594,7 +7587,7 @@ pub struct UmlStateMachineCommentView {
     background_color: MGlobalColor,
 }
 
-impl UmlStateMachineCommentView {
+impl UmlStateMachineNoteView {
     const CORNER_SIZE: f32 = 10.0;
 
     fn comment_link_button_rect(&self, ui_scale: f32) -> egui::Rect {
@@ -7604,13 +7597,13 @@ impl UmlStateMachineCommentView {
     }
 }
 
-impl Entity for UmlStateMachineCommentView {
+impl Entity for UmlStateMachineNoteView {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for UmlStateMachineCommentView {
+impl View for UmlStateMachineNoteView {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -7619,7 +7612,7 @@ impl View for UmlStateMachineCommentView {
     }
 }
 
-impl ElementController<UmlStateMachineElement> for UmlStateMachineCommentView {
+impl ElementController<UmlStateMachineElement> for UmlStateMachineNoteView {
     fn model(&self) -> UmlStateMachineElement {
         self.model.clone().into()
     }
@@ -7635,7 +7628,7 @@ impl ElementController<UmlStateMachineElement> for UmlStateMachineCommentView {
     }
 }
 
-impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCommentView {
+impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
@@ -7708,7 +7701,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCommentView
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            UmlStateMachinePropChange::CommentAlignChange(Some(tmp_x), None),
+                            UmlStateMachinePropChange::NoteAlignChange(Some(tmp_x), None),
                         ));
                     }
                 }
@@ -7724,7 +7717,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCommentView
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            UmlStateMachinePropChange::CommentAlignChange(None, Some(tmp_y)),
+                            UmlStateMachinePropChange::NoteAlignChange(None, Some(tmp_y)),
                         ));
                     }
                 }
@@ -7940,9 +7933,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCommentView
             InputEvent::Click(pos) if self.comment_link_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlStateMachineTool {
                     uuid: uuid::Uuid::nil(),
-                    initial_stage: UmlStateMachineToolStage::CommentLinkStart,
-                    current_stage: UmlStateMachineToolStage::CommentLinkEnd,
-                    result: PartialUmlStateMachineElement::CommentLink {
+                    initial_stage: UmlStateMachineToolStage::NoteLinkStart,
+                    current_stage: UmlStateMachineToolStage::NoteLinkEnd,
+                    result: PartialUmlStateMachineElement::NoteLink {
                         source: self.model.clone(),
                         dest: None,
                     },
@@ -8081,10 +8074,10 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCommentView
                             ));
                             self.background_color = *color;
                         }
-                        UmlStateMachinePropChange::CommentAlignChange(x, y) => {
+                        UmlStateMachinePropChange::NoteAlignChange(x, y) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlStateMachinePropChange::CommentAlignChange(
+                                UmlStateMachinePropChange::NoteAlignChange(
                                     Some(self.align.x()),
                                     Some(self.align.y()),
                                 ),
@@ -8145,7 +8138,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCommentView
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlStateMachineElement::Comment(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlStateMachineElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -8171,29 +8164,29 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCommentView
     }
 }
 
-pub fn new_umlactivity_commentlink(
+pub fn new_umlstatemachine_notelink(
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (ERef<UmlStateMachineComment>, UmlStateMachineElementView),
+    source: (ERef<UmlStateMachineNote>, UmlStateMachineElementView),
     target: (UmlStateMachineElement, UmlStateMachineElementView),
-) -> (ERef<UmlStateMachineCommentLink>, ERef<CommentLinkViewT>) {
-    let link_model = ERef::new(UmlStateMachineCommentLink::new(
+) -> (ERef<UmlStateMachineNoteLink>, ERef<NoteLinkViewT>) {
+    let link_model = ERef::new(UmlStateMachineNoteLink::new(
         ModelUuid::now_v7(),
         source.0,
         target.0,
     ));
     let link_view =
-        new_umlactivity_commentlink_view(link_model.clone(), center_point, source.1, target.1);
+        new_umlstatemachine_notelink_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
 }
-pub fn new_umlactivity_commentlink_view(
-    model: ERef<UmlStateMachineCommentLink>,
+pub fn new_umlstatemachine_notelink_view(
+    model: ERef<UmlStateMachineNoteLink>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: UmlStateMachineElementView,
     target: UmlStateMachineElementView,
-) -> ERef<CommentLinkViewT> {
+) -> ERef<NoteLinkViewT> {
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
-        UmlStateMachineCommentLinkAdapter {
+        UmlStateMachineNoteLinkAdapter {
             model,
             temporaries: Default::default(),
         },
@@ -8206,22 +8199,22 @@ pub fn new_umlactivity_commentlink_view(
 #[derive(
     Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
-pub struct UmlStateMachineCommentLinkAdapter {
+pub struct UmlStateMachineNoteLinkAdapter {
     #[nh_context_serde(entity)]
-    model: ERef<UmlStateMachineCommentLink>,
+    model: ERef<UmlStateMachineNoteLink>,
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    temporaries: UmlStateMachineCommentLinkTemporaries,
+    temporaries: UmlStateMachineNoteLinkTemporaries,
 }
 
 #[derive(Clone, Default)]
-struct UmlStateMachineCommentLinkTemporaries {
+struct UmlStateMachineNoteLinkTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 }
 
-impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineCommentLinkAdapter {
+impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAdapter {
     fn model(&self) -> UmlStateMachineElement {
         self.model.clone().into()
     }
@@ -8317,7 +8310,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineCommentLin
     {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlStateMachineElement::CommentLink(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlStateMachineElement::NoteLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -8335,7 +8328,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineCommentLin
         let mut model = self.model.write();
 
         let source_uuid = *model.source.read().uuid();
-        if let Some(UmlStateMachineElement::Comment(new_source)) = m.get(&source_uuid) {
+        if let Some(UmlStateMachineElement::Note(new_source)) = m.get(&source_uuid) {
             model.source = new_source.clone();
         }
         let target_uuid = *model.target.uuid();

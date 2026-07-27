@@ -44,7 +44,7 @@ pub fn deep_copy_diagram(
             NetworkElement::File(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::Location(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
-            NetworkElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
+            NetworkElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
@@ -72,7 +72,7 @@ pub fn deep_copy_diagram(
                     model.target = t.clone();
                 }
             }
-            NetworkElement::Comment(_) => {}
+            NetworkElement::Note(_) => {}
         }
     }
 
@@ -116,7 +116,7 @@ fn enumerate_elements(e: &NetworkElement, into: &mut HashMap<ModelUuid, NetworkE
         | NetworkElement::File(_)
         | NetworkElement::Location(_)
         | NetworkElement::Association(_)
-        | NetworkElement::Comment(_) => {}
+        | NetworkElement::Note(_) => {}
     }
 }
 
@@ -144,7 +144,7 @@ pub fn transitive_closure(
                 | NetworkElement::File(_)
                 | NetworkElement::Location(_)
                 | NetworkElement::Association(_)
-                | NetworkElement::Comment(_) => {}
+                | NetworkElement::Note(_) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -176,7 +176,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                NetworkElement::Comment(_) => {}
+                NetworkElement::Note(_) => {}
             }
         }
         for e in &d.contained_elements {
@@ -213,7 +213,7 @@ pub enum NetworkElement {
 
     Association(ERef<NetworkAssociation>),
 
-    Comment(ERef<NetworkComment>),
+    Note(ERef<NetworkNote>),
 }
 
 impl VisitableElement for NetworkElement {
@@ -315,7 +315,7 @@ impl NetworkDiagram {
                 | NetworkElement::File(_)
                 | NetworkElement::Location(_)
                 | NetworkElement::Association(_)
-                | NetworkElement::Comment(_) => {}
+                | NetworkElement::Note(_) => {}
             }
         }
 
@@ -1023,13 +1023,13 @@ impl Model for NetworkAssociation {
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
-pub struct NetworkComment {
+pub struct NetworkNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub text: Arc<String>,
 }
 
-impl NetworkComment {
+impl NetworkNote {
     pub fn new(uuid: ModelUuid, text: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -1044,13 +1044,13 @@ impl NetworkComment {
     }
 }
 
-impl Entity for NetworkComment {
+impl Entity for NetworkNote {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl Model for NetworkComment {
+impl Model for NetworkNote {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

@@ -23,8 +23,8 @@ use crate::common::views::multiconnection_view::{
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::network::network_models::{
     NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType,
-    NetworkComment, NetworkContainer, NetworkDiagram, NetworkElement, NetworkFile, NetworkFileKind,
-    NetworkLocation, NetworkLocationKind, NetworkNode, NetworkNodeKind, NetworkUser,
+    NetworkContainer, NetworkDiagram, NetworkElement, NetworkFile, NetworkFileKind,
+    NetworkLocation, NetworkLocationKind, NetworkNode, NetworkNodeKind, NetworkNote, NetworkUser,
     NetworkUserKind,
 };
 use crate::{
@@ -77,7 +77,7 @@ pub enum NetworkPropChange {
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    CommentAlignChange(Option<egui::Align>, Option<egui::Align>),
+    NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
 impl Debug for NetworkPropChange {
@@ -157,7 +157,7 @@ pub enum NetworkElementView {
     File(ERef<NetworkFileView>),
     Location(ERef<NetworkLocationView>),
     Association(ERef<LinkViewT>),
-    Comment(ERef<NetworkCommentView>),
+    Note(ERef<NetworkNoteView>),
 }
 
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -305,9 +305,8 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                 };
                 new_network_association_view(inner.clone(), source_view, target_view).into()
             }
-            NetworkElement::Comment(inner) => {
-                new_network_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
-                    .into()
+            NetworkElement::Note(inner) => {
+                new_network_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
             }
         };
 
@@ -341,12 +340,12 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
             )
             .into(),
             NetworkElement::Association(_inner) => "Association".to_owned().into(),
-            NetworkElement::Comment(inner) => {
+            NetworkElement::Note(inner) => {
                 let r = inner.read();
                 let s = if r.text.is_empty() {
-                    "Comment".to_owned()
+                    "Note".to_owned()
                 } else {
-                    format!("Comment ({})", LabelProvider::filter_and_elipsis(&r.text))
+                    format!("Note ({})", LabelProvider::filter_and_elipsis(&r.text))
                 };
                 Arc::new(s)
             }
@@ -858,7 +857,7 @@ impl DiagramSettings for NetworkSettings {
                                 .labeled_text_edit_singleline("Name", name)
                                 .changed();
                         }
-                        NetworkToolStage::Comment { text, align } => {
+                        NetworkToolStage::Note { text, align } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
@@ -1260,11 +1259,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     )),
                 ),
                 (
-                    NetworkToolStage::Comment {
-                        text: "a comment".to_owned(),
+                    NetworkToolStage::Note {
+                        text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
                     },
-                    "Comment",
+                    "Note",
                     Some(egui::KeyboardShortcut::new(
                         egui::Modifiers::COMMAND,
                         egui::Key::Num9,
@@ -1368,9 +1367,8 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             .1;
             container_view.into()
         }
-        NetworkToolStage::Comment { text, align } => {
-            let comment_view = new_network_comment(text, egui::Pos2::ZERO, *align).1;
-            comment_view.into()
+        NetworkToolStage::Note { text, align } => {
+            new_network_note(text, egui::Pos2::ZERO, *align).1.into()
         }
         NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => unreachable!(),
     }
@@ -1438,7 +1436,7 @@ pub enum NetworkToolStage {
         name: String,
     },
     ContainerEnd,
-    Comment {
+    Note {
         text: String,
         align: egui::Align2,
     },
@@ -1508,7 +1506,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::Location { .. }
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
-                | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
+                | NetworkToolStage::Note { .. } => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart { .. } | NetworkToolStage::AssociationEnd => {
                     NON_TARGETTABLE_COLOR
                 }
@@ -1518,7 +1516,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
                 | NetworkElement::Location(_)
-                | NetworkElement::Comment(_),
+                | NetworkElement::Note(_),
             ) => match self.current_stage {
                 NetworkToolStage::AssociationStart { .. } | NetworkToolStage::AssociationEnd => {
                     TARGETTABLE_COLOR
@@ -1529,7 +1527,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::Location { .. }
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
-                | NetworkToolStage::Comment { .. } => NON_TARGETTABLE_COLOR,
+                | NetworkToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
             Some(NetworkElement::Association(_)) => unreachable!(),
         }
@@ -1654,10 +1652,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             (NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => {
                 *b = Some(pos)
             }
-            (NetworkToolStage::Comment { text, align }, _) => {
-                let (_, comment_view) = new_network_comment(text, pos, *align);
+            (NetworkToolStage::Note { text, align }, _) => {
+                let view = new_network_note(text, pos, *align).1;
 
-                self.result = PartialNetworkElement::Some(comment_view.into());
+                self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
             _ => {}
@@ -1674,7 +1672,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             | NetworkElement::User(_)
             | NetworkElement::File(_)
             | NetworkElement::Location(_)
-            | NetworkElement::Comment(_) => match (&self.current_stage, &mut self.result) {
+            | NetworkElement::Note(_) => match (&self.current_stage, &mut self.result) {
                 (NetworkToolStage::AssociationStart { .. }, PartialNetworkElement::None) => {
                     self.result = PartialNetworkElement::Association {
                         source: section,
@@ -5412,23 +5410,23 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     }
 }
 
-pub fn new_network_comment(
+pub fn new_network_note(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
-) -> (ERef<NetworkComment>, ERef<NetworkCommentView>) {
-    let comment_model = ERef::new(NetworkComment::new(ModelUuid::now_v7(), text.to_owned()));
-    let comment_view = new_network_comment_view(comment_model.clone(), position, align);
+) -> (ERef<NetworkNote>, ERef<NetworkNoteView>) {
+    let model = ERef::new(NetworkNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let view = new_network_note_view(model.clone(), position, align);
 
-    (comment_model, comment_view)
+    (model, view)
 }
-pub fn new_network_comment_view(
-    model: ERef<NetworkComment>,
+pub fn new_network_note_view(
+    model: ERef<NetworkNote>,
     position: egui::Pos2,
     align: egui::Align2,
-) -> ERef<NetworkCommentView> {
+) -> ERef<NetworkNoteView> {
     let m = model.read();
-    ERef::new(NetworkCommentView {
+    ERef::new(NetworkNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
@@ -5445,10 +5443,10 @@ pub fn new_network_comment_view(
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct NetworkCommentView {
+pub struct NetworkNoteView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
-    pub model: ERef<NetworkComment>,
+    pub model: ERef<NetworkNote>,
 
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
@@ -5463,17 +5461,17 @@ pub struct NetworkCommentView {
     background_color: MGlobalColor,
 }
 
-impl NetworkCommentView {
+impl NetworkNoteView {
     const CORNER_SIZE: f32 = 10.0;
 }
 
-impl Entity for NetworkCommentView {
+impl Entity for NetworkNoteView {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for NetworkCommentView {
+impl View for NetworkNoteView {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -5482,7 +5480,7 @@ impl View for NetworkCommentView {
     }
 }
 
-impl ElementController<NetworkElement> for NetworkCommentView {
+impl ElementController<NetworkElement> for NetworkNoteView {
     fn model(&self) -> NetworkElement {
         self.model.clone().into()
     }
@@ -5498,7 +5496,7 @@ impl ElementController<NetworkElement> for NetworkCommentView {
     }
 }
 
-impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
+impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
@@ -5556,7 +5554,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::CommentAlignChange(Some(tmp_x), None),
+                            NetworkPropChange::NoteAlignChange(Some(tmp_x), None),
                         ));
                     }
                 }
@@ -5572,7 +5570,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::CommentAlignChange(None, Some(tmp_y)),
+                            NetworkPropChange::NoteAlignChange(None, Some(tmp_y)),
                         ));
                     }
                 }
@@ -5877,10 +5875,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                             ));
                             self.background_color = *color;
                         }
-                        NetworkPropChange::CommentAlignChange(x, y) => {
+                        NetworkPropChange::NoteAlignChange(x, y) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::CommentAlignChange(
+                                NetworkPropChange::NoteAlignChange(
                                     Some(self.align.x()),
                                     Some(self.align.y()),
                                 ),
@@ -5929,7 +5927,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(NetworkElement::Comment(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(NetworkElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
