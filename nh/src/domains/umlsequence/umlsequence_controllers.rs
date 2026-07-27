@@ -4619,9 +4619,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                 }
             });
 
+        let mut kind_argument_label = egui::RichText::new("Kind argument:");
+        if !self.temporaries.kind_buffer.takes_argument() {
+            kind_argument_label = kind_argument_label.strikethrough();
+        }
         if ui
             .labeled_text_edit_singleline(
-                "Kind argument:",
+                kind_argument_label,
                 &mut self.temporaries.kind_argument_buffer,
             )
             .changed()

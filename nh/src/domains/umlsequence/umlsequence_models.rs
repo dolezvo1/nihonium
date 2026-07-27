@@ -1286,6 +1286,15 @@ impl UmlSequenceCombinedFragmentKind {
             UmlSequenceCombinedFragmentKind::Neg => "neg",
         }
     }
+
+    pub fn takes_argument(&self) -> bool {
+        match self {
+            UmlSequenceCombinedFragmentKind::Loop
+            | UmlSequenceCombinedFragmentKind::Ignore
+            | UmlSequenceCombinedFragmentKind::Consider => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, Default)]
