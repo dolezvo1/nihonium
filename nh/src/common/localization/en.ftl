@@ -111,6 +111,9 @@ nh-tab-outline = Outline
 nh-tab-projectsettings = Project Settings
 nh-tab-projectsettings-general = General
 nh-tab-projectsettings-general-projectname = Project Name
+nh-tab-projectsettings-general-projectversion = Project Version
+nh-tab-projectsettings-general-projectdescription = Project Description
+nh-tab-projectsettings-general-projectauthor = Project Author
 nh-tab-projectsettings-globalcolors = Global Colors
 nh-tab-projectsettings-globalcolors-addnew = Add new
 

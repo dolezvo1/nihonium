@@ -311,10 +311,19 @@ impl ShadesProfile {
     }
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct ProjectMeta {
+    name: String,
+    version: String,
+    description: String,
+    author: String,
+}
+
 struct NHContext {
     file_io_channel: (Sender<FileIOOperation>, Receiver<FileIOOperation>),
     project_path: Option<std::path::PathBuf>,
     pub diagram_controllers: HashMap<ViewUuid, ERef<dyn DiagramController>>,
+    project_meta: ProjectMeta,
     project_hierarchy: HierarchyNode,
     tree_view_state: TreeViewState<ViewUuid>,
     diagram_deserializers: HashMap<String, &'static DeserializeControllerF>,
@@ -689,7 +698,7 @@ impl NHContext {
         wa: &mut WA,
         sources_folder_name: &str,
     ) -> Result<(), NHSerializeError> {
-        let HierarchyNode::Folder(_, project_name, children) = &self.project_hierarchy else {
+        let HierarchyNode::Folder(.., children) = &self.project_hierarchy else {
             return Err("invalid hierarchy root for project export"
                 .to_owned()
                 .into());
@@ -697,7 +706,7 @@ impl NHContext {
 
         common::project_serde::NHProjectSerialization::write_to(
             wa,
-            project_name,
+            &self.project_meta,
             sources_folder_name,
             self.new_diagram_no as usize,
             children,
@@ -770,7 +779,8 @@ impl NHContext {
         for e in hierarchy {
             children.push(e);
         }
-        *project_name = Arc::new(pdto.project_name());
+        self.project_meta = pdto.project_meta();
+        *project_name = Arc::new(self.project_meta.name.clone());
         self.new_diagram_no = pdto.new_diagram_no_counter() as u32;
         for e in &top_level_views {
             e.1.write()
@@ -785,6 +795,12 @@ impl NHContext {
     fn clear_project_data(&mut self) {
         self.project_path = None;
         self.diagram_controllers.clear();
+        self.project_meta = ProjectMeta {
+            name: "New Project".to_owned(),
+            version: "".to_owned(),
+            description: "".to_owned(),
+            author: "".to_owned(),
+        };
         self.project_hierarchy =
             HierarchyNode::Folder(ViewUuid::nil(), "New Project".to_owned().into(), vec![]);
         self.new_diagram_no = 1;
@@ -1478,21 +1494,43 @@ impl NHContext {
         .id_salt("General")
         .default_open(true)
         .show(ui, |ui| {
-            let HierarchyNode::Folder(_, s, _) = &mut self.project_hierarchy else {
-                return;
-            };
-            let mut buffer = (**s).clone();
             if ui
                 .labeled_text_edit_singleline(
                     self.drawing_context
                         .translate_0("nh-tab-projectsettings-general-projectname"),
-                    &mut buffer,
+                    &mut self.project_meta.name,
                 )
                 .changed()
             {
-                *s = buffer.into();
+                if let HierarchyNode::Folder(_, s, _) = &mut self.project_hierarchy {
+                    *s = self.project_meta.name.clone().into();
+                }
                 anything_changed = true;
             }
+
+            anything_changed |= ui
+                .labeled_text_edit_singleline(
+                    self.drawing_context
+                        .translate_0("nh-tab-projectsettings-general-projectversion"),
+                    &mut self.project_meta.version,
+                )
+                .changed();
+
+            anything_changed |= ui
+                .labeled_text_edit_multiline(
+                    self.drawing_context
+                        .translate_0("nh-tab-projectsettings-general-projectdescription"),
+                    &mut self.project_meta.description,
+                )
+                .changed();
+
+            anything_changed |= ui
+                .labeled_text_edit_multiline(
+                    self.drawing_context
+                        .translate_0("nh-tab-projectsettings-general-projectauthor"),
+                    &mut self.project_meta.author,
+                )
+                .changed();
         });
 
         egui::CollapsingHeader::new(
@@ -2844,6 +2882,12 @@ impl NHApp {
             file_io_channel: std::sync::mpsc::channel(),
             project_path: None,
             diagram_controllers: HashMap::new(),
+            project_meta: ProjectMeta {
+                name: "New Project".to_owned(),
+                version: "".to_owned(),
+                description: "".to_owned(),
+                author: "".to_owned(),
+            },
             project_hierarchy: HierarchyNode::Folder(
                 ViewUuid::nil(),
                 Arc::new("New Project".to_owned()),
@@ -4269,6 +4313,9 @@ impl eframe::App for NHApp {
                         &new_name,
                         &mut self.context.documents,
                     ) {
+                        if view_uuid.is_nil() {
+                            self.context.project_meta.name = new_name;
+                        }
                         self.context.set_has_unsaved_changes(true);
                     }
                 }

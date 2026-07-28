@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
 use crate::common::uuid::ControllerUuid;
-use crate::egui;
+use crate::{ProjectMeta, egui};
 use serde::{Deserialize, Serialize};
 
 use crate::DeserializeControllerF;
@@ -221,7 +221,7 @@ struct GlobalColorDTO {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NHProjectSerialization {
     format_version: String,
-    project_name: String,
+    project_meta: ProjectMeta,
     sources_root: String,
     new_diagram_no_counter: usize,
     hierarchy: Vec<NHProjectHierarchyNodeSerialization>,
@@ -245,7 +245,7 @@ pub struct NHEntitySerialization {
 impl NHProjectSerialization {
     pub fn write_to<WA: FSWriteAbstraction>(
         wa: &mut WA,
-        project_name: &str,
+        project_meta: &ProjectMeta,
         sources_root: &str,
         new_diagram_no_counter: usize,
         hierarchy: &Vec<HierarchyNode>,
@@ -305,7 +305,7 @@ impl NHProjectSerialization {
 
         let project_serialization = Self {
             format_version: env!("COMMIT_IDENTIFIER").to_owned(),
-            project_name: project_name.to_owned(),
+            project_meta: project_meta.clone(),
             sources_root: sources_root.to_owned(),
             new_diagram_no_counter,
             hierarchy: hierarchy.iter().map(|e| h(e, documents)).collect(),
@@ -327,8 +327,8 @@ impl NHProjectSerialization {
         Ok(())
     }
 
-    pub fn project_name(&self) -> String {
-        self.project_name.clone()
+    pub fn project_meta(&self) -> ProjectMeta {
+        self.project_meta.clone()
     }
     pub fn new_diagram_no_counter(&self) -> usize {
         self.new_diagram_no_counter

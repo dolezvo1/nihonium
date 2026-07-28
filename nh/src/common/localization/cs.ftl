@@ -111,6 +111,9 @@ nh-tab-outline = Obrys
 nh-tab-projectsettings = Nastavení projektu
 nh-tab-projectsettings-general = Obecné
 nh-tab-projectsettings-general-projectname = Jméno projektu
+nh-tab-projectsettings-general-projectversion = Verze projektu
+nh-tab-projectsettings-general-projectdescription = Popis projektu
+nh-tab-projectsettings-general-projectauthor = Autor projektu
 nh-tab-projectsettings-globalcolors = Globální barvy
 nh-tab-projectsettings-globalcolors-addnew = Přidat novou
 
