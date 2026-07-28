@@ -7,6 +7,24 @@ pub const PERFORMA_DETAIL: egui::Color32 = egui::Color32::RED;
 pub const INFORMA_DETAIL: egui::Color32 = egui::Color32::from_rgb(0, 175, 0);
 pub const FORMA_DETAIL: egui::Color32 = egui::Color32::BLUE;
 
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum DemoPackageKind {
+    #[default]
+    Package,
+    ScopeOfInterest,
+}
+
+impl DemoPackageKind {
+    pub const VARIANTS: [Self; 2] = [Self::Package, Self::ScopeOfInterest];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Package => "Package",
+            Self::ScopeOfInterest => "Scope of Interest",
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 pub enum DemoTransactionKind {
     #[default]

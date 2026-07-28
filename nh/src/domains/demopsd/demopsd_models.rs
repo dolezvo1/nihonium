@@ -16,7 +16,7 @@ use crate::{
         ufoption::UFOption,
         uuid::ModelUuid,
     },
-    domains::demo::DemoTransactionKind,
+    domains::demo::{DemoPackageKind, DemoTransactionKind},
 };
 
 #[derive(
@@ -122,6 +122,7 @@ pub fn deep_copy_diagram(
                 let new_model = DemoPsdPackage {
                     uuid: new_uuid,
                     name: model.name.clone(),
+                    kind: model.kind,
                     contained_elements: model
                         .contained_elements
                         .iter()
@@ -481,6 +482,7 @@ impl FullTextSearchable for DemoPsdDiagram {
 pub struct DemoPsdPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    pub kind: DemoPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoPsdElement>,
 
@@ -488,10 +490,16 @@ pub struct DemoPsdPackage {
 }
 
 impl DemoPsdPackage {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoPsdElement>) -> Self {
+    pub fn new(
+        uuid: ModelUuid,
+        name: String,
+        kind: DemoPackageKind,
+        contained_elements: Vec<DemoPsdElement>,
+    ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
+            kind,
             contained_elements,
             comment: Arc::new("".to_owned()),
         }
@@ -500,6 +508,7 @@ impl DemoPsdPackage {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
+            kind: self.kind,
             contained_elements: self.contained_elements.clone(),
             comment: self.comment.clone(),
         })

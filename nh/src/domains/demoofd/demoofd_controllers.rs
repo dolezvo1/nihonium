@@ -30,6 +30,7 @@ use crate::common::views::multiconnection_view::{
     MulticonnectionAdapter, MulticonnectionView, VertexInformation,
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
+use crate::domains::demo::DemoPackageKind;
 use crate::domains::demoofd::demoofd_models::{
     DemoOfdAggregation, DemoOfdExclusion, DemoOfdNote, DemoOfdPrecedence, DemoOfdSpecialization,
     DemoOfdType,
@@ -84,6 +85,8 @@ pub enum DemoOfdPropChange {
     LinkMultiplicityChange(/*target?*/ bool, Arc<String>),
     AggregationKindChange(bool),
     FlipMulticonnection(FlipMulticonnection),
+
+    PackageKindChange(DemoPackageKind),
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
@@ -903,10 +906,18 @@ impl DiagramSettings for DemoOfdSettings {
                                 .changed();
                         }
                         DemoOfdToolStage::LinkStart { .. } => {}
-                        DemoOfdToolStage::PackageStart { name } => {
+                        DemoOfdToolStage::PackageStart { name, kind } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Name", name)
                                 .changed();
+                            egui::ComboBox::new("package kind", "Package kind")
+                                .selected_text(kind.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in DemoPackageKind::VARIANTS {
+                                        modified |=
+                                            ui.selectable_value(kind, e, e.as_str()).changed();
+                                    }
+                                });
                         }
                         DemoOfdToolStage::Note { text, align } => {
                             modified |= columns[1]
@@ -1075,8 +1086,16 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 (
                     DemoOfdToolStage::PackageStart {
                         name: "a package".to_owned(),
+                        kind: DemoPackageKind::Package,
                     },
                     "Package",
+                ),
+                (
+                    DemoOfdToolStage::PackageStart {
+                        name: "a scope of interest".to_owned(),
+                        kind: DemoPackageKind::ScopeOfInterest,
+                    },
+                    "Scope of Interest",
                 ),
                 (
                     DemoOfdToolStage::Note {
@@ -1208,12 +1227,13 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
                 }
             }
         }
-        DemoOfdToolStage::PackageStart { name } => {
+        DemoOfdToolStage::PackageStart { name, kind } => {
             let package_view = new_demoofd_package(
                 name,
+                *kind,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
-                    max: egui::Pos2::new(100.0, 50.0),
+                    max: egui::Pos2::new(150.0, 75.0),
                 },
             )
             .1;
@@ -1296,6 +1316,7 @@ pub enum DemoOfdToolStage {
     },
     PackageStart {
         name: String,
+        kind: DemoPackageKind,
     },
     PackageEnd,
     Note {
@@ -1992,11 +2013,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::Package { a, b: Some(b) }
-                if let DemoOfdToolStage::PackageStart { name } = &self.initial_stage =>
+                if let DemoOfdToolStage::PackageStart { name, kind } = &self.initial_stage =>
             {
                 self.current_stage = self.initial_stage.clone();
 
-                let package_view = new_demoofd_package(name, egui::Rect::from_two_pos(*a, *b)).1;
+                let package_view =
+                    new_demoofd_package(name, *kind, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
                 commands.push(InsensitiveCommand::AddDependency {
@@ -2025,6 +2047,8 @@ pub struct DemoOfdPackageAdapter {
     model: ERef<DemoOfdPackage>,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    kind_buffer: DemoPackageKind,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
@@ -2057,6 +2081,18 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
+    fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
+        match self.kind_buffer {
+            DemoPackageKind::Package => egui::Color32::WHITE,
+            DemoPackageKind::ScopeOfInterest => egui::Color32::TRANSPARENT,
+        }
+    }
+    fn border_stroke(&self, _global_colors: &ColorBundle) -> canvas::Stroke {
+        match self.kind_buffer {
+            DemoPackageKind::Package => canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            DemoPackageKind::ScopeOfInterest => canvas::Stroke::new_solid(2.0, egui::Color32::GRAY),
+        }
+    }
     fn show_model_properties(
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
@@ -2074,6 +2110,22 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+
+        egui::ComboBox::new("package kind", "Package kind")
+            .selected_text(self.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in DemoPackageKind::VARIANTS {
+                    if ui
+                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .clicked()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            DemoOfdPropChange::PackageKindChange(self.kind_buffer),
+                        ));
+                    }
+                }
+            });
 
         if ui
             .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
@@ -2106,6 +2158,13 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
                         DemoOfdPropChange::NameChange(model.name.clone()),
                     ));
                     model.name = name.clone();
+                }
+                DemoOfdPropChange::PackageKindChange(kind) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::PackageKindChange(model.kind),
+                    ));
+                    model.kind = *kind;
                 }
                 DemoOfdPropChange::CommentChange(comment) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -2143,6 +2202,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         Self {
             model,
             name_buffer: self.name_buffer.clone(),
+            kind_buffer: self.kind_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
         }
     }
@@ -2159,11 +2219,13 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
 
 fn new_demoofd_package(
     name: &str,
+    kind: DemoPackageKind,
     bounds_rect: egui::Rect,
 ) -> (ERef<DemoOfdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoOfdPackage::new(
         ModelUuid::now_v7(),
         name.to_owned(),
+        kind,
         vec![],
     ));
     let graph_view = new_demoofd_package_view(graph_model.clone(), bounds_rect);
@@ -2180,6 +2242,7 @@ fn new_demoofd_package_view(
         DemoOfdPackageAdapter {
             model: model.clone(),
             name_buffer: (*m.name).clone(),
+            kind_buffer: m.kind,
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),

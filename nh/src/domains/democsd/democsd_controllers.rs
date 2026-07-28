@@ -30,6 +30,7 @@ use crate::common::views::multiconnection_view::{
     VertexInformation,
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
+use crate::domains::demo::DemoPackageKind;
 use crate::domains::democsd::democsd_models::DemoCsdNote;
 use crate::{
     CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
@@ -77,6 +78,8 @@ pub enum DemoCsdPropChange {
 
     LinkTypeChange(DemoCsdLinkType),
     LinkMultiplicityChange(Arc<String>),
+
+    PackageKindChange(DemoPackageKind),
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
@@ -844,10 +847,18 @@ impl DiagramSettings for DemoCsdSettings {
                                 .labeled_text_edit_singleline("Multiplicity", multiplicity)
                                 .changed();
                         }
-                        DemoCsdToolStage::PackageStart { name } => {
+                        DemoCsdToolStage::PackageStart { name, kind } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Name", name)
                                 .changed();
+                            egui::ComboBox::new("package kind", "Package kind")
+                                .selected_text(kind.as_str())
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in DemoPackageKind::VARIANTS {
+                                        modified |=
+                                            ui.selectable_value(kind, e, e.as_str()).changed();
+                                    }
+                                });
                         }
                         _ => unreachable!(),
                     }
@@ -975,8 +986,16 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 (
                     DemoCsdToolStage::PackageStart {
                         name: "a package".to_owned(),
+                        kind: DemoPackageKind::Package,
                     },
                     "Package",
+                ),
+                (
+                    DemoCsdToolStage::PackageStart {
+                        name: "a scope of interest".to_owned(),
+                        kind: DemoPackageKind::ScopeOfInterest,
+                    },
+                    "Scope of Interest",
                 ),
                 (
                     DemoCsdToolStage::Note {
@@ -1074,11 +1093,12 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
             v.write().refresh_buffers();
             v.into()
         }
-        DemoCsdToolStage::PackageStart { name } => new_democsd_package(
+        DemoCsdToolStage::PackageStart { name, kind } => new_democsd_package(
             name,
+            *kind,
             egui::Rect {
                 min: egui::Pos2::ZERO,
-                max: egui::Pos2::new(100.0, 50.0),
+                max: egui::Pos2::new(150.0, 75.0),
             },
         )
         .1
@@ -1143,6 +1163,7 @@ pub enum DemoCsdToolStage {
     LinkEnd,
     PackageStart {
         name: String,
+        kind: DemoPackageKind,
     },
     PackageEnd,
     Note {
@@ -1555,11 +1576,12 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 }
             }
             PartialDemoCsdElement::Package { a, b: Some(b) }
-                if let DemoCsdToolStage::PackageStart { name } = &self.initial_stage =>
+                if let DemoCsdToolStage::PackageStart { name, kind } = &self.initial_stage =>
             {
                 self.current_stage = self.initial_stage.clone();
 
-                let package_view = new_democsd_package(name, egui::Rect::from_two_pos(*a, *b)).1;
+                let package_view =
+                    new_democsd_package(name, *kind, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
                 commands.push(InsensitiveCommand::AddDependency {
@@ -1588,6 +1610,8 @@ pub struct DemoCsdPackageAdapter {
     model: ERef<DemoCsdPackage>,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    kind_buffer: DemoPackageKind,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
@@ -1620,6 +1644,18 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
+    fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
+        match self.kind_buffer {
+            DemoPackageKind::Package => egui::Color32::WHITE,
+            DemoPackageKind::ScopeOfInterest => egui::Color32::TRANSPARENT,
+        }
+    }
+    fn border_stroke(&self, _global_colors: &ColorBundle) -> canvas::Stroke {
+        match self.kind_buffer {
+            DemoPackageKind::Package => canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            DemoPackageKind::ScopeOfInterest => canvas::Stroke::new_solid(2.0, egui::Color32::GRAY),
+        }
+    }
     fn show_model_properties(
         &mut self,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
@@ -1637,6 +1673,22 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+
+        egui::ComboBox::new("package kind", "Package kind")
+            .selected_text(self.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in DemoPackageKind::VARIANTS {
+                    if ui
+                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .clicked()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            DemoCsdPropChange::PackageKindChange(self.kind_buffer),
+                        ));
+                    }
+                }
+            });
 
         if ui
             .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
@@ -1669,6 +1721,13 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
                         DemoCsdPropChange::NameChange(model.name.clone()),
                     ));
                     model.name = name.clone();
+                }
+                DemoCsdPropChange::PackageKindChange(kind) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::PackageKindChange(model.kind),
+                    ));
+                    model.kind = *kind;
                 }
                 DemoCsdPropChange::CommentChange(comment) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -1706,6 +1765,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         Self {
             model,
             name_buffer: self.name_buffer.clone(),
+            kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
         }
     }
@@ -1722,11 +1782,13 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
 
 fn new_democsd_package(
     name: &str,
+    kind: DemoPackageKind,
     bounds_rect: egui::Rect,
 ) -> (ERef<DemoCsdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoCsdPackage::new(
         ModelUuid::now_v7(),
         name.to_owned(),
+        kind,
         vec![],
     ));
     let graph_view = new_democsd_package_view(graph_model.clone(), bounds_rect);
@@ -1743,6 +1805,7 @@ fn new_democsd_package_view(
         DemoCsdPackageAdapter {
             model: model.clone(),
             name_buffer: (*m.name).clone(),
+            kind_buffer: m.kind,
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),

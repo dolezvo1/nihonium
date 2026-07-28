@@ -8,7 +8,7 @@ use crate::common::model::{
 use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
-use crate::domains::demo::DemoTransactionKind;
+use crate::domains::demo::{DemoPackageKind, DemoTransactionKind};
 use std::collections::HashSet;
 use std::{collections::HashMap, sync::Arc};
 
@@ -73,6 +73,7 @@ pub fn deep_copy_diagram(
                 let new_model = DemoCsdPackage {
                     uuid: new_uuid,
                     name: model.name.clone(),
+                    kind: model.kind,
                     contained_elements: model
                         .contained_elements
                         .iter()
@@ -391,6 +392,7 @@ impl FullTextSearchable for DemoCsdDiagram {
 pub struct DemoCsdPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    pub kind: DemoPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoCsdElement>,
 
@@ -398,10 +400,16 @@ pub struct DemoCsdPackage {
 }
 
 impl DemoCsdPackage {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoCsdElement>) -> Self {
+    pub fn new(
+        uuid: ModelUuid,
+        name: String,
+        kind: DemoPackageKind,
+        contained_elements: Vec<DemoCsdElement>,
+    ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
+            kind,
             contained_elements,
             comment: Arc::new("".to_owned()),
         }
@@ -410,6 +418,7 @@ impl DemoCsdPackage {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
+            kind: self.kind,
             contained_elements: self.contained_elements.clone(),
             comment: self.comment.clone(),
         })

@@ -16,7 +16,7 @@ use crate::{
         uuid::ModelUuid,
         views::multiconnection_view::MULTICONNECTION_SOURCE_BUCKET,
     },
-    domains::demo::DemoTransactionKind,
+    domains::demo::{DemoPackageKind, DemoTransactionKind},
 };
 
 #[derive(
@@ -109,6 +109,7 @@ pub fn deep_copy_diagram(
                 let new_model = DemoOfdPackage {
                     uuid: new_uuid,
                     name: model.name.clone(),
+                    kind: model.kind,
                     contained_elements: model
                         .contained_elements
                         .iter()
@@ -532,6 +533,7 @@ impl FullTextSearchable for DemoOfdDiagram {
 pub struct DemoOfdPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    pub kind: DemoPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoOfdElement>,
 
@@ -539,10 +541,16 @@ pub struct DemoOfdPackage {
 }
 
 impl DemoOfdPackage {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoOfdElement>) -> Self {
+    pub fn new(
+        uuid: ModelUuid,
+        name: String,
+        kind: DemoPackageKind,
+        contained_elements: Vec<DemoOfdElement>,
+    ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
+            kind,
             contained_elements,
             comment: Arc::new("".to_owned()),
         }
@@ -551,6 +559,7 @@ impl DemoOfdPackage {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
+            kind: self.kind,
             contained_elements: self.contained_elements.clone(),
             comment: self.comment.clone(),
         })
