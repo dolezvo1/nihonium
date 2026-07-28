@@ -26,11 +26,12 @@ use std::{collections::HashMap, sync::Arc};
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoCsdElement {
     #[container_model(passthrough = "eref")]
-    DemoCsdPackage(ERef<DemoCsdPackage>),
+    Package(ERef<DemoCsdPackage>),
     #[container_model(passthrough = "eref")]
-    DemoCsdTransactor(ERef<DemoCsdTransactor>),
-    DemoCsdTransaction(ERef<DemoCsdTransaction>),
-    DemoCsdLink(ERef<DemoCsdLink>),
+    Transactor(ERef<DemoCsdTransactor>),
+    Transaction(ERef<DemoCsdTransaction>),
+    Link(ERef<DemoCsdLink>),
+    Note(ERef<DemoCsdNote>),
 }
 
 impl VisitableElement for DemoCsdElement {
@@ -39,14 +40,14 @@ impl VisitableElement for DemoCsdElement {
         Self: Sized,
     {
         match self {
-            DemoCsdElement::DemoCsdPackage(inner) => {
+            DemoCsdElement::Package(inner) => {
                 v.open_complex(self);
                 for e in &inner.read().contained_elements {
                     e.accept(v);
                 }
                 v.close_complex(self);
             }
-            DemoCsdElement::DemoCsdTransactor(inner) => {
+            DemoCsdElement::Transactor(inner) => {
                 if let UFOption::Some(t) = &inner.read().transaction {
                     v.open_complex(self);
                     DemoCsdElement::from(t.clone()).accept(v);
@@ -66,7 +67,7 @@ pub fn deep_copy_diagram(
     fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) -> DemoCsdElement {
         let new_uuid = ModelUuid::now_v7().into();
         match e {
-            DemoCsdElement::DemoCsdPackage(inner) => {
+            DemoCsdElement::Package(inner) => {
                 let model = inner.read();
 
                 let new_model = DemoCsdPackage {
@@ -83,15 +84,15 @@ pub fn deep_copy_diagram(
                         .collect(),
                     comment: model.comment.clone(),
                 };
-                DemoCsdElement::DemoCsdPackage(ERef::new(new_model))
+                DemoCsdElement::Package(ERef::new(new_model))
             }
-            DemoCsdElement::DemoCsdTransactor(inner) => {
+            DemoCsdElement::Transactor(inner) => {
                 let model = inner.read();
 
                 let new_tx = if let UFOption::Some(tx) = &model.transaction {
-                    let new_tx = walk(&DemoCsdElement::DemoCsdTransaction(tx.clone()), into);
+                    let new_tx = walk(&DemoCsdElement::Transaction(tx.clone()), into);
                     into.insert(*tx.read().uuid(), new_tx.clone());
-                    if let DemoCsdElement::DemoCsdTransaction(new_tx) = new_tx {
+                    if let DemoCsdElement::Transaction(new_tx) = new_tx {
                         Some(new_tx)
                     } else {
                         None
@@ -101,47 +102,42 @@ pub fn deep_copy_diagram(
                 };
                 let new_model = model.clone_with(*new_uuid);
                 new_model.write().transaction = new_tx.into();
-                DemoCsdElement::DemoCsdTransactor(new_model)
+                DemoCsdElement::Transactor(new_model)
             }
-            DemoCsdElement::DemoCsdTransaction(inner) => {
-                DemoCsdElement::DemoCsdTransaction(inner.read().clone_with(*new_uuid))
-            }
-            DemoCsdElement::DemoCsdLink(inner) => {
-                DemoCsdElement::DemoCsdLink(inner.read().clone_with(*new_uuid))
-            }
+            DemoCsdElement::Transaction(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoCsdElement::Link(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoCsdElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
     fn relink(e: &mut DemoCsdElement, all_models: &HashMap<ModelUuid, DemoCsdElement>) {
         match e {
-            DemoCsdElement::DemoCsdPackage(inner) => {
+            DemoCsdElement::Package(inner) => {
                 let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
             }
-            DemoCsdElement::DemoCsdTransactor(inner) => {
+            DemoCsdElement::Transactor(inner) => {
                 let mut model = inner.write();
                 if let UFOption::Some(ta) = &mut model.transaction {
-                    relink(
-                        &mut DemoCsdElement::DemoCsdTransaction(ta.clone()),
-                        all_models,
-                    );
+                    relink(&mut DemoCsdElement::Transaction(ta.clone()), all_models);
                 }
             }
-            DemoCsdElement::DemoCsdTransaction(_inner) => {}
-            DemoCsdElement::DemoCsdLink(inner) => {
+            DemoCsdElement::Transaction(_) => {}
+            DemoCsdElement::Link(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.read().uuid();
-                if let Some(DemoCsdElement::DemoCsdTransactor(ta)) = all_models.get(&source_uuid) {
+                if let Some(DemoCsdElement::Transactor(ta)) = all_models.get(&source_uuid) {
                     model.source = ta.clone();
                 }
                 let target_uuid = *model.target.read().uuid();
-                if let Some(DemoCsdElement::DemoCsdTransaction(tx)) = all_models.get(&target_uuid) {
+                if let Some(DemoCsdElement::Transaction(tx)) = all_models.get(&target_uuid) {
                     model.target = tx.clone();
                 }
             }
+            DemoCsdElement::Note(_) => {}
         }
     }
 
@@ -176,17 +172,17 @@ pub fn enumerate_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElemen
 fn enumerate_elements(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) {
     into.insert(*e.uuid(), e.clone());
     match e {
-        DemoCsdElement::DemoCsdPackage(inner) => {
+        DemoCsdElement::Package(inner) => {
             for e in &inner.read().contained_elements {
                 enumerate_elements(e, into);
             }
         }
-        DemoCsdElement::DemoCsdTransactor(inner) => {
+        DemoCsdElement::Transactor(inner) => {
             if let UFOption::Some(e) = &inner.read().transaction {
                 enumerate_elements(&e.clone().into(), into);
             }
         }
-        DemoCsdElement::DemoCsdTransaction(..) | DemoCsdElement::DemoCsdLink(..) => {}
+        DemoCsdElement::Transaction(..) | DemoCsdElement::Link(..) | DemoCsdElement::Note(..) => {}
     }
 }
 
@@ -197,7 +193,7 @@ pub fn transitive_closure(
     for e in &d.contained_elements {
         fn walk(e: &DemoCsdElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
-                DemoCsdElement::DemoCsdPackage(inner) => {
+                DemoCsdElement::Package(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         let mut c = Default::default();
@@ -209,7 +205,7 @@ pub fn transitive_closure(
                         }
                     }
                 }
-                DemoCsdElement::DemoCsdTransactor(inner) => {
+                DemoCsdElement::Transactor(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         let mut c = Default::default();
@@ -221,7 +217,9 @@ pub fn transitive_closure(
                         }
                     }
                 }
-                DemoCsdElement::DemoCsdTransaction(..) | DemoCsdElement::DemoCsdLink(..) => {}
+                DemoCsdElement::Transaction(..)
+                | DemoCsdElement::Link(..)
+                | DemoCsdElement::Note(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -235,13 +233,13 @@ pub fn transitive_closure(
             also_delete: &mut HashSet<ModelUuid>,
         ) {
             match e {
-                DemoCsdElement::DemoCsdPackage(inner) => {
+                DemoCsdElement::Package(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
                 }
-                DemoCsdElement::DemoCsdTransactor(..) | DemoCsdElement::DemoCsdTransaction(..) => {}
-                DemoCsdElement::DemoCsdLink(inner) => {
+                DemoCsdElement::Transactor(..) | DemoCsdElement::Transaction(..) => {}
+                DemoCsdElement::Link(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
@@ -250,6 +248,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
+                DemoCsdElement::Note(..) => {}
             }
         }
         for e in &d.contained_elements {
@@ -588,7 +587,7 @@ impl ContainerModel for DemoCsdTransactor {
         if bucket != 0 || position.unwrap_or(0) != 0 || self.transaction.is_some() {
             return Err(element);
         }
-        let DemoCsdElement::DemoCsdTransaction(tx) = element else {
+        let DemoCsdElement::Transaction(tx) = element else {
             return Err(element);
         };
         self.transaction = UFOption::Some(tx);
@@ -781,5 +780,42 @@ impl FullTextSearchable for DemoCsdLink {
             *self.uuid,
             &[&self.uuid.to_string(), &self.multiplicity, &self.comment],
         );
+    }
+}
+
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+#[nh_context_serde(is_entity)]
+pub struct DemoCsdNote {
+    #[full_text_searchable(search_kind = "to_string_ref")]
+    pub uuid: Arc<ModelUuid>,
+    pub text: Arc<String>,
+}
+
+impl DemoCsdNote {
+    pub fn new(uuid: ModelUuid, text: String) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            text: Arc::new(text),
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            text: self.text.clone(),
+        })
+    }
+}
+
+impl Entity for DemoCsdNote {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoCsdNote {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
     }
 }

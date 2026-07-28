@@ -33,28 +33,30 @@ use crate::{
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoOfdElement {
     #[container_model(passthrough = "eref")]
-    DemoOfdPackage(ERef<DemoOfdPackage>),
-    DemoOfdEntityType(ERef<DemoOfdEntityType>),
+    Package(ERef<DemoOfdPackage>),
+    EntityType(ERef<DemoOfdEntityType>),
     #[container_model(passthrough = "eref")]
-    DemoOfdEventType(ERef<DemoOfdEventType>),
-    DemoOfdPropertyType(ERef<DemoOfdPropertyType>),
-    DemoOfdSpecialization(ERef<DemoOfdSpecialization>),
-    DemoOfdAggregation(ERef<DemoOfdAggregation>),
-    DemoOfdPrecedence(ERef<DemoOfdPrecedence>),
-    DemoOfdExclusion(ERef<DemoOfdExclusion>),
+    EventType(ERef<DemoOfdEventType>),
+    PropertyType(ERef<DemoOfdPropertyType>),
+    Specialization(ERef<DemoOfdSpecialization>),
+    Aggregation(ERef<DemoOfdAggregation>),
+    Precedence(ERef<DemoOfdPrecedence>),
+    Exclusion(ERef<DemoOfdExclusion>),
+    Note(ERef<DemoOfdNote>),
 }
 
 impl DemoOfdElement {
     pub fn as_type(self) -> Option<DemoOfdType> {
         match self {
-            DemoOfdElement::DemoOfdEntityType(inner) => Some(inner.into()),
-            DemoOfdElement::DemoOfdEventType(inner) => Some(inner.into()),
-            DemoOfdElement::DemoOfdPropertyType(inner) => Some(inner.into()),
-            DemoOfdElement::DemoOfdPackage(..)
-            | DemoOfdElement::DemoOfdPrecedence(..)
-            | DemoOfdElement::DemoOfdSpecialization(..)
-            | DemoOfdElement::DemoOfdAggregation(..)
-            | DemoOfdElement::DemoOfdExclusion(..) => None,
+            DemoOfdElement::EntityType(inner) => Some(inner.into()),
+            DemoOfdElement::EventType(inner) => Some(inner.into()),
+            DemoOfdElement::PropertyType(inner) => Some(inner.into()),
+            DemoOfdElement::Package(..)
+            | DemoOfdElement::Precedence(..)
+            | DemoOfdElement::Specialization(..)
+            | DemoOfdElement::Aggregation(..)
+            | DemoOfdElement::Exclusion(..)
+            | DemoOfdElement::Note(..) => None,
         }
     }
 }
@@ -65,14 +67,14 @@ impl VisitableElement for DemoOfdElement {
         Self: Sized,
     {
         match self {
-            DemoOfdElement::DemoOfdPackage(inner) => {
+            DemoOfdElement::Package(inner) => {
                 v.open_complex(self);
                 for e in &inner.read().contained_elements {
                     e.accept(v);
                 }
                 v.close_complex(self);
             }
-            DemoOfdElement::DemoOfdEventType(inner) => {
+            DemoOfdElement::EventType(inner) => {
                 if let UFOption::Some(t) = &inner.read().specialization_entity_type {
                     v.open_complex(self);
                     DemoOfdElement::from(t.clone()).accept(v);
@@ -90,9 +92,9 @@ impl VisitableElement for DemoOfdElement {
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoOfdType {
-    DemoOfdEntityType(ERef<DemoOfdEntityType>),
-    DemoOfdEventType(ERef<DemoOfdEventType>),
-    DemoOfdPropertyType(ERef<DemoOfdPropertyType>),
+    EntityType(ERef<DemoOfdEntityType>),
+    EventType(ERef<DemoOfdEventType>),
+    PropertyType(ERef<DemoOfdPropertyType>),
 }
 
 pub fn deep_copy_diagram(
@@ -101,7 +103,7 @@ pub fn deep_copy_diagram(
     fn walk(e: &DemoOfdElement, into: &mut HashMap<ModelUuid, DemoOfdElement>) -> DemoOfdElement {
         let new_uuid = ModelUuid::now_v7().into();
         match e {
-            DemoOfdElement::DemoOfdPackage(inner) => {
+            DemoOfdElement::Package(inner) => {
                 let model = inner.read();
 
                 let new_model = DemoOfdPackage {
@@ -120,94 +122,91 @@ pub fn deep_copy_diagram(
                 };
                 ERef::new(new_model).into()
             }
-            DemoOfdElement::DemoOfdEntityType(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::DemoOfdEventType(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::DemoOfdPropertyType(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::DemoOfdSpecialization(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            }
-            DemoOfdElement::DemoOfdAggregation(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::DemoOfdPrecedence(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::DemoOfdExclusion(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::EntityType(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::EventType(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::PropertyType(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::Specialization(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::Aggregation(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::Precedence(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::Exclusion(inner) => inner.read().clone_with(*new_uuid).into(),
+            DemoOfdElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
     fn relink(e: &mut DemoOfdElement, all_models: &HashMap<ModelUuid, DemoOfdElement>) {
         match e {
-            DemoOfdElement::DemoOfdPackage(inner) => {
+            DemoOfdElement::Package(inner) => {
                 let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
             }
-            DemoOfdElement::DemoOfdEntityType(..) => {}
-            DemoOfdElement::DemoOfdEventType(inner) => {
+            DemoOfdElement::EntityType(..) => {}
+            DemoOfdElement::EventType(inner) => {
                 let mut model = inner.write();
 
                 let base_id = *model.base_entity_type.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEntityType(b)) = all_models.get(&base_id) {
+                if let Some(DemoOfdElement::EntityType(b)) = all_models.get(&base_id) {
                     model.base_entity_type = b.clone();
                 }
                 if let UFOption::Some(spec) = &mut model.specialization_entity_type {
                     let spec_id = *spec.read().uuid;
-                    if let Some(DemoOfdElement::DemoOfdEntityType(s)) = all_models.get(&spec_id) {
+                    if let Some(DemoOfdElement::EntityType(s)) = all_models.get(&spec_id) {
                         *spec = s.clone();
                     }
                 }
             }
-            DemoOfdElement::DemoOfdPropertyType(inner) => {
+            DemoOfdElement::PropertyType(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.domain_element.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEntityType(de)) = all_models.get(&source_uuid) {
+                if let Some(DemoOfdElement::EntityType(de)) = all_models.get(&source_uuid) {
                     model.domain_element = de.clone();
                 }
                 let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEntityType(re)) = all_models.get(&target_uuid) {
+                if let Some(DemoOfdElement::EntityType(re)) = all_models.get(&target_uuid) {
                     model.range_element = re.clone();
                 }
             }
-            DemoOfdElement::DemoOfdAggregation(inner) => {
+            DemoOfdElement::Aggregation(inner) => {
                 let mut model = inner.write();
 
                 for e in model.domain_elements.iter_mut() {
                     let source_uuid = *e.read().uuid;
-                    if let Some(DemoOfdElement::DemoOfdEntityType(de)) =
-                        all_models.get(&source_uuid)
-                    {
+                    if let Some(DemoOfdElement::EntityType(de)) = all_models.get(&source_uuid) {
                         *e = de.clone();
                     }
                 }
                 let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEntityType(re)) = all_models.get(&target_uuid) {
+                if let Some(DemoOfdElement::EntityType(re)) = all_models.get(&target_uuid) {
                     model.range_element = re.clone();
                 }
             }
-            DemoOfdElement::DemoOfdPrecedence(inner) => {
+            DemoOfdElement::Precedence(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.domain_element.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEventType(de)) = all_models.get(&source_uuid) {
+                if let Some(DemoOfdElement::EventType(de)) = all_models.get(&source_uuid) {
                     model.domain_element = de.clone();
                 }
                 let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEventType(re)) = all_models.get(&target_uuid) {
+                if let Some(DemoOfdElement::EventType(re)) = all_models.get(&target_uuid) {
                     model.range_element = re.clone();
                 }
             }
-            DemoOfdElement::DemoOfdSpecialization(inner) => {
+            DemoOfdElement::Specialization(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.domain_element.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEntityType(de)) = all_models.get(&source_uuid) {
+                if let Some(DemoOfdElement::EntityType(de)) = all_models.get(&source_uuid) {
                     model.domain_element = de.clone();
                 }
                 let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::DemoOfdEntityType(re)) = all_models.get(&target_uuid) {
+                if let Some(DemoOfdElement::EntityType(re)) = all_models.get(&target_uuid) {
                     model.range_element = re.clone();
                 }
             }
-            DemoOfdElement::DemoOfdExclusion(inner) => {
+            DemoOfdElement::Exclusion(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.domain_element.uuid();
@@ -225,6 +224,7 @@ pub fn deep_copy_diagram(
                     model.range_element = re.clone();
                 }
             }
+            DemoOfdElement::Note(_) => {}
         }
     }
 
@@ -258,22 +258,23 @@ pub fn enumerate_diagram(d: &DemoOfdDiagram) -> HashMap<ModelUuid, DemoOfdElemen
 fn enumerate_elements(e: &DemoOfdElement, into: &mut HashMap<ModelUuid, DemoOfdElement>) {
     into.insert(*e.uuid(), e.clone());
     match e {
-        DemoOfdElement::DemoOfdPackage(inner) => {
+        DemoOfdElement::Package(inner) => {
             for e in &inner.read().contained_elements {
                 enumerate_elements(e, into);
             }
         }
-        DemoOfdElement::DemoOfdEntityType(..) => {}
-        DemoOfdElement::DemoOfdEventType(inner) => {
+        DemoOfdElement::EntityType(..) => {}
+        DemoOfdElement::EventType(inner) => {
             if let UFOption::Some(e) = &inner.read().specialization_entity_type {
                 enumerate_elements(&e.clone().into(), into);
             }
         }
-        DemoOfdElement::DemoOfdPropertyType(..)
-        | DemoOfdElement::DemoOfdSpecialization(..)
-        | DemoOfdElement::DemoOfdAggregation(..)
-        | DemoOfdElement::DemoOfdPrecedence(..)
-        | DemoOfdElement::DemoOfdExclusion(..) => {}
+        DemoOfdElement::PropertyType(..)
+        | DemoOfdElement::Specialization(..)
+        | DemoOfdElement::Aggregation(..)
+        | DemoOfdElement::Precedence(..)
+        | DemoOfdElement::Exclusion(..)
+        | DemoOfdElement::Note(..) => {}
     }
 }
 
@@ -284,7 +285,7 @@ pub fn transitive_closure(
     for e in &d.contained_elements {
         fn walk(e: &DemoOfdElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
-                DemoOfdElement::DemoOfdPackage(inner) => {
+                DemoOfdElement::Package(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         let mut c = Default::default();
@@ -296,8 +297,8 @@ pub fn transitive_closure(
                         }
                     }
                 }
-                DemoOfdElement::DemoOfdEntityType(..) => {}
-                DemoOfdElement::DemoOfdEventType(inner) => {
+                DemoOfdElement::EntityType(..) => {}
+                DemoOfdElement::EventType(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         let mut c = Default::default();
@@ -309,11 +310,12 @@ pub fn transitive_closure(
                         }
                     }
                 }
-                DemoOfdElement::DemoOfdPropertyType(..)
-                | DemoOfdElement::DemoOfdSpecialization(..)
-                | DemoOfdElement::DemoOfdAggregation(..)
-                | DemoOfdElement::DemoOfdPrecedence(..)
-                | DemoOfdElement::DemoOfdExclusion(..) => {}
+                DemoOfdElement::PropertyType(..)
+                | DemoOfdElement::Specialization(..)
+                | DemoOfdElement::Aggregation(..)
+                | DemoOfdElement::Precedence(..)
+                | DemoOfdElement::Exclusion(..)
+                | DemoOfdElement::Note(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -327,13 +329,13 @@ pub fn transitive_closure(
             also_delete: &mut HashSet<ModelUuid>,
         ) {
             match e {
-                DemoOfdElement::DemoOfdPackage(inner) => {
+                DemoOfdElement::Package(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
                 }
-                DemoOfdElement::DemoOfdEntityType(..) => {}
-                DemoOfdElement::DemoOfdEventType(inner) => {
+                DemoOfdElement::EntityType(..) => {}
+                DemoOfdElement::EventType(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && when_deleting.contains(&r.base_entity_type.read().uuid)
@@ -341,7 +343,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                DemoOfdElement::DemoOfdPropertyType(inner) => {
+                DemoOfdElement::PropertyType(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.domain_element.read().uuid)
@@ -350,7 +352,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                DemoOfdElement::DemoOfdSpecialization(inner) => {
+                DemoOfdElement::Specialization(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.domain_element.read().uuid)
@@ -359,7 +361,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                DemoOfdElement::DemoOfdAggregation(inner) => {
+                DemoOfdElement::Aggregation(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (r
@@ -371,7 +373,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                DemoOfdElement::DemoOfdPrecedence(inner) => {
+                DemoOfdElement::Precedence(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.domain_element.read().uuid)
@@ -380,7 +382,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
-                DemoOfdElement::DemoOfdExclusion(inner) => {
+                DemoOfdElement::Exclusion(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.domain_element.uuid())
@@ -389,6 +391,7 @@ pub fn transitive_closure(
                         also_delete.insert(*r.uuid);
                     }
                 }
+                DemoOfdElement::Note(..) => {}
             }
         }
         for e in &d.contained_elements {
@@ -769,7 +772,7 @@ impl ContainerModel for DemoOfdEventType {
         }
 
         if !self.specialization_entity_type.is_some()
-            && let DemoOfdElement::DemoOfdEntityType(e) = element
+            && let DemoOfdElement::EntityType(e) = element
         {
             self.specialization_entity_type = UFOption::Some(e);
             Ok(0)
@@ -1020,7 +1023,7 @@ impl ContainerModel for DemoOfdAggregation {
             return Err(element);
         }
 
-        let DemoOfdElement::DemoOfdEntityType(entity) = element else {
+        let DemoOfdElement::EntityType(entity) = element else {
             return Err(element);
         };
 
@@ -1145,6 +1148,43 @@ impl Entity for DemoOfdExclusion {
 }
 
 impl Model for DemoOfdExclusion {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+#[nh_context_serde(is_entity)]
+pub struct DemoOfdNote {
+    #[full_text_searchable(search_kind = "to_string_ref")]
+    pub uuid: Arc<ModelUuid>,
+    pub text: Arc<String>,
+}
+
+impl DemoOfdNote {
+    pub fn new(uuid: ModelUuid, text: String) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            text: Arc::new(text),
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            text: self.text.clone(),
+        })
+    }
+}
+
+impl Entity for DemoOfdNote {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoOfdNote {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

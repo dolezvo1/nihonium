@@ -11,8 +11,8 @@ use crate::common::controller::{
     ColorBundle, ColorChangeData, ControllerAdapter, DiagramAdapter, DiagramController,
     DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
     EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand,
-    MGlobalColor, MultiDiagramController, ProjectCommand, PropertiesStatus, Queryable,
-    SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View,
+    LabelProvider, MGlobalColor, MultiDiagramController, ProjectCommand, PropertiesStatus,
+    Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View,
 };
 use crate::common::diagram_settings::{
     DiagramSettings, DiagramSettings2, PaletteEditBuffer, ShortCutStatus, ShowSettingsResult,
@@ -31,7 +31,8 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::demoofd::demoofd_models::{
-    DemoOfdAggregation, DemoOfdExclusion, DemoOfdPrecedence, DemoOfdSpecialization, DemoOfdType,
+    DemoOfdAggregation, DemoOfdExclusion, DemoOfdNote, DemoOfdPrecedence, DemoOfdSpecialization,
+    DemoOfdType,
 };
 use crate::{
     CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
@@ -86,11 +87,12 @@ pub enum DemoOfdPropChange {
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
+    NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
 impl Debug for DemoOfdPropChange {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "UmlClassPropChange::???")
+        write!(f, "DemoOfdPropChange::???")
     }
 }
 
@@ -187,6 +189,7 @@ pub enum DemoOfdElementView {
     Aggregation(ERef<AggregationViewT>),
     Precedence(ERef<PrecedenceViewT>),
     Exclusion(ERef<ExclusionViewT>),
+    Note(ERef<DemoOfdNoteView>),
 }
 
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -242,7 +245,7 @@ impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
             undo: &mut Vec<(ModelUuid, DemoOfdElement, BucketNoT, PositionNoT)>,
         ) {
             match e {
-                DemoOfdElement::DemoOfdPackage(inner) => {
+                DemoOfdElement::Package(inner) => {
                     let mut w = inner.write();
                     for (idx, e) in w.contained_elements.iter().enumerate() {
                         if uuids.contains(&e.uuid()) {
@@ -253,8 +256,8 @@ impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
                 }
-                DemoOfdElement::DemoOfdEntityType(_) => {}
-                DemoOfdElement::DemoOfdEventType(inner) => {
+                DemoOfdElement::EntityType(_) => {}
+                DemoOfdElement::EventType(inner) => {
                     let mut w = inner.write();
                     if let UFOption::Some(e) = &w.specialization_entity_type
                         && uuids.contains(&e.read().uuid)
@@ -263,11 +266,12 @@ impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
                         w.specialization_entity_type = UFOption::None;
                     }
                 }
-                DemoOfdElement::DemoOfdPropertyType(_)
-                | DemoOfdElement::DemoOfdSpecialization(_)
-                | DemoOfdElement::DemoOfdAggregation(_)
-                | DemoOfdElement::DemoOfdPrecedence(_)
-                | DemoOfdElement::DemoOfdExclusion(_) => {}
+                DemoOfdElement::PropertyType(_)
+                | DemoOfdElement::Specialization(_)
+                | DemoOfdElement::Aggregation(_)
+                | DemoOfdElement::Precedence(_)
+                | DemoOfdElement::Exclusion(_)
+                | DemoOfdElement::Note(_) => {}
             }
         }
 
@@ -356,19 +360,17 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         element: DemoOfdElement,
     ) -> Result<DemoOfdElementView, HashSet<ModelUuid>> {
         let v = match element {
-            DemoOfdElement::DemoOfdPackage(inner) => {
-                DemoOfdElementView::from(new_demoofd_package_view(
-                    inner,
-                    egui::Rect {
-                        min: egui::Pos2::ZERO,
-                        max: egui::Pos2::new(100.0, 100.0),
-                    },
-                ))
-            }
-            DemoOfdElement::DemoOfdEntityType(inner) => {
+            DemoOfdElement::Package(inner) => DemoOfdElementView::from(new_demoofd_package_view(
+                inner,
+                egui::Rect {
+                    min: egui::Pos2::ZERO,
+                    max: egui::Pos2::new(100.0, 100.0),
+                },
+            )),
+            DemoOfdElement::EntityType(inner) => {
                 DemoOfdElementView::from(new_demoofd_entitytype_view(inner, egui::Pos2::ZERO))
             }
-            DemoOfdElement::DemoOfdEventType(inner) => {
+            DemoOfdElement::EventType(inner) => {
                 let m = inner.read();
                 let bid = *m.base_entity_type.read().uuid;
                 let Some(base_view) = q.get_view_for(&bid) else {
@@ -381,7 +383,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     egui::Pos2::ZERO,
                 ))
             }
-            DemoOfdElement::DemoOfdPropertyType(inner) => {
+            DemoOfdElement::PropertyType(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
@@ -396,7 +398,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     target_view,
                 ))
             }
-            DemoOfdElement::DemoOfdSpecialization(inner) => {
+            DemoOfdElement::Specialization(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
@@ -411,7 +413,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     target_view,
                 ))
             }
-            DemoOfdElement::DemoOfdAggregation(inner) => {
+            DemoOfdElement::Aggregation(inner) => {
                 let m = inner.read();
                 let (Some(sv), Some(tv)) = (
                     m.domain_elements
@@ -429,7 +431,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                 };
                 DemoOfdElementView::from(new_demoofd_aggregation_view(inner.clone(), None, sv, tv))
             }
-            DemoOfdElement::DemoOfdPrecedence(inner) => {
+            DemoOfdElement::Precedence(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
@@ -444,7 +446,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     target_view,
                 ))
             }
-            DemoOfdElement::DemoOfdExclusion(inner) => {
+            DemoOfdElement::Exclusion(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.uuid(), *m.range_element.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
@@ -459,28 +461,36 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     target_view,
                 ))
             }
+            DemoOfdElement::Note(inner) => {
+                new_demoofd_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
+            }
         };
 
         Ok(v)
     }
     fn label_for(&self, e: &DemoOfdElement) -> Arc<String> {
         match e {
-            DemoOfdElement::DemoOfdPackage(inner) => {
-                Arc::new(format!("Package ({})", inner.read().name))
-            }
-            DemoOfdElement::DemoOfdEntityType(inner) => {
+            DemoOfdElement::Package(inner) => Arc::new(format!("Package ({})", inner.read().name)),
+            DemoOfdElement::EntityType(inner) => {
                 Arc::new(format!("Entity ({})", inner.read().name))
             }
-            DemoOfdElement::DemoOfdEventType(inner) => {
-                Arc::new(format!("Event ({})", inner.read().name))
-            }
-            DemoOfdElement::DemoOfdPropertyType(inner) => {
+            DemoOfdElement::EventType(inner) => Arc::new(format!("Event ({})", inner.read().name)),
+            DemoOfdElement::PropertyType(inner) => {
                 Arc::new(format!("Property ({})", inner.read().name))
             }
-            DemoOfdElement::DemoOfdSpecialization(_inner) => Arc::new("Specialization".to_owned()),
-            DemoOfdElement::DemoOfdAggregation(_inner) => Arc::new("Aggregation".to_owned()),
-            DemoOfdElement::DemoOfdPrecedence(_inner) => Arc::new("Precedence".to_owned()),
-            DemoOfdElement::DemoOfdExclusion(_inner) => Arc::new("Exclusion".to_owned()),
+            DemoOfdElement::Specialization(_inner) => Arc::new("Specialization".to_owned()),
+            DemoOfdElement::Aggregation(_inner) => Arc::new("Aggregation".to_owned()),
+            DemoOfdElement::Precedence(_inner) => Arc::new("Precedence".to_owned()),
+            DemoOfdElement::Exclusion(_inner) => Arc::new("Exclusion".to_owned()),
+            DemoOfdElement::Note(inner) => {
+                let r = inner.read();
+                let s = if r.text.is_empty() {
+                    "Note".to_owned()
+                } else {
+                    format!("Note ({})", LabelProvider::filter_and_elipsis(&r.text))
+                };
+                Arc::new(s)
+            }
         }
     }
 
@@ -898,6 +908,42 @@ impl DiagramSettings for DemoOfdSettings {
                                 .labeled_text_edit_singleline("Name", name)
                                 .changed();
                         }
+                        DemoOfdToolStage::Note { text, align } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Text", text)
+                                .changed();
+
+                            egui::ComboBox::new("horizontal align", "Horizontal align")
+                                .selected_text(format!("{:?}", align.x()))
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in
+                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
+                                    {
+                                        modified |= ui
+                                            .selectable_value(
+                                                &mut align.0[0],
+                                                e,
+                                                format!("{:?}", e),
+                                            )
+                                            .changed();
+                                    }
+                                });
+                            egui::ComboBox::new("vertical align", "Vertical align")
+                                .selected_text(format!("{:?}", align.y()))
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in
+                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
+                                    {
+                                        modified |= ui
+                                            .selectable_value(
+                                                &mut align.0[1],
+                                                e,
+                                                format!("{:?}", e),
+                                            )
+                                            .changed();
+                                    }
+                                });
+                        }
                         DemoOfdToolStage::EventEnd
                         | DemoOfdToolStage::LinkEnd
                         | DemoOfdToolStage::LinkAddEnding { .. }
@@ -1025,12 +1071,21 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ),
         (
             "Other",
-            vec![(
-                DemoOfdToolStage::PackageStart {
-                    name: "A package".to_owned(),
-                },
-                "Package",
-            )],
+            vec![
+                (
+                    DemoOfdToolStage::PackageStart {
+                        name: "a package".to_owned(),
+                    },
+                    "Package",
+                ),
+                (
+                    DemoOfdToolStage::Note {
+                        text: "a note".to_owned(),
+                        align: egui::Align2::CENTER_CENTER,
+                    },
+                    "Note",
+                ),
+            ],
         ),
     ]
     .into_iter()
@@ -1165,6 +1220,9 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
             package_view.write().refresh_buffers();
             package_view.into()
         }
+        DemoOfdToolStage::Note { text, align } => {
+            new_demoofd_note(text, egui::Pos2::ZERO, *align).1.into()
+        }
         DemoOfdToolStage::EventEnd
         | DemoOfdToolStage::LinkEnd
         | DemoOfdToolStage::LinkAddEnding { .. }
@@ -1240,6 +1298,10 @@ pub enum DemoOfdToolStage {
         name: String,
     },
     PackageEnd,
+    Note {
+        text: String,
+        align: egui::Align2,
+    },
 }
 
 enum PartialDemoOfdElement {
@@ -1315,28 +1377,18 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
 
     fn targetting_for_section(&self, element: Option<DemoOfdElement>) -> egui::Color32 {
         match element {
-            None => match self.current_stage {
+            None | Some(DemoOfdElement::Package(..)) => match self.current_stage {
                 DemoOfdToolStage::Entity { .. }
                 | DemoOfdToolStage::EventEnd
                 | DemoOfdToolStage::PackageStart { .. }
-                | DemoOfdToolStage::PackageEnd => TARGETTABLE_COLOR,
+                | DemoOfdToolStage::PackageEnd
+                | DemoOfdToolStage::Note { .. } => TARGETTABLE_COLOR,
                 DemoOfdToolStage::EventStart { .. }
                 | DemoOfdToolStage::LinkStart { .. }
                 | DemoOfdToolStage::LinkEnd
                 | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoOfdElement::DemoOfdPackage(..)) => match self.current_stage {
-                DemoOfdToolStage::Entity { .. }
-                | DemoOfdToolStage::EventEnd
-                | DemoOfdToolStage::PackageStart { .. }
-                | DemoOfdToolStage::PackageEnd => TARGETTABLE_COLOR,
-
-                DemoOfdToolStage::EventStart { .. }
-                | DemoOfdToolStage::LinkStart { .. }
-                | DemoOfdToolStage::LinkEnd
-                | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
-            },
-            Some(DemoOfdElement::DemoOfdEntityType(inner)) => match self.current_stage {
+            Some(DemoOfdElement::EntityType(inner)) => match self.current_stage {
                 DemoOfdToolStage::LinkEnd => match &self.result {
                     PartialDemoOfdElement::EntityLink { source, .. }
                         if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
@@ -1379,9 +1431,10 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     link_type: LinkType::Precedence,
                 }
                 | DemoOfdToolStage::PackageStart { .. }
-                | DemoOfdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
+                | DemoOfdToolStage::PackageEnd
+                | DemoOfdToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoOfdElement::DemoOfdEventType(inner)) => match self.current_stage {
+            Some(DemoOfdElement::EventType(inner)) => match self.current_stage {
                 DemoOfdToolStage::Entity { .. } => {
                     if inner.read().specialization_entity_type.is_some() {
                         NON_TARGETTABLE_COLOR
@@ -1397,7 +1450,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     link_type:
                         LinkType::PropertyType { .. } | LinkType::Specialization | LinkType::Aggregation,
                 }
-                | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
+                | DemoOfdToolStage::LinkAddEnding { .. }
+                | DemoOfdToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
 
                 DemoOfdToolStage::LinkStart {
                     link_type: LinkType::Precedence | LinkType::Exclusion,
@@ -1421,12 +1475,13 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     _ => NON_TARGETTABLE_COLOR,
                 },
             },
+            Some(DemoOfdElement::Note(..)) => NON_TARGETTABLE_COLOR,
             Some(
-                DemoOfdElement::DemoOfdPropertyType(..)
-                | DemoOfdElement::DemoOfdSpecialization(..)
-                | DemoOfdElement::DemoOfdAggregation(..)
-                | DemoOfdElement::DemoOfdPrecedence(..)
-                | DemoOfdElement::DemoOfdExclusion(..),
+                DemoOfdElement::PropertyType(..)
+                | DemoOfdElement::Specialization(..)
+                | DemoOfdElement::Aggregation(..)
+                | DemoOfdElement::Precedence(..)
+                | DemoOfdElement::Exclusion(..),
             ) => unreachable!(),
         }
     }
@@ -1529,6 +1584,11 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             (DemoOfdToolStage::PackageEnd, PartialDemoOfdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
+            (DemoOfdToolStage::Note { text, align }, _) => {
+                let view = new_demoofd_note(text, pos, *align).1;
+                self.result = PartialDemoOfdElement::Some(view.into());
+                self.event_lock = true;
+            }
             _ => {}
         }
     }
@@ -1538,171 +1598,158 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         }
 
         match element {
-            DemoOfdElement::DemoOfdEntityType(inner) => {
-                match (&self.current_stage, &mut self.result) {
-                    (DemoOfdToolStage::EventStart { .. }, PartialDemoOfdElement::None) => {
-                        self.result = PartialDemoOfdElement::Event {
-                            source: inner,
-                            pos: None,
-                        };
-                        self.current_stage = DemoOfdToolStage::EventEnd;
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkStart {
-                            link_type:
-                                LinkType::PropertyType { .. }
-                                | LinkType::Specialization
-                                | LinkType::Aggregation,
-                        },
-                        PartialDemoOfdElement::None,
-                    ) => {
-                        self.result = PartialDemoOfdElement::EntityLink {
-                            source: inner,
-                            dest: None,
-                        };
-                        self.current_stage = DemoOfdToolStage::LinkEnd;
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkStart {
-                            link_type: LinkType::Exclusion,
-                        },
-                        PartialDemoOfdElement::None,
-                    ) => {
-                        self.result = PartialDemoOfdElement::TypeLink {
-                            source: inner.into(),
-                            dest: None,
-                        };
-                        self.current_stage = DemoOfdToolStage::LinkEnd;
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::EntityLink { source, dest },
-                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
-                        if matches!(link_type, LinkType::PropertyType { .. })
-                            || (*link_type == LinkType::Specialization
-                                && *source.read().uuid != *inner.read().uuid)
-                            || (*link_type == LinkType::Aggregation
-                                && *source.read().uuid != *inner.read().uuid)
-                        {
-                            *dest = Some(inner);
-                        }
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::TypeLink { source, dest },
-                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
-                        if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid
-                        {
-                            *dest = Some(inner.into());
-                        }
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkAddEnding { source },
-                        &mut PartialDemoOfdElement::AggregationEnding {
-                            agg_model: ref gen_model,
-                            ref mut new_model,
-                        },
-                    ) => {
-                        let inner_uuid = *inner.read().uuid;
-                        let gen_model = gen_model.read();
-
-                        if *source
-                            && !gen_model
-                                .domain_elements
-                                .iter()
-                                .any(|e| *e.read().uuid == inner_uuid)
-                            && *gen_model.range_element.read().uuid != inner_uuid
-                        {
-                            *new_model = Some(inner_uuid);
-                        }
-                        self.event_lock = true;
-                    }
-                    _ => {}
+            DemoOfdElement::EntityType(inner) => match (&self.current_stage, &mut self.result) {
+                (DemoOfdToolStage::EventStart { .. }, PartialDemoOfdElement::None) => {
+                    self.result = PartialDemoOfdElement::Event {
+                        source: inner,
+                        pos: None,
+                    };
+                    self.current_stage = DemoOfdToolStage::EventEnd;
+                    self.event_lock = true;
                 }
-            }
-            DemoOfdElement::DemoOfdEventType(inner) => {
-                match (&self.current_stage, &mut self.result) {
-                    (
-                        DemoOfdToolStage::Entity(EntityStageData {
-                            name,
-                            properties,
-                            internal,
-                        }),
-                        _,
-                    ) => {
-                        if !inner.read().specialization_entity_type.is_some() {
-                            let (_class_model, class_view) = new_demoofd_entitytype(
-                                name,
-                                properties,
-                                *internal,
-                                egui::Pos2::ZERO,
-                            );
-                            self.result = PartialDemoOfdElement::Some(class_view.into());
-                        }
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkStart {
-                            link_type: LinkType::Precedence,
-                        },
-                        PartialDemoOfdElement::None,
-                    ) => {
-                        self.result = PartialDemoOfdElement::EventLink {
-                            source: inner,
-                            dest: None,
-                        };
-                        self.current_stage = DemoOfdToolStage::LinkEnd;
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkStart {
-                            link_type: LinkType::Exclusion,
-                        },
-                        PartialDemoOfdElement::None,
-                    ) => {
-                        self.result = PartialDemoOfdElement::TypeLink {
-                            source: inner.into(),
-                            dest: None,
-                        };
-                        self.current_stage = DemoOfdToolStage::LinkEnd;
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::EventLink { source, dest },
-                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
-                        if *link_type == LinkType::Precedence
-                            && *source.read().uuid != *inner.read().uuid
-                        {
-                            *dest = Some(inner);
-                        }
-                        self.event_lock = true;
-                    }
-                    (
-                        DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::TypeLink { source, dest },
-                    ) if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
-                        if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid
-                        {
-                            *dest = Some(inner.into());
-                        }
-                        self.event_lock = true;
-                    }
-                    _ => {}
+                (
+                    DemoOfdToolStage::LinkStart {
+                        link_type:
+                            LinkType::PropertyType { .. }
+                            | LinkType::Specialization
+                            | LinkType::Aggregation,
+                    },
+                    PartialDemoOfdElement::None,
+                ) => {
+                    self.result = PartialDemoOfdElement::EntityLink {
+                        source: inner,
+                        dest: None,
+                    };
+                    self.current_stage = DemoOfdToolStage::LinkEnd;
+                    self.event_lock = true;
                 }
-            }
+                (
+                    DemoOfdToolStage::LinkStart {
+                        link_type: LinkType::Exclusion,
+                    },
+                    PartialDemoOfdElement::None,
+                ) => {
+                    self.result = PartialDemoOfdElement::TypeLink {
+                        source: inner.into(),
+                        dest: None,
+                    };
+                    self.current_stage = DemoOfdToolStage::LinkEnd;
+                    self.event_lock = true;
+                }
+                (DemoOfdToolStage::LinkEnd, PartialDemoOfdElement::EntityLink { source, dest })
+                    if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
+                {
+                    if matches!(link_type, LinkType::PropertyType { .. })
+                        || (*link_type == LinkType::Specialization
+                            && *source.read().uuid != *inner.read().uuid)
+                        || (*link_type == LinkType::Aggregation
+                            && *source.read().uuid != *inner.read().uuid)
+                    {
+                        *dest = Some(inner);
+                    }
+                    self.event_lock = true;
+                }
+                (DemoOfdToolStage::LinkEnd, PartialDemoOfdElement::TypeLink { source, dest })
+                    if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
+                {
+                    if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid {
+                        *dest = Some(inner.into());
+                    }
+                    self.event_lock = true;
+                }
+                (
+                    DemoOfdToolStage::LinkAddEnding { source },
+                    &mut PartialDemoOfdElement::AggregationEnding {
+                        agg_model: ref gen_model,
+                        ref mut new_model,
+                    },
+                ) => {
+                    let inner_uuid = *inner.read().uuid;
+                    let gen_model = gen_model.read();
 
-            DemoOfdElement::DemoOfdPackage(..)
-            | DemoOfdElement::DemoOfdPropertyType(..)
-            | DemoOfdElement::DemoOfdSpecialization(..)
-            | DemoOfdElement::DemoOfdAggregation(..)
-            | DemoOfdElement::DemoOfdPrecedence(..)
-            | DemoOfdElement::DemoOfdExclusion(..) => {}
+                    if *source
+                        && !gen_model
+                            .domain_elements
+                            .iter()
+                            .any(|e| *e.read().uuid == inner_uuid)
+                        && *gen_model.range_element.read().uuid != inner_uuid
+                    {
+                        *new_model = Some(inner_uuid);
+                    }
+                    self.event_lock = true;
+                }
+                _ => {}
+            },
+            DemoOfdElement::EventType(inner) => match (&self.current_stage, &mut self.result) {
+                (
+                    DemoOfdToolStage::Entity(EntityStageData {
+                        name,
+                        properties,
+                        internal,
+                    }),
+                    _,
+                ) => {
+                    if !inner.read().specialization_entity_type.is_some() {
+                        let (_class_model, class_view) =
+                            new_demoofd_entitytype(name, properties, *internal, egui::Pos2::ZERO);
+                        self.result = PartialDemoOfdElement::Some(class_view.into());
+                    }
+                    self.event_lock = true;
+                }
+                (
+                    DemoOfdToolStage::LinkStart {
+                        link_type: LinkType::Precedence,
+                    },
+                    PartialDemoOfdElement::None,
+                ) => {
+                    self.result = PartialDemoOfdElement::EventLink {
+                        source: inner,
+                        dest: None,
+                    };
+                    self.current_stage = DemoOfdToolStage::LinkEnd;
+                    self.event_lock = true;
+                }
+                (
+                    DemoOfdToolStage::LinkStart {
+                        link_type: LinkType::Exclusion,
+                    },
+                    PartialDemoOfdElement::None,
+                ) => {
+                    self.result = PartialDemoOfdElement::TypeLink {
+                        source: inner.into(),
+                        dest: None,
+                    };
+                    self.current_stage = DemoOfdToolStage::LinkEnd;
+                    self.event_lock = true;
+                }
+                (DemoOfdToolStage::LinkEnd, PartialDemoOfdElement::EventLink { source, dest })
+                    if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
+                {
+                    if *link_type == LinkType::Precedence
+                        && *source.read().uuid != *inner.read().uuid
+                    {
+                        *dest = Some(inner);
+                    }
+                    self.event_lock = true;
+                }
+                (DemoOfdToolStage::LinkEnd, PartialDemoOfdElement::TypeLink { source, dest })
+                    if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
+                {
+                    if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid {
+                        *dest = Some(inner.into());
+                    }
+                    self.event_lock = true;
+                }
+                _ => {}
+            },
+
+            DemoOfdElement::Package(..)
+            | DemoOfdElement::PropertyType(..)
+            | DemoOfdElement::Specialization(..)
+            | DemoOfdElement::Aggregation(..)
+            | DemoOfdElement::Precedence(..)
+            | DemoOfdElement::Exclusion(..)
+            | DemoOfdElement::Note(..) => {}
         }
     }
 
@@ -2086,7 +2133,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         Self: Sized,
     {
         let model_uuid = *self.model.read().uuid;
-        let model = if let Some(DemoOfdElement::DemoOfdPackage(m)) = m.get(&model_uuid) {
+        let model = if let Some(DemoOfdElement::Package(m)) = m.get(&model_uuid) {
             m.clone()
         } else {
             let model = self.model.read().clone_with(new_uuid);
@@ -2837,7 +2884,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(DemoOfdElement::DemoOfdEntityType(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(DemoOfdElement::EntityType(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -3666,7 +3713,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(DemoOfdElement::DemoOfdEventType(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(DemoOfdElement::EventType(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -3713,7 +3760,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         let mut w = self.model.write();
         let base_model_uuid = *w.base_entity_type.read().uuid;
         let base_view_uuid = *self.base_entity_type.uuid();
-        if let (Some(DemoOfdElement::DemoOfdEntityType(new_base_model)), Some(new_base_view)) =
+        if let (Some(DemoOfdElement::EntityType(new_base_model)), Some(new_base_view)) =
             (m.get(&base_model_uuid), c.get(&base_view_uuid))
         {
             w.base_entity_type = new_base_model.clone();
@@ -3721,7 +3768,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         }
         if let UFOption::Some(spec) = &w.specialization_entity_type {
             let spec_uuid = *spec.read().uuid;
-            if let Some(DemoOfdElement::DemoOfdEntityType(new_spec)) = m.get(&spec_uuid) {
+            if let Some(DemoOfdElement::EntityType(new_spec)) = m.get(&spec_uuid) {
                 w.specialization_entity_type = UFOption::Some(new_spec.clone());
             }
         }
@@ -4025,7 +4072,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
     {
         let old_model = self.model.read();
 
-        let model = if let Some(DemoOfdElement::DemoOfdPropertyType(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(DemoOfdElement::PropertyType(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -4043,11 +4090,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         let mut model = self.model.write();
 
         let source_uuid = *model.domain_element.read().uuid;
-        if let Some(DemoOfdElement::DemoOfdEntityType(new_source)) = m.get(&source_uuid) {
+        if let Some(DemoOfdElement::EntityType(new_source)) = m.get(&source_uuid) {
             model.domain_element = new_source.clone();
         }
         let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::DemoOfdEntityType(new_target)) = m.get(&target_uuid) {
+        if let Some(DemoOfdElement::EntityType(new_target)) = m.get(&target_uuid) {
             model.range_element = new_target.clone();
         }
     }
@@ -4242,7 +4289,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
     {
         let old_model = self.model.read();
 
-        let model = if let Some(DemoOfdElement::DemoOfdSpecialization(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(DemoOfdElement::Specialization(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -4260,11 +4307,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         let mut model = self.model.write();
 
         let source_uuid = *model.domain_element.read().uuid;
-        if let Some(DemoOfdElement::DemoOfdEntityType(new_source)) = m.get(&source_uuid) {
+        if let Some(DemoOfdElement::EntityType(new_source)) = m.get(&source_uuid) {
             model.domain_element = new_source.clone();
         }
         let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::DemoOfdEntityType(new_target)) = m.get(&target_uuid) {
+        if let Some(DemoOfdElement::EntityType(new_target)) = m.get(&target_uuid) {
             model.range_element = new_target.clone();
         }
     }
@@ -4554,7 +4601,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
     {
         let old_model = self.model.read();
 
-        let model = if let Some(DemoOfdElement::DemoOfdAggregation(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(DemoOfdElement::Aggregation(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -4573,12 +4620,12 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
 
         for e in model.domain_elements.iter_mut() {
             let sid = *e.read().uuid;
-            if let Some(DemoOfdElement::DemoOfdEntityType(new_source)) = m.get(&sid) {
+            if let Some(DemoOfdElement::EntityType(new_source)) = m.get(&sid) {
                 *e = new_source.clone();
             }
         }
         let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::DemoOfdEntityType(new_target)) = m.get(&target_uuid) {
+        if let Some(DemoOfdElement::EntityType(new_target)) = m.get(&target_uuid) {
             model.range_element = new_target.clone();
         }
     }
@@ -4773,7 +4820,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
     {
         let old_model = self.model.read();
 
-        let model = if let Some(DemoOfdElement::DemoOfdPrecedence(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(DemoOfdElement::Precedence(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -4791,11 +4838,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         let mut model = self.model.write();
 
         let source_uuid = *model.domain_element.read().uuid;
-        if let Some(DemoOfdElement::DemoOfdEventType(new_source)) = m.get(&source_uuid) {
+        if let Some(DemoOfdElement::EventType(new_source)) = m.get(&source_uuid) {
             model.domain_element = new_source.clone();
         }
         let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::DemoOfdEventType(new_target)) = m.get(&target_uuid) {
+        if let Some(DemoOfdElement::EventType(new_target)) = m.get(&target_uuid) {
             model.range_element = new_target.clone();
         }
     }
@@ -5023,7 +5070,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
     {
         let old_model = self.model.read();
 
-        let model = if let Some(DemoOfdElement::DemoOfdExclusion(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(DemoOfdElement::Exclusion(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -5048,5 +5095,544 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.clone().as_type()) {
             model.range_element = new_target.clone();
         }
+    }
+}
+
+pub fn new_demoofd_note(
+    text: &str,
+    position: egui::Pos2,
+    align: egui::Align2,
+) -> (ERef<DemoOfdNote>, ERef<DemoOfdNoteView>) {
+    let model = ERef::new(DemoOfdNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let view = new_demoofd_note_view(model.clone(), position, align);
+
+    (model, view)
+}
+pub fn new_demoofd_note_view(
+    model: ERef<DemoOfdNote>,
+    position: egui::Pos2,
+    align: egui::Align2,
+) -> ERef<DemoOfdNoteView> {
+    let m = model.read();
+    ERef::new(DemoOfdNoteView {
+        uuid: ViewUuid::now_v7().into(),
+        model: model.clone(),
+
+        text_buffer: (*m.text).clone(),
+
+        dragged_shape: None,
+        highlight: canvas::Highlight::NONE,
+        position,
+        align,
+        bounds_rect: egui::Rect::from_min_max(position, position),
+        background_color: MGlobalColor::None,
+    })
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoOfdNoteView {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    pub model: ERef<DemoOfdNote>,
+
+    #[nh_context_serde(skip_and_default)]
+    text_buffer: String,
+
+    #[nh_context_serde(skip_and_default)]
+    dragged_shape: Option<NHShape>,
+    #[nh_context_serde(skip_and_default)]
+    highlight: canvas::Highlight,
+    pub position: egui::Pos2,
+    pub align: egui::Align2,
+    pub bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
+}
+
+impl DemoOfdNoteView {
+    const CORNER_SIZE: f32 = 10.0;
+}
+
+impl Entity for DemoOfdNoteView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl View for DemoOfdNoteView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl ElementController<DemoOfdElement> for DemoOfdNoteView {
+    fn model(&self) -> DemoOfdElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: self.bounds_rect,
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.position
+    }
+}
+
+impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
+    fn show_properties(
+        &mut self,
+        gdc: &GlobalDrawingContext,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<
+            InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        >,
+    ) -> PropertiesStatus<DemoOfdDomain> {
+        if !self.highlight.selected {
+            return PropertiesStatus::NotShown;
+        }
+
+        ui.label("Model properties");
+
+        if ui
+            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                DemoOfdPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+            ));
+        }
+
+        ui.label("View properties");
+
+        ui.horizontal(|ui| {
+            let egui::Pos2 { mut x, mut y } = self.position;
+
+            ui.label("x");
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(x - self.position.x, 0.0),
+                ));
+            }
+            ui.label("y");
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(0.0, y - self.position.y),
+                ));
+            }
+        });
+
+        egui::ComboBox::new("horizontal align", "Horizontal align")
+            .selected_text(format!("{:?}", self.align.x()))
+            .show_ui(ui, |ui| {
+                let mut tmp_x = self.align.x();
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    if ui
+                        .selectable_value(&mut tmp_x, e, format!("{:?}", e))
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            DemoOfdPropChange::NoteAlignChange(Some(tmp_x), None),
+                        ));
+                    }
+                }
+            });
+        egui::ComboBox::new("vertical align", "Vertical align")
+            .selected_text(format!("{:?}", self.align.y()))
+            .show_ui(ui, |ui| {
+                let mut tmp_y = self.align.y();
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    if ui
+                        .selectable_value(&mut tmp_y, e, format!("{:?}", e))
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            DemoOfdPropChange::NoteAlignChange(None, Some(tmp_y)),
+                        ));
+                    }
+                }
+            });
+
+        ui.label("Background color:");
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                DemoOfdPropChange::ColorChange((0, new_color).into()),
+            ));
+        }
+
+        PropertiesStatus::Shown
+    }
+
+    fn draw_in(
+        &mut self,
+        _: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        context: &GlobalDrawingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
+        canvas: &mut dyn canvas::NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
+    ) -> TargettingStatus {
+        let align_offset = egui::Vec2 {
+            x: match self.align.x() {
+                egui::Align::Min => -Self::CORNER_SIZE,
+                egui::Align::Center => 0.0,
+                egui::Align::Max => Self::CORNER_SIZE,
+            },
+            y: match self.align.y() {
+                egui::Align::Min => Self::CORNER_SIZE,
+                egui::Align::Center => 0.0,
+                egui::Align::Max => -Self::CORNER_SIZE,
+            },
+        };
+        self.bounds_rect = canvas
+            .measure_text(
+                self.position,
+                self.align,
+                &self.text_buffer,
+                canvas::CLASS_MIDDLE_FONT_SIZE,
+            )
+            .expand2(egui::Vec2 {
+                x: Self::CORNER_SIZE,
+                y: Self::CORNER_SIZE,
+            })
+            .translate(align_offset);
+
+        canvas.draw_polygon(
+            [
+                self.bounds_rect.min,
+                egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
+                self.bounds_rect.max,
+                egui::Pos2::new(
+                    self.bounds_rect.max.x,
+                    self.bounds_rect.min.y + Self::CORNER_SIZE,
+                ),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x - Self::CORNER_SIZE,
+                    self.bounds_rect.min.y,
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            context
+                .global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
+        );
+        canvas.draw_polygon(
+            [
+                egui::Pos2::new(
+                    self.bounds_rect.max.x,
+                    self.bounds_rect.min.y + Self::CORNER_SIZE,
+                ),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x - Self::CORNER_SIZE,
+                    self.bounds_rect.min.y + Self::CORNER_SIZE,
+                ),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x - Self::CORNER_SIZE,
+                    self.bounds_rect.min.y,
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            context
+                .global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
+        );
+        canvas.draw_text(
+            self.position + align_offset,
+            self.align,
+            &self.text_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+
+        if canvas.ui_scale().is_some() {
+            if self.dragged_shape.is_some() {
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
+            }
+
+            // Draw targetting rectangle
+            if let Some(t) = tool
+                .as_ref()
+                .filter(|e| self.min_shape().contains(e.0))
+                .map(|e| e.1)
+            {
+                canvas.draw_polygon(
+                    [
+                        self.bounds_rect.min,
+                        egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
+                        self.bounds_rect.max,
+                        egui::Pos2::new(
+                            self.bounds_rect.max.x,
+                            self.bounds_rect.min.y + Self::CORNER_SIZE,
+                        ),
+                        egui::Pos2::new(
+                            self.bounds_rect.max.x - Self::CORNER_SIZE,
+                            self.bounds_rect.min.y,
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    t.targetting_for_section(Some(self.model())),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                TargettingStatus::Drawn
+            } else {
+                TargettingStatus::NotDrawn
+            }
+        } else {
+            TargettingStatus::NotDrawn
+        }
+    }
+
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        tool: &mut Option<NaiveDemoOfdTool>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        commands: &mut Vec<
+            InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        >,
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::MouseDown(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled;
+                }
+                self.dragged_shape = Some(self.min_shape());
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => {
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_section(self.model());
+                } else {
+                    if ehc
+                        .modifier_settings
+                        .hold_selection
+                        .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                    {
+                        self.highlight.selected = true;
+                    } else {
+                        self.highlight.selected = !self.highlight.selected;
+                    }
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos - self.bounds_rect.center();
+
+                if self.highlight.selected {
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        coerced_delta,
+                    ));
+                } else {
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(*self.uuid).collect(),
+                        coerced_delta,
+                    ));
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            _ => EventHandlingStatus::NotHandled,
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<
+            DemoOfdOrdinalMovement,
+            DemoOfdElementOrVertex,
+            DemoOfdPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        >,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.highlight = self.highlight.combine(*set, *h);
+                }
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
+                    std::iter::once(*self.uuid).collect(),
+                    -*delta,
+                ));
+            }
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, property) => {
+                if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
+                    let mut model = self.model.write();
+                    match property {
+                        DemoOfdPropChange::NameChange(text) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::NameChange(model.text.clone()),
+                            ));
+                            model.text = text.clone();
+                        }
+                        DemoOfdPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::ColorChange(ColorChangeData {
+                                    slot: 0,
+                                    color: self.background_color,
+                                }),
+                            ));
+                            self.background_color = *color;
+                        }
+                        DemoOfdPropChange::NoteAlignChange(x, y) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::NoteAlignChange(
+                                    Some(self.align.x()),
+                                    Some(self.align.y()),
+                                ),
+                            ));
+                            if let Some(x) = x {
+                                self.align.0[0] = *x;
+                            }
+                            if let Some(y) = y {
+                                self.align.0[1] = *y;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            InsensitiveCommand::Macro(..) => unreachable!(),
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.text_buffer = (*model.text).clone();
+    }
+
+    fn head_count(
+        &mut self,
+        _flattened_views: &mut HashMap<ViewUuid, (DemoOfdElementView, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, DemoOfdElementView>,
+        c: &mut HashMap<ViewUuid, DemoOfdElementView>,
+        m: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) {
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let modelish = if let Some(DemoOfdElement::Note(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model: modelish,
+            text_buffer: self.text_buffer.clone(),
+            dragged_shape: None,
+            highlight: self.highlight,
+            position: self.position,
+            align: self.align,
+            bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 }
