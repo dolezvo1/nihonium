@@ -780,10 +780,13 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 )
                 .into()
             }
-            UmlSequenceElement::Note(inner) => {
-                new_umlsequence_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
-                    .into()
-            }
+            UmlSequenceElement::Note(inner) => new_umlsequence_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            )
+            .into(),
             UmlSequenceElement::NoteLink(_inner) => todo!(),
         };
 
@@ -1324,7 +1327,11 @@ impl DiagramSettings for UmlSequenceSettings {
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
                         }
-                        UmlSequenceToolStage::Note { text, align } => {
+                        UmlSequenceToolStage::Note {
+                            text,
+                            align,
+                            background_color,
+                        } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
@@ -1359,6 +1366,18 @@ impl DiagramSettings for UmlSequenceSettings {
                                             .changed();
                                     }
                                 });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         UmlSequenceToolStage::LinkStart { link_type } => match link_type {
                             LinkType::Message {
@@ -1627,6 +1646,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     UmlSequenceToolStage::Note {
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                     Some(egui::KeyboardShortcut::new(
@@ -1764,11 +1784,13 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             view.write().refresh_buffers();
             view.into()
         }
-        UmlSequenceToolStage::Note { text, align } => {
-            new_umlsequence_note(text, egui::Pos2::ZERO, *align)
-                .1
-                .into()
-        }
+        UmlSequenceToolStage::Note {
+            text,
+            align,
+            background_color,
+        } => new_umlsequence_note(text, egui::Pos2::ZERO, *align, *background_color)
+            .1
+            .into(),
         UmlSequenceToolStage::NoteLinkStart => todo!(),
 
         UmlSequenceToolStage::DiagramEnd
@@ -1852,6 +1874,7 @@ pub enum UmlSequenceToolStage {
     Note {
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
     NoteLinkStart,
     NoteLinkEnd,
@@ -2090,8 +2113,15 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 *x = Some(pos.x);
                 self.event_lock = true;
             }
-            (UmlSequenceToolStage::Note { text, align }, PartialUmlSequenceElement::None) => {
-                let view = new_umlsequence_note(text, pos, *align).1;
+            (
+                UmlSequenceToolStage::Note {
+                    text,
+                    align,
+                    background_color,
+                },
+                PartialUmlSequenceElement::None,
+            ) => {
+                let view = new_umlsequence_note(text, pos, *align, *background_color).1;
                 self.result = PartialUmlSequenceElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -8569,9 +8599,10 @@ pub fn new_umlsequence_note(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlSequenceNote>, ERef<UmlSequenceNoteView>) {
     let model = ERef::new(UmlSequenceNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_umlsequence_note_view(model.clone(), position, align);
+    let view = new_umlsequence_note_view(model.clone(), position, align, background_color);
 
     (model, view)
 }
@@ -8579,6 +8610,7 @@ pub fn new_umlsequence_note_view(
     model: ERef<UmlSequenceNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlSequenceNoteView> {
     let m = model.read();
     ERef::new(UmlSequenceNoteView {
@@ -8592,7 +8624,7 @@ pub fn new_umlsequence_note_view(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 

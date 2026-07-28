@@ -305,9 +305,13 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                 };
                 new_network_association_view(inner.clone(), source_view, target_view).into()
             }
-            NetworkElement::Note(inner) => {
-                new_network_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
-            }
+            NetworkElement::Note(inner) => new_network_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            )
+            .into(),
         };
 
         Ok(v)
@@ -857,7 +861,11 @@ impl DiagramSettings for NetworkSettings {
                                 .labeled_text_edit_singleline("Name", name)
                                 .changed();
                         }
-                        NetworkToolStage::Note { text, align } => {
+                        NetworkToolStage::Note {
+                            text,
+                            align,
+                            background_color,
+                        } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
@@ -892,6 +900,18 @@ impl DiagramSettings for NetworkSettings {
                                             .changed();
                                     }
                                 });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => {
                             unreachable!()
@@ -1262,6 +1282,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Note {
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                     Some(egui::KeyboardShortcut::new(
@@ -1367,9 +1388,13 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             .1;
             container_view.into()
         }
-        NetworkToolStage::Note { text, align } => {
-            new_network_note(text, egui::Pos2::ZERO, *align).1.into()
-        }
+        NetworkToolStage::Note {
+            text,
+            align,
+            background_color,
+        } => new_network_note(text, egui::Pos2::ZERO, *align, *background_color)
+            .1
+            .into(),
         NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => unreachable!(),
     }
 }
@@ -1439,6 +1464,7 @@ pub enum NetworkToolStage {
     Note {
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
 }
 
@@ -1652,8 +1678,15 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             (NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => {
                 *b = Some(pos)
             }
-            (NetworkToolStage::Note { text, align }, _) => {
-                let view = new_network_note(text, pos, *align).1;
+            (
+                NetworkToolStage::Note {
+                    text,
+                    align,
+                    background_color,
+                },
+                _,
+            ) => {
+                let view = new_network_note(text, pos, *align, *background_color).1;
 
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
@@ -5414,9 +5447,10 @@ pub fn new_network_note(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<NetworkNote>, ERef<NetworkNoteView>) {
     let model = ERef::new(NetworkNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_network_note_view(model.clone(), position, align);
+    let view = new_network_note_view(model.clone(), position, align, background_color);
 
     (model, view)
 }
@@ -5424,6 +5458,7 @@ pub fn new_network_note_view(
     model: ERef<NetworkNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<NetworkNoteView> {
     let m = model.read();
     ERef::new(NetworkNoteView {
@@ -5437,7 +5472,7 @@ pub fn new_network_note_view(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 

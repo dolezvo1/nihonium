@@ -464,9 +464,13 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     target_view,
                 ))
             }
-            DemoOfdElement::Note(inner) => {
-                new_demoofd_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
-            }
+            DemoOfdElement::Note(inner) => new_demoofd_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            )
+            .into(),
         };
 
         Ok(v)
@@ -919,7 +923,11 @@ impl DiagramSettings for DemoOfdSettings {
                                     }
                                 });
                         }
-                        DemoOfdToolStage::Note { text, align } => {
+                        DemoOfdToolStage::Note {
+                            text,
+                            align,
+                            background_color,
+                        } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
@@ -954,6 +962,18 @@ impl DiagramSettings for DemoOfdSettings {
                                             .changed();
                                     }
                                 });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         DemoOfdToolStage::EventEnd
                         | DemoOfdToolStage::LinkEnd
@@ -1101,6 +1121,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     DemoOfdToolStage::Note {
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                 ),
@@ -1240,9 +1261,13 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
             package_view.write().refresh_buffers();
             package_view.into()
         }
-        DemoOfdToolStage::Note { text, align } => {
-            new_demoofd_note(text, egui::Pos2::ZERO, *align).1.into()
-        }
+        DemoOfdToolStage::Note {
+            text,
+            align,
+            background_color,
+        } => new_demoofd_note(text, egui::Pos2::ZERO, *align, *background_color)
+            .1
+            .into(),
         DemoOfdToolStage::EventEnd
         | DemoOfdToolStage::LinkEnd
         | DemoOfdToolStage::LinkAddEnding { .. }
@@ -1322,6 +1347,7 @@ pub enum DemoOfdToolStage {
     Note {
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
 }
 
@@ -1605,8 +1631,15 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             (DemoOfdToolStage::PackageEnd, PartialDemoOfdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
-            (DemoOfdToolStage::Note { text, align }, _) => {
-                let view = new_demoofd_note(text, pos, *align).1;
+            (
+                DemoOfdToolStage::Note {
+                    text,
+                    align,
+                    background_color,
+                },
+                _,
+            ) => {
+                let view = new_demoofd_note(text, pos, *align, *background_color).1;
                 self.result = PartialDemoOfdElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -5165,9 +5198,10 @@ pub fn new_demoofd_note(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<DemoOfdNote>, ERef<DemoOfdNoteView>) {
     let model = ERef::new(DemoOfdNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_demoofd_note_view(model.clone(), position, align);
+    let view = new_demoofd_note_view(model.clone(), position, align, background_color);
 
     (model, view)
 }
@@ -5175,6 +5209,7 @@ pub fn new_demoofd_note_view(
     model: ERef<DemoOfdNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<DemoOfdNoteView> {
     let m = model.read();
     ERef::new(DemoOfdNoteView {
@@ -5188,7 +5223,7 @@ pub fn new_demoofd_note_view(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 

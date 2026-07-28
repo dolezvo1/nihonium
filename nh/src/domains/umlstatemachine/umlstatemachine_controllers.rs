@@ -382,10 +382,13 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 };
                 new_umlstatemachine_edge_view(inner.clone(), None, source_view, target_view).into()
             }
-            UmlStateMachineElement::Note(inner) => {
-                new_umlstatemachine_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
-                    .into()
-            }
+            UmlStateMachineElement::Note(inner) => new_umlstatemachine_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            )
+            .into(),
             UmlStateMachineElement::NoteLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
@@ -1005,6 +1008,7 @@ impl DiagramSettings for UmlStateMachineSettings {
                             stereotype,
                             text,
                             align,
+                            background_color,
                         } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Stereotype", stereotype)
@@ -1043,6 +1047,18 @@ impl DiagramSettings for UmlStateMachineSettings {
                                             .changed();
                                     }
                                 });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         _ => {}
                     }
@@ -1370,6 +1386,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         stereotype: "".to_owned(),
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                     Some(egui::KeyboardShortcut::new(
@@ -1522,8 +1539,16 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
             stereotype,
             text,
             align,
+            background_color,
         } => {
-            let view = new_umlstatemachine_note(text, stereotype, egui::Pos2::ZERO, *align).1;
+            let view = new_umlstatemachine_note(
+                text,
+                stereotype,
+                egui::Pos2::ZERO,
+                *align,
+                *background_color,
+            )
+            .1;
             view.write().refresh_buffers();
             view.into()
         }
@@ -1533,6 +1558,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
                 "",
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
             );
             let (d, dv) = new_umlstatemachine_terminatepseudostate(egui::Pos2::new(200.0, 150.0));
             let dummy_2_element = (d.into(), dv.into());
@@ -1642,6 +1668,7 @@ pub enum UmlStateMachineToolStage {
         stereotype: String,
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
     NoteLinkStart,
     NoteLinkEnd,
@@ -1865,10 +1892,12 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     stereotype,
                     text,
                     align,
+                    background_color,
                 },
                 _,
             ) => {
-                let (_model, view) = new_umlstatemachine_note(text, stereotype, pos, *align);
+                let (_model, view) =
+                    new_umlstatemachine_note(text, stereotype, pos, *align, *background_color);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -7530,13 +7559,15 @@ pub fn new_umlstatemachine_note(
     stereotype: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlStateMachineNote>, ERef<UmlStateMachineNoteView>) {
     let comment_model = ERef::new(UmlStateMachineNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let comment_view = new_umlstatemachine_note_view(comment_model.clone(), position, align);
+    let comment_view =
+        new_umlstatemachine_note_view(comment_model.clone(), position, align, background_color);
 
     (comment_model, comment_view)
 }
@@ -7544,6 +7575,7 @@ pub fn new_umlstatemachine_note_view(
     model: ERef<UmlStateMachineNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlStateMachineNoteView> {
     let m = model.read();
     ERef::new(UmlStateMachineNoteView {
@@ -7559,7 +7591,7 @@ pub fn new_umlstatemachine_note_view(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 

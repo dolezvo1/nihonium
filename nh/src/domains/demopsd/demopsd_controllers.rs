@@ -518,9 +518,13 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                     None,
                 ))
             }
-            DemoPsdElement::Note(inner) => {
-                new_demopsd_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
-            }
+            DemoPsdElement::Note(inner) => new_demopsd_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            )
+            .into(),
         };
 
         Ok(v)
@@ -983,7 +987,11 @@ impl DiagramSettings for DemoPsdSettings {
                                     }
                                 });
                         }
-                        DemoPsdToolStage::Note { text, align } => {
+                        DemoPsdToolStage::Note {
+                            text,
+                            align,
+                            background_color,
+                        } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Text", text)
                                 .changed();
@@ -1018,6 +1026,18 @@ impl DiagramSettings for DemoPsdSettings {
                                             .changed();
                                     }
                                 });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         DemoPsdToolStage::TransactionEnd
                         | DemoPsdToolStage::LinkEnd
@@ -1141,6 +1161,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     DemoPsdToolStage::Note {
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                 ),
@@ -1233,9 +1254,13 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
             .1;
             package_view.into()
         }
-        DemoPsdToolStage::Note { text, align } => {
-            new_demopsd_note(text, egui::Pos2::ZERO, *align).1.into()
-        }
+        DemoPsdToolStage::Note {
+            text,
+            align,
+            background_color,
+        } => new_demopsd_note(text, egui::Pos2::ZERO, *align, *background_color)
+            .1
+            .into(),
         DemoPsdToolStage::TransactionEnd
         | DemoPsdToolStage::LinkEnd
         | DemoPsdToolStage::PackageEnd => unreachable!(),
@@ -1298,6 +1323,7 @@ pub enum DemoPsdToolStage {
     Note {
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
 }
 
@@ -1533,8 +1559,15 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             (DemoPsdToolStage::PackageEnd, PartialDemoPsdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
-            (DemoPsdToolStage::Note { text, align }, _) => {
-                let view = new_demopsd_note(text, pos, *align).1;
+            (
+                DemoPsdToolStage::Note {
+                    text,
+                    align,
+                    background_color,
+                },
+                _,
+            ) => {
+                let view = new_demopsd_note(text, pos, *align, *background_color).1;
                 self.result = PartialDemoPsdElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -4691,9 +4724,10 @@ pub fn new_demopsd_note(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<DemoPsdNote>, ERef<DemoPsdNoteView>) {
     let model = ERef::new(DemoPsdNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_demopsd_note_view(model.clone(), position, align);
+    let view = new_demopsd_note_view(model.clone(), position, align, background_color);
 
     (model, view)
 }
@@ -4701,6 +4735,7 @@ pub fn new_demopsd_note_view(
     model: ERef<DemoPsdNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<DemoPsdNoteView> {
     let m = model.read();
     ERef::new(DemoPsdNoteView {
@@ -4714,7 +4749,7 @@ pub fn new_demopsd_note_view(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 

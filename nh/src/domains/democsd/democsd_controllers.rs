@@ -360,9 +360,13 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                     target_view,
                 ))
             }
-            DemoCsdElement::Note(inner) => {
-                new_democsd_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
-            }
+            DemoCsdElement::Note(inner) => new_democsd_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            )
+            .into(),
         };
 
         Ok(v)
@@ -860,6 +864,58 @@ impl DiagramSettings for DemoCsdSettings {
                                     }
                                 });
                         }
+                        DemoCsdToolStage::Note {
+                            text,
+                            align,
+                            background_color,
+                        } => {
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Text", text)
+                                .changed();
+
+                            egui::ComboBox::new("horizontal align", "Horizontal align")
+                                .selected_text(format!("{:?}", align.x()))
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in
+                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
+                                    {
+                                        modified |= ui
+                                            .selectable_value(
+                                                &mut align.0[0],
+                                                e,
+                                                format!("{:?}", e),
+                                            )
+                                            .changed();
+                                    }
+                                });
+                            egui::ComboBox::new("vertical align", "Vertical align")
+                                .selected_text(format!("{:?}", align.y()))
+                                .show_ui(&mut columns[1], |ui| {
+                                    for e in
+                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
+                                    {
+                                        modified |= ui
+                                            .selectable_value(
+                                                &mut align.0[1],
+                                                e,
+                                                format!("{:?}", e),
+                                            )
+                                            .changed();
+                                    }
+                                });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
+                        }
                         _ => unreachable!(),
                     }
 
@@ -1001,6 +1057,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     DemoCsdToolStage::Note {
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                 ),
@@ -1103,9 +1160,13 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
         )
         .1
         .into(),
-        DemoCsdToolStage::Note { text, align } => {
-            new_democsd_note(text, egui::Pos2::ZERO, *align).1.into()
-        }
+        DemoCsdToolStage::Note {
+            text,
+            align,
+            background_color,
+        } => new_democsd_note(text, egui::Pos2::ZERO, *align, *background_color)
+            .1
+            .into(),
         DemoCsdToolStage::LinkEnd | DemoCsdToolStage::PackageEnd => unreachable!(),
     }
 }
@@ -1169,6 +1230,7 @@ pub enum DemoCsdToolStage {
     Note {
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
 }
 
@@ -1390,8 +1452,15 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             (DemoCsdToolStage::PackageEnd, PartialDemoCsdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
-            (DemoCsdToolStage::Note { text, align }, _) => {
-                let view = new_democsd_note(text, pos, *align).1;
+            (
+                DemoCsdToolStage::Note {
+                    text,
+                    align,
+                    background_color,
+                },
+                _,
+            ) => {
+                let view = new_democsd_note(text, pos, *align, *background_color).1;
                 self.result = PartialDemoCsdElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -3738,9 +3807,10 @@ pub fn new_democsd_note(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<DemoCsdNote>, ERef<DemoCsdNoteView>) {
     let model = ERef::new(DemoCsdNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_democsd_note_view(model.clone(), position, align);
+    let view = new_democsd_note_view(model.clone(), position, align, background_color);
 
     (model, view)
 }
@@ -3748,6 +3818,7 @@ pub fn new_democsd_note_view(
     model: ERef<DemoCsdNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<DemoCsdNoteView> {
     let m = model.read();
     ERef::new(DemoCsdNoteView {
@@ -3761,7 +3832,7 @@ pub fn new_democsd_note_view(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 

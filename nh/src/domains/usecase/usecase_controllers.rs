@@ -463,6 +463,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         stereotype: "".to_owned(),
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                     Some(egui::KeyboardShortcut::new(

@@ -563,11 +563,13 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     tv,
                 ))
             }
-            UmlClassElement::Note(inner) => UmlClassElementView::from(new_umlclass_note_view(
+            UmlClassElement::Note(inner) => new_umlclass_note_view(
                 inner,
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
-            )),
+                MGlobalColor::None,
+            )
+            .into(),
             UmlClassElement::NoteLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
@@ -1067,6 +1069,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         egui::Pos2::new(650.0, 250.0),
         egui::Align2::CENTER_CENTER,
+        MGlobalColor::None,
     );
     let (notelink1, notelink1_view) = new_umlclass_notelink(
         None,
@@ -1218,6 +1221,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         egui::Pos2::new(300.0, 650.0),
         egui::Align2::CENTER_CENTER,
+        MGlobalColor::None,
     );
     let (notelink3, notelink3_view) = new_umlclass_notelink(
         None,
@@ -1589,6 +1593,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             stereotype,
                             text,
                             align,
+                            background_color,
                         } => {
                             let mut sc = P::NoteStereotypeController::default();
                             sc.refresh(stereotype);
@@ -1630,6 +1635,18 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                                             .changed();
                                     }
                                 });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         UmlClassToolStage::NoteLinkStart => {}
                         UmlClassToolStage::LinkEnd
@@ -1921,13 +1938,27 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             stereotype,
             text,
             align,
+            background_color,
         } => {
-            let note_view = new_umlclass_note(text, stereotype, egui::Pos2::ZERO, *align).1;
-            note_view.write().refresh_buffers();
-            note_view.into()
+            let view = new_umlclass_note(
+                text,
+                stereotype,
+                egui::Pos2::ZERO,
+                *align,
+                *background_color,
+            )
+            .1;
+            view.write().refresh_buffers();
+            view.into()
         }
         UmlClassToolStage::NoteLinkStart => {
-            let d1 = new_umlclass_note("", "", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
+            let d1 = new_umlclass_note(
+                "",
+                "",
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            );
             let d2 = new_umlclass_class(
                 "dummy",
                 "",
@@ -2213,6 +2244,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         stereotype: "".to_owned(),
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                     Some(egui::KeyboardShortcut::new(
@@ -2368,6 +2400,7 @@ pub enum UmlClassToolStage {
         stereotype: String,
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
     NoteLinkStart,
     NoteLinkEnd,
@@ -2689,11 +2722,12 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     stereotype,
                     text,
                     align,
+                    background_color,
                 },
                 _,
             ) => {
-                let note_view = new_umlclass_note(text, stereotype, pos, *align).1;
-                self.result = PartialUmlClassElement::Some(note_view.into());
+                let view = new_umlclass_note(text, stereotype, pos, *align, *background_color).1;
+                self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
             _ => {}
@@ -9631,13 +9665,14 @@ pub fn new_umlclass_note<P: UmlClassProfile>(
     stereotype: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlClassNote>, ERef<UmlClassNoteView<P>>) {
     let model = ERef::new(UmlClassNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let view = new_umlclass_note_view(model.clone(), position, align);
+    let view = new_umlclass_note_view(model.clone(), position, align, background_color);
 
     (model, view)
 }
@@ -9645,6 +9680,7 @@ pub fn new_umlclass_note_view<P: UmlClassProfile>(
     model: ERef<UmlClassNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlClassNoteView<P>> {
     let m = model.read();
     ERef::new(UmlClassNoteView {
@@ -9660,7 +9696,7 @@ pub fn new_umlclass_note_view<P: UmlClassProfile>(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
         _profile: PhantomData,
     })
 }

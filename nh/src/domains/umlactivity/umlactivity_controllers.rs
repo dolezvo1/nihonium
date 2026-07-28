@@ -376,10 +376,13 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 };
                 new_umlactivity_edge_view(inner.clone(), None, source_view, target_view).into()
             }
-            UmlActivityElement::Note(inner) => {
-                new_umlactivity_note_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
-                    .into()
-            }
+            UmlActivityElement::Note(inner) => new_umlactivity_note_view(
+                inner,
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            )
+            .into(),
             UmlActivityElement::NoteLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
@@ -736,6 +739,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "decisionInput",
         egui::Pos2::new(300.0, 350.0),
         egui::Align2::CENTER_CENTER,
+        MGlobalColor::None,
     );
     let (procure, procure_view) = new_umlactivity_actionnode(
         "Procure items",
@@ -1068,6 +1072,7 @@ impl DiagramSettings for UmlActivitySettings {
                             stereotype,
                             text,
                             align,
+                            background_color,
                         } => {
                             modified |= columns[1]
                                 .labeled_text_edit_singleline("Stereotype", stereotype)
@@ -1106,6 +1111,18 @@ impl DiagramSettings for UmlActivitySettings {
                                             .changed();
                                     }
                                 });
+
+                            columns[1].label("Background color:");
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         _ => {}
                     }
@@ -1529,6 +1546,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         stereotype: "".to_owned(),
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
+                        background_color: MGlobalColor::None,
                     },
                     "Note",
                     Some(egui::KeyboardShortcut::new(
@@ -1694,14 +1712,27 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
             stereotype,
             text,
             align,
+            background_color,
         } => {
-            let view = new_umlactivity_note(text, stereotype, egui::Pos2::ZERO, *align).1;
+            let view = new_umlactivity_note(
+                text,
+                stereotype,
+                egui::Pos2::ZERO,
+                *align,
+                *background_color,
+            )
+            .1;
             view.write().refresh_buffers();
             view.into()
         }
         UmlActivityToolStage::NoteLinkStart => {
-            let (d1, d1_view) =
-                new_umlactivity_note("dummy", "", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
+            let (d1, d1_view) = new_umlactivity_note(
+                "dummy",
+                "",
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                MGlobalColor::None,
+            );
             let (d2, d2_view) = new_umlactivity_finalnode(
                 UmlActivityFinalNodeKind::FlowFinal,
                 egui::Pos2::new(200.0, 150.0),
@@ -1811,6 +1842,7 @@ pub enum UmlActivityToolStage {
         stereotype: String,
         text: String,
         align: egui::Align2,
+        background_color: MGlobalColor,
     },
     NoteLinkStart,
     NoteLinkEnd,
@@ -2095,10 +2127,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     stereotype,
                     text,
                     align,
+                    background_color,
                 },
                 _,
             ) => {
-                let (_model, view) = new_umlactivity_note(text, stereotype, pos, *align);
+                let view = new_umlactivity_note(text, stereotype, pos, *align, *background_color).1;
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -7905,13 +7938,14 @@ pub fn new_umlactivity_note(
     stereotype: &str,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlActivityNote>, ERef<UmlActivityNoteView>) {
     let model = ERef::new(UmlActivityNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let view = new_umlactivity_note_view(model.clone(), position, align);
+    let view = new_umlactivity_note_view(model.clone(), position, align, background_color);
 
     (model, view)
 }
@@ -7919,6 +7953,7 @@ pub fn new_umlactivity_note_view(
     model: ERef<UmlActivityNote>,
     position: egui::Pos2,
     align: egui::Align2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlActivityNoteView> {
     let m = model.read();
     ERef::new(UmlActivityNoteView {
@@ -7934,7 +7969,7 @@ pub fn new_umlactivity_note_view(
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 
