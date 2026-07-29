@@ -24,7 +24,7 @@ use crate::{
         umlclass::{
             umlclass_controllers::{
                 PartialUmlClassElement, UmlClassElementOrVertex, UmlClassRenderStyle,
-                new_uml_usecase,
+                UseCaseRenderStyle, new_uml_usecase,
             },
             umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind},
         },
@@ -166,6 +166,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         usecase_models::NONE,
         false,
         egui::Pos2::new(550.0, 200.0),
+        UseCaseRenderStyle::Ellipse,
         MGlobalColor::None,
     );
 
@@ -386,6 +387,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 name: "Registration".to_owned(),
                 stereotype: usecase_models::NONE.to_owned(),
                 is_abstract: false,
+                render_style: UseCaseRenderStyle::Ellipse,
                 background_color: MGlobalColor::None,
             },
             "Use case",

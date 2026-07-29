@@ -161,6 +161,8 @@ pub enum UmlClassPropChange {
     NameChange(Arc<String>),
     TemplateParametersChange(Arc<String>),
     ClassAbstractChange(bool),
+    ClassRenderStyleChange(UmlClassRenderStyle),
+    UseCaseRenderStyleChange(UseCaseRenderStyle),
 
     PropertyTypeChange(Arc<String>),
     PropertyMultiplicityChange(Arc<String>),
@@ -476,11 +478,13 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             UmlClassElement::Property(..) | UmlClassElement::Operation(..) => {
                 unreachable!()
             }
-            UmlClassElement::UseCase(inner) => UmlClassElementView::from(new_uml_usecase_view(
+            UmlClassElement::UseCase(inner) => new_uml_usecase_view(
                 inner,
                 egui::Pos2::ZERO,
+                UseCaseRenderStyle::Ellipse,
                 MGlobalColor::None,
-            )),
+            )
+            .into(),
             UmlClassElement::Generalization(inner) => {
                 let m = inner.read();
                 let (Some(sv), Some(tv)) = (
@@ -1491,6 +1495,7 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                             name,
                             stereotype,
                             is_abstract,
+                            render_style: _,
                             background_color,
                         } => {
                             let mut sc = P::UseCaseStereotypeController::default();
@@ -1782,7 +1787,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             instance_name,
             instance_type,
             stereotype,
-            background_color: color,
+            background_color,
         } => {
             let instance_view = new_umlclass_instance(
                 instance_name,
@@ -1790,7 +1795,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 stereotype,
                 "",
                 egui::Pos2::ZERO,
-                *color,
+                *background_color,
             )
             .1;
             instance_view.write().refresh_buffers();
@@ -1801,7 +1806,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             stereotype,
             is_abstract,
             render_style,
-            background_color: color,
+            background_color,
         } => {
             let class_view = new_umlclass_class(
                 name,
@@ -1811,7 +1816,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 Vec::new(),
                 egui::Pos2::ZERO,
                 *render_style,
-                *color,
+                *background_color,
             )
             .1;
             class_view.write().refresh_buffers();
@@ -1832,21 +1837,28 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             return_type,
             stereotype,
         } => {
-            let operation_view =
-                new_umlclass_operation(UFOption::None, name, "", return_type, stereotype).1;
-            operation_view.write().refresh_buffers();
-            operation_view.into()
+            let view = new_umlclass_operation(UFOption::None, name, "", return_type, stereotype).1;
+            view.write().refresh_buffers();
+            view.into()
         }
         UmlClassToolStage::UseCase {
             name,
             stereotype,
             is_abstract,
-            background_color: color,
+            render_style,
+            background_color,
         } => {
-            let uc_view =
-                new_uml_usecase(name, stereotype, *is_abstract, egui::Pos2::ZERO, *color).1;
-            uc_view.write().refresh_buffers();
-            uc_view.into()
+            let view = new_uml_usecase(
+                name,
+                stereotype,
+                *is_abstract,
+                egui::Pos2::ZERO,
+                *render_style,
+                *background_color,
+            )
+            .1;
+            view.write().refresh_buffers();
+            view.into()
         }
         UmlClassToolStage::LinkStart { link_type } => {
             let d1 = new_umlclass_class(
@@ -1921,7 +1933,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             stereotype,
             kind,
         } => {
-            let package_view = new_umlclass_package(
+            let view = new_umlclass_package(
                 name,
                 stereotype,
                 *kind,
@@ -1931,8 +1943,8 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 },
             )
             .1;
-            package_view.write().refresh_buffers();
-            package_view.into()
+            view.write().refresh_buffers();
+            view.into()
         }
         UmlClassToolStage::Note {
             stereotype,
@@ -1969,9 +1981,9 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 UmlClassRenderStyle::Class,
                 MGlobalColor::None,
             );
-            let notelink =
+            let view =
                 new_umlclass_notelink(None, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
-            notelink.into()
+            view.into()
         }
         UmlClassToolStage::LinkEnd
         | UmlClassToolStage::LinkAddEnding { .. }
@@ -2381,6 +2393,7 @@ pub enum UmlClassToolStage {
         name: String,
         stereotype: String,
         is_abstract: bool,
+        render_style: UseCaseRenderStyle,
         background_color: MGlobalColor,
     },
     LinkStart {
@@ -2660,15 +2673,16 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 },
                 _,
             ) => {
-                let (_object_model, object_view) = new_umlclass_instance(
+                let view = new_umlclass_instance(
                     instance_name,
                     instance_type,
                     stereotype,
                     "",
                     pos,
                     *background_color,
-                );
-                self.result = PartialUmlClassElement::Some(object_view.into());
+                )
+                .1;
+                self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
             (
@@ -2681,7 +2695,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 },
                 _,
             ) => {
-                let (_class_model, class_view) = new_umlclass_class(
+                let view = new_umlclass_class(
                     name,
                     stereotype,
                     *is_abstract,
@@ -2690,8 +2704,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     pos,
                     *render_style,
                     *background_color,
-                );
-                self.result = PartialUmlClassElement::Some(class_view.into());
+                )
+                .1;
+                self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
             (
@@ -2699,13 +2714,21 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     name,
                     stereotype,
                     is_abstract,
+                    render_style,
                     background_color,
                 },
                 _,
             ) => {
-                let (_usecase_model, usecase_view) =
-                    new_uml_usecase(name, stereotype, *is_abstract, pos, *background_color);
-                self.result = PartialUmlClassElement::Some(usecase_view.into());
+                let view = new_uml_usecase(
+                    name,
+                    stereotype,
+                    *is_abstract,
+                    pos,
+                    *render_style,
+                    *background_color,
+                )
+                .1;
+                self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
             (UmlClassToolStage::PackageStart { .. }, _) => {
@@ -6267,20 +6290,23 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         }
 
         ui.label("Render style");
-        egui::ComboBox::from_id_salt("render style")
+        let mut render_style_buffer = self.render_style;
+        egui::ComboBox::from_id_salt("class render style")
             .selected_text(self.render_style.as_str())
             .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut self.render_style,
-                    UmlClassRenderStyle::Class,
-                    UmlClassRenderStyle::Class.as_str(),
-                );
-                if P::allows_class_rendering_as_stick_figure() {
-                    ui.selectable_value(
-                        &mut self.render_style,
-                        UmlClassRenderStyle::StickFigure,
-                        UmlClassRenderStyle::StickFigure.as_str(),
-                    );
+                for e in std::iter::once(UmlClassRenderStyle::Class).chain(
+                    Some(UmlClassRenderStyle::StickFigure)
+                        .filter(|_| P::allows_class_rendering_as_stick_figure()),
+                ) {
+                    if ui
+                        .selectable_value(&mut render_style_buffer, e, e.as_str())
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            UmlClassPropChange::ClassRenderStyleChange(render_style_buffer),
+                        ));
+                    }
                 }
             });
 
@@ -6323,184 +6349,191 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             .get(&self.background_color)
             .unwrap_or(egui::Color32::WHITE);
 
-        if self.render_style == UmlClassRenderStyle::StickFigure {
-            let p = self.position;
-            let s = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
-            let h = self.highlight;
-            canvas.draw_ellipse(
-                p - egui::Vec2::new(0.0, 20.0),
-                egui::Vec2::splat(10.0),
-                body_color,
-                s,
-                h,
-            );
-            canvas.draw_line(
-                [
-                    p - egui::Vec2::new(20.0, 4.0),
-                    p - egui::Vec2::new(-20.0, 4.0),
-                ],
-                s,
-                h,
-            ); // hands
-            canvas.draw_line(
-                [
-                    p - egui::Vec2::new(0.0, 10.0),
-                    p - egui::Vec2::new(0.0, -8.0),
-                ],
-                s,
-                h,
-            ); // torso
-            canvas.draw_line(
-                [
-                    p - egui::Vec2::new(16.0, -28.0),
-                    p - egui::Vec2::new(0.0, -8.0),
-                ],
-                s,
-                h,
-            ); // / leg
-            canvas.draw_line(
-                [
-                    p - egui::Vec2::new(-16.0, -28.0),
-                    p - egui::Vec2::new(0.0, -8.0),
-                ],
-                s,
-                h,
-            ); // \ leg
-            self.bounds_rect = egui::Rect::from_min_max(
-                p - egui::Vec2::new(20.0, 30.0),
-                p + egui::Vec2::new(20.0, 28.0),
-            );
-            canvas.draw_text(
-                p - egui::Vec2::new(0.0, -28.0),
-                egui::Align2::CENTER_TOP,
-                &read.name,
-                canvas::CLASS_MIDDLE_FONT_SIZE,
-                egui::Color32::BLACK,
-            );
-        } else {
-            let mut body = Vec::<(
-                egui::Vec2,
-                Box<dyn Fn(&mut dyn canvas::NHCanvas, egui::Pos2)>,
-            )>::new();
-            if !self.suppress_properties && !self.properties_views.is_empty() {
-                body.push((
-                    rect_union_fold(
-                        self.properties_views
-                            .iter()
-                            .map(|e| e.read().bounding_box()),
-                    )
-                    .size(),
-                    Box::new(|c, at| {
-                        self.properties_views.iter().fold(at, |s, e| {
-                            let r = e.write().draw_inner(s, q, context, settings, c, tool);
-                            if r.1 != TargettingStatus::NotDrawn {
-                                *child_status.write().unwrap() = r.1;
-                            }
-                            r.0.left_bottom()
-                        });
-                    }),
-                ));
+        match self.render_style {
+            UmlClassRenderStyle::StickFigure => {
+                let p = self.position;
+                let s = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
+                let h = self.highlight;
+                canvas.draw_ellipse(
+                    p - egui::Vec2::new(0.0, 20.0),
+                    egui::Vec2::splat(10.0),
+                    body_color,
+                    s,
+                    h,
+                );
+                // hands
+                canvas.draw_line(
+                    [
+                        p - egui::Vec2::new(20.0, 4.0),
+                        p - egui::Vec2::new(-20.0, 4.0),
+                    ],
+                    s,
+                    h,
+                );
+                // torso
+                canvas.draw_line(
+                    [
+                        p - egui::Vec2::new(0.0, 10.0),
+                        p - egui::Vec2::new(0.0, -8.0),
+                    ],
+                    s,
+                    h,
+                );
+                // / leg
+                canvas.draw_line(
+                    [
+                        p - egui::Vec2::new(16.0, -28.0),
+                        p - egui::Vec2::new(0.0, -8.0),
+                    ],
+                    s,
+                    h,
+                );
+                // \ leg
+                canvas.draw_line(
+                    [
+                        p - egui::Vec2::new(-16.0, -28.0),
+                        p - egui::Vec2::new(0.0, -8.0),
+                    ],
+                    s,
+                    h,
+                );
+                self.bounds_rect = egui::Rect::from_min_max(
+                    p - egui::Vec2::new(20.0, 30.0),
+                    p + egui::Vec2::new(20.0, 28.0),
+                );
+                canvas.draw_text(
+                    p - egui::Vec2::new(0.0, -28.0),
+                    egui::Align2::CENTER_TOP,
+                    &read.name,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
             }
-            if !self.suppress_operations && !self.operations_views.is_empty() {
-                body.push((
-                    rect_union_fold(
-                        self.operations_views
-                            .iter()
-                            .map(|e| e.read().bounding_box()),
-                    )
-                    .size(),
-                    Box::new(|c, at| {
-                        self.operations_views.iter().fold(at, |s, e| {
-                            let r = e.write().draw_inner(s, q, context, settings, c, tool);
-                            if r.1 != TargettingStatus::NotDrawn {
-                                *child_status.write().unwrap() = r.1;
-                            }
-                            r.0.left_bottom()
-                        });
-                    }),
-                ));
-            }
-            if settings.comment_indication == CommentIndication::TextCompartment
-                && !read.comment.is_empty()
-            {
-                let comment = read.comment.clone();
-                body.push((
-                    canvas
-                        .measure_text(
-                            self.position,
-                            egui::Align2::LEFT_TOP,
-                            &read.comment,
-                            canvas::CLASS_ITEM_FONT_SIZE,
+            UmlClassRenderStyle::Class => {
+                let mut body = Vec::<(
+                    egui::Vec2,
+                    Box<dyn Fn(&mut dyn canvas::NHCanvas, egui::Pos2)>,
+                )>::new();
+                if !self.suppress_properties && !self.properties_views.is_empty() {
+                    body.push((
+                        rect_union_fold(
+                            self.properties_views
+                                .iter()
+                                .map(|e| e.read().bounding_box()),
                         )
                         .size(),
-                    Box::new(move |c, at| {
-                        c.draw_text(
-                            at,
-                            egui::Align2::LEFT_TOP,
-                            &comment,
-                            canvas::CLASS_ITEM_FONT_SIZE,
-                            egui::Color32::BLACK,
-                        );
-                    }),
-                ));
-            }
+                        Box::new(|c, at| {
+                            self.properties_views.iter().fold(at, |s, e| {
+                                let r = e.write().draw_inner(s, q, context, settings, c, tool);
+                                if r.1 != TargettingStatus::NotDrawn {
+                                    *child_status.write().unwrap() = r.1;
+                                }
+                                r.0.left_bottom()
+                            });
+                        }),
+                    ));
+                }
+                if !self.suppress_operations && !self.operations_views.is_empty() {
+                    body.push((
+                        rect_union_fold(
+                            self.operations_views
+                                .iter()
+                                .map(|e| e.read().bounding_box()),
+                        )
+                        .size(),
+                        Box::new(|c, at| {
+                            self.operations_views.iter().fold(at, |s, e| {
+                                let r = e.write().draw_inner(s, q, context, settings, c, tool);
+                                if r.1 != TargettingStatus::NotDrawn {
+                                    *child_status.write().unwrap() = r.1;
+                                }
+                                r.0.left_bottom()
+                            });
+                        }),
+                    ));
+                }
+                if settings.comment_indication == CommentIndication::TextCompartment
+                    && !read.comment.is_empty()
+                {
+                    let comment = read.comment.clone();
+                    body.push((
+                        canvas
+                            .measure_text(
+                                self.position,
+                                egui::Align2::LEFT_TOP,
+                                &read.comment,
+                                canvas::CLASS_ITEM_FONT_SIZE,
+                            )
+                            .size(),
+                        Box::new(move |c, at| {
+                            c.draw_text(
+                                at,
+                                egui::Align2::LEFT_TOP,
+                                &comment,
+                                canvas::CLASS_ITEM_FONT_SIZE,
+                                egui::Color32::BLACK,
+                            );
+                        }),
+                    ));
+                }
 
-            self.bounds_rect = draw_uml_class(
-                canvas,
-                self.position,
-                self.stereotype_in_guillemets.clone(),
-                &read.name,
-                None,
-                read.is_abstract,
-                &body,
-                body_color,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                self.highlight,
-            );
+                self.bounds_rect = draw_uml_class(
+                    canvas,
+                    self.position,
+                    self.stereotype_in_guillemets.clone(),
+                    &read.name,
+                    None,
+                    read.is_abstract,
+                    &body,
+                    body_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    self.highlight,
+                );
 
-            if !self.suppress_template_parameters && !read.template_parameters.is_empty() {
-                let text_bounds = canvas
-                    .measure_text(
+                if !self.suppress_template_parameters && !read.template_parameters.is_empty() {
+                    let text_bounds = canvas
+                        .measure_text(
+                            self.bounds_rect.right_top(),
+                            egui::Align2::CENTER_CENTER,
+                            &read.template_parameters,
+                            canvas::CLASS_TOP_FONT_SIZE,
+                        )
+                        .expand(2.0);
+                    canvas.draw_rectangle(
+                        text_bounds,
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::WHITE,
+                        canvas::Stroke::new_dotted(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                    canvas.draw_text(
                         self.bounds_rect.right_top(),
                         egui::Align2::CENTER_CENTER,
                         &read.template_parameters,
                         canvas::CLASS_TOP_FONT_SIZE,
-                    )
-                    .expand(2.0);
-                canvas.draw_rectangle(
-                    text_bounds,
-                    egui::CornerRadius::ZERO,
-                    egui::Color32::WHITE,
-                    canvas::Stroke::new_dotted(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-                canvas.draw_text(
-                    self.bounds_rect.right_top(),
-                    egui::Align2::CENTER_CENTER,
-                    &read.template_parameters,
-                    canvas::CLASS_TOP_FONT_SIZE,
-                    egui::Color32::BLACK,
-                );
-            }
-
-            // Draw buttons
-            if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-                for (row_idx, col_idx, l, _f) in settings.class_buttons.iter() {
-                    let b1 = self.button_rect(ui_scale, *row_idx, *col_idx);
-                    canvas.draw_rectangle(
-                        b1,
-                        egui::CornerRadius::ZERO,
-                        egui::Color32::WHITE,
-                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        canvas::Highlight::NONE,
-                    );
-                    canvas.draw_text(
-                        b1.center(),
-                        egui::Align2::CENTER_CENTER,
-                        l,
-                        14.0 / ui_scale,
                         egui::Color32::BLACK,
                     );
+                }
+
+                // Draw buttons
+                if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+                    for (row_idx, col_idx, l, _f) in settings.class_buttons.iter() {
+                        let b1 = self.button_rect(ui_scale, *row_idx, *col_idx);
+                        canvas.draw_rectangle(
+                            b1,
+                            egui::CornerRadius::ZERO,
+                            egui::Color32::WHITE,
+                            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                            canvas::Highlight::NONE,
+                        );
+                        canvas.draw_text(
+                            b1.center(),
+                            egui::Align2::CENTER_CENTER,
+                            l,
+                            14.0 / ui_scale,
+                            egui::Color32::BLACK,
+                        );
+                    }
                 }
             }
         }
@@ -7121,6 +7154,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                             ));
                             model.is_abstract = *is_abstract;
                         }
+                        UmlClassPropChange::ClassRenderStyleChange(render_style) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ClassRenderStyleChange(self.render_style),
+                            ));
+                            self.render_style = *render_style;
+                        }
                         UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -7319,6 +7359,7 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
     stereotype: &str,
     is_abstract: bool,
     position: egui::Pos2,
+    render_style: UseCaseRenderStyle,
     background_color: MGlobalColor,
 ) -> (ERef<UmlUseCase>, ERef<UmlUseCaseView<P>>) {
     let usecase_model = ERef::new(UmlUseCase::new(
@@ -7327,13 +7368,19 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
         stereotype.to_owned(),
         is_abstract,
     ));
-    let usecase_view = new_uml_usecase_view(usecase_model.clone(), position, background_color);
+    let usecase_view = new_uml_usecase_view(
+        usecase_model.clone(),
+        position,
+        render_style,
+        background_color,
+    );
 
     (usecase_model, usecase_view)
 }
 pub fn new_uml_usecase_view<P: UmlClassProfile>(
     model: ERef<UmlUseCase>,
     position: egui::Pos2,
+    render_style: UseCaseRenderStyle,
     background_color: MGlobalColor,
 ) -> ERef<UmlUseCaseView<P>> {
     let m = model.read();
@@ -7352,9 +7399,25 @@ pub fn new_uml_usecase_view<P: UmlClassProfile>(
         position,
         bounds_radius: egui::Vec2::ZERO,
         background_color,
+        render_style,
 
         _profile: PhantomData,
     })
+}
+
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum UseCaseRenderStyle {
+    Ellipse,
+    RectangleWithEllipseIcon,
+}
+
+impl UseCaseRenderStyle {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UseCaseRenderStyle::Ellipse => "Ellipse",
+            UseCaseRenderStyle::RectangleWithEllipseIcon => "Rectangle With Ellipse Icon",
+        }
+    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -7382,6 +7445,8 @@ pub struct UmlUseCaseView<P: UmlClassProfile> {
     pub position: egui::Pos2,
     pub bounds_radius: egui::Vec2,
     background_color: MGlobalColor,
+
+    render_style: UseCaseRenderStyle,
 
     #[nh_context_serde(skip_and_default)]
     _profile: PhantomData<P>,
@@ -7507,6 +7572,27 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             ));
         }
 
+        ui.label("Render style");
+        let mut render_style_buffer = self.render_style;
+        egui::ComboBox::from_id_salt("use case render style")
+            .selected_text(self.render_style.as_str())
+            .show_ui(ui, |ui| {
+                for e in [
+                    UseCaseRenderStyle::Ellipse,
+                    UseCaseRenderStyle::RectangleWithEllipseIcon,
+                ] {
+                    if ui
+                        .selectable_value(&mut render_style_buffer, e, e.as_str())
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            UmlClassPropChange::UseCaseRenderStyleChange(render_style_buffer),
+                        ));
+                    }
+                }
+            });
+
         PropertiesStatus::Shown
     }
 
@@ -7522,7 +7608,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         let name_bounds = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.name_buffer,
+            if !self.name_buffer.is_empty() {
+                &self.name_buffer
+            } else {
+                " "
+            },
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
         let mut text_bounds = name_bounds;
@@ -7538,16 +7628,39 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
         self.bounds_radius = text_bounds.size() / 1.5;
 
-        canvas.draw_ellipse(
-            self.position,
-            self.bounds_radius,
-            context
-                .global_colors
-                .get(&self.background_color)
-                .unwrap_or(egui::Color32::WHITE),
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
-        );
+        let background_color = context
+            .global_colors
+            .get(&self.background_color)
+            .unwrap_or(egui::Color32::WHITE);
+        match self.render_style {
+            UseCaseRenderStyle::Ellipse => {
+                canvas.draw_ellipse(
+                    self.position,
+                    self.bounds_radius,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    self.highlight,
+                );
+            }
+            UseCaseRenderStyle::RectangleWithEllipseIcon => {
+                let icon_radius = egui::Vec2::new(6.0, 3.0);
+                let r = egui::Rect::from_center_size(self.position, 2.0 * self.bounds_radius);
+                canvas.draw_rectangle(
+                    r,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    self.highlight,
+                );
+                canvas.draw_ellipse(
+                    r.right_top() - egui::Vec2::new(icon_radius.x + 2.0, -(icon_radius.y + 2.0)),
+                    icon_radius,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    self.highlight,
+                );
+            }
+        }
 
         canvas.draw_text(
             self.position,
@@ -7738,6 +7851,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                             ));
                             model.is_abstract = *is_abstract;
                         }
+                        UmlClassPropChange::UseCaseRenderStyleChange(render_style) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::UseCaseRenderStyleChange(self.render_style),
+                            ));
+                            self.render_style = *render_style;
+                        }
                         UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -7823,6 +7943,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             position: self.position,
             bounds_radius: self.bounds_radius,
             background_color: self.background_color,
+            render_style: self.render_style,
             _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
