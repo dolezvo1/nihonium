@@ -162,7 +162,6 @@ pub enum UmlClassPropChange {
     TemplateParametersChange(Arc<String>),
     ClassAbstractChange(bool),
     ClassRenderStyleChange(UmlClassRenderStyle),
-    UseCaseRenderStyleChange(UseCaseRenderStyle),
 
     PropertyTypeChange(Arc<String>),
     PropertyMultiplicityChange(Arc<String>),
@@ -178,6 +177,9 @@ pub enum UmlClassPropChange {
     IsIdChange(bool),
     IsAbstractChange(bool),
     IsQueryChange(bool),
+
+    UseCaseExtensionPointsChange(Arc<String>),
+    UseCaseRenderStyleChange(UseCaseRenderStyle),
 
     SetNameChange(Arc<String>),
     SetCoveringChange(bool),
@@ -249,6 +251,10 @@ impl TryMerge for UmlClassPropChange {
             | (Self::PropertyDefaultValueChange(_), newer @ Self::PropertyDefaultValueChange(_))
             | (Self::OperationParametersChange(_), newer @ Self::OperationParametersChange(_))
             | (Self::OperationReturnTypeChange(_), newer @ Self::OperationReturnTypeChange(_))
+            | (
+                Self::UseCaseExtensionPointsChange(_),
+                newer @ Self::UseCaseExtensionPointsChange(_),
+            )
             | (Self::SetNameChange(_), newer @ Self::SetNameChange(_))
             | (Self::CommentChange(_), newer @ Self::CommentChange(_)) => Some(newer.clone()),
             (Self::LinkMultiplicityChange(b1, _), newer @ Self::LinkMultiplicityChange(b2, _))
@@ -478,13 +484,19 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             UmlClassElement::Property(..) | UmlClassElement::Operation(..) => {
                 unreachable!()
             }
-            UmlClassElement::UseCase(inner) => new_uml_usecase_view(
-                inner,
-                egui::Pos2::ZERO,
-                UseCaseRenderStyle::Ellipse,
-                MGlobalColor::None,
-            )
-            .into(),
+            UmlClassElement::UseCase(inner) => {
+                let r = inner.read();
+                new_uml_usecase_view(
+                    inner.clone(),
+                    egui::Pos2::ZERO,
+                    match r.extension_points.is_empty() {
+                        true => UseCaseRenderStyle::Ellipse,
+                        false => UseCaseRenderStyle::RectangleWithEllipseIcon,
+                    },
+                    MGlobalColor::None,
+                )
+                .into()
+            }
             UmlClassElement::Generalization(inner) => {
                 let m = inner.read();
                 let (Some(sv), Some(tv)) = (
@@ -7392,12 +7404,13 @@ pub fn new_uml_usecase_view<P: UmlClassProfile>(
         stereotype_controller: Default::default(),
         name_buffer: (*m.name).clone(),
         is_abstract_buffer: m.is_abstract,
+        extension_points_buffer: (*m.extension_points).clone(),
         comment_buffer: (*m.comment).clone(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
-        bounds_radius: egui::Vec2::ZERO,
+        bounds_rect: egui::Rect::from_pos(position),
         background_color,
         render_style,
 
@@ -7436,6 +7449,8 @@ pub struct UmlUseCaseView<P: UmlClassProfile> {
     #[nh_context_serde(skip_and_default)]
     is_abstract_buffer: bool,
     #[nh_context_serde(skip_and_default)]
+    extension_points_buffer: String,
+    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
     #[nh_context_serde(skip_and_default)]
@@ -7443,7 +7458,7 @@ pub struct UmlUseCaseView<P: UmlClassProfile> {
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
-    pub bounds_radius: egui::Vec2,
+    bounds_rect: egui::Rect,
     background_color: MGlobalColor,
 
     render_style: UseCaseRenderStyle,
@@ -7473,9 +7488,14 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlUseCaseView<P
     }
 
     fn min_shape(&self) -> NHShape {
-        NHShape::Ellipse {
-            position: self.position,
-            bounds_radius: self.bounds_radius,
+        match self.render_style {
+            UseCaseRenderStyle::Ellipse => NHShape::Ellipse {
+                position: self.bounds_rect.center(),
+                bounds_radius: self.bounds_rect.size() / 2.0,
+            },
+            UseCaseRenderStyle::RectangleWithEllipseIcon => NHShape::Rect {
+                inner: self.bounds_rect,
+            },
         }
     }
 
@@ -7528,6 +7548,18 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
+            ));
+        }
+
+        if ui
+            .labeled_text_edit_multiline("Extension points:", &mut self.extension_points_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::UseCaseExtensionPointsChange(Arc::new(
+                    self.extension_points_buffer.clone(),
+                )),
             ));
         }
 
@@ -7604,7 +7636,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
-        // Draw shape and text
         let name_bounds = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
@@ -7626,17 +7657,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             text_bounds = text_bounds.union(stereotype_bounds);
         }
 
-        self.bounds_radius = text_bounds.size() / 1.5;
-
+        // Draw shape and text
         let background_color = context
             .global_colors
             .get(&self.background_color)
             .unwrap_or(egui::Color32::WHITE);
         match self.render_style {
             UseCaseRenderStyle::Ellipse => {
+                let bounds_radius = text_bounds.size() / 1.5;
+                self.bounds_rect = egui::Rect::from_center_size(self.position, 2.0 * bounds_radius);
+
                 canvas.draw_ellipse(
                     self.position,
-                    self.bounds_radius,
+                    bounds_radius,
                     background_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     self.highlight,
@@ -7644,21 +7677,72 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             }
             UseCaseRenderStyle::RectangleWithEllipseIcon => {
                 let icon_radius = egui::Vec2::new(6.0, 3.0);
-                let r = egui::Rect::from_center_size(self.position, 2.0 * self.bounds_radius);
+
+                if !self.extension_points_buffer.is_empty() {
+                    text_bounds.max.y += 3.0;
+                }
+                let extension_points_top = text_bounds.center_bottom();
+                if !self.extension_points_buffer.is_empty() {
+                    text_bounds = text_bounds.union(canvas.measure_text(
+                        text_bounds.center_bottom(),
+                        egui::Align2::CENTER_TOP,
+                        "extension points",
+                        canvas::CLASS_ITEM_FONT_SIZE,
+                    ));
+                    text_bounds.max.y += 3.0;
+                }
+                let extension_points_top2 = text_bounds.center_bottom();
+                if !self.extension_points_buffer.is_empty() {
+                    text_bounds = text_bounds.union(canvas.measure_text(
+                        text_bounds.center_bottom(),
+                        egui::Align2::CENTER_TOP,
+                        &self.extension_points_buffer,
+                        canvas::CLASS_ITEM_FONT_SIZE,
+                    ));
+                }
+
+                self.bounds_rect = text_bounds.expand(7.0);
                 canvas.draw_rectangle(
-                    r,
+                    self.bounds_rect,
                     egui::CornerRadius::ZERO,
                     background_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     self.highlight,
                 );
                 canvas.draw_ellipse(
-                    r.right_top() - egui::Vec2::new(icon_radius.x + 2.0, -(icon_radius.y + 2.0)),
+                    self.bounds_rect.right_top()
+                        - egui::Vec2::new(icon_radius.x + 2.0, -(icon_radius.y + 2.0)),
                     icon_radius,
                     background_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     self.highlight,
                 );
+
+                if !self.extension_points_buffer.is_empty() {
+                    canvas.draw_line(
+                        [
+                            (self.bounds_rect.min.x, extension_points_top.y).into(),
+                            (self.bounds_rect.max.x, extension_points_top.y).into(),
+                        ],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+
+                    canvas.draw_text(
+                        extension_points_top,
+                        egui::Align2::CENTER_TOP,
+                        "extension points",
+                        canvas::CLASS_ITEM_FONT_SIZE,
+                        egui::Color32::BLACK,
+                    );
+                    canvas.draw_text(
+                        extension_points_top2,
+                        egui::Align2::CENTER_TOP,
+                        &self.extension_points_buffer,
+                        canvas::CLASS_ITEM_FONT_SIZE,
+                        egui::Color32::BLACK,
+                    );
+                }
             }
         }
 
@@ -7683,20 +7767,34 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             );
         }
 
-        // Draw targetting ellipse
+        // Draw targetting shape
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
                 .as_ref()
                 .filter(|e| self.min_shape().contains(e.0))
                 .map(|e| e.1)
         {
-            canvas.draw_ellipse(
-                self.position,
-                self.bounds_radius,
-                t.targetting_for_section(Some(self.model())),
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
+            let targetting = t.targetting_for_section(Some(self.model()));
+            match self.render_style {
+                UseCaseRenderStyle::Ellipse => {
+                    canvas.draw_ellipse(
+                        self.position,
+                        self.bounds_rect.size() / 2.0,
+                        targetting,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                UseCaseRenderStyle::RectangleWithEllipseIcon => {
+                    canvas.draw_rectangle(
+                        self.bounds_rect,
+                        egui::CornerRadius::ZERO,
+                        targetting,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
             TargettingStatus::Drawn
         } else {
             TargettingStatus::NotDrawn
@@ -7756,7 +7854,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     ehc.snap_manager
                         .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
-                let coerced_delta = coerced_pos - self.position;
+                let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
@@ -7851,6 +7949,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                             ));
                             model.is_abstract = *is_abstract;
                         }
+                        UmlClassPropChange::UseCaseExtensionPointsChange(extension_points) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::UseCaseExtensionPointsChange(
+                                    model.extension_points.clone(),
+                                ),
+                            ));
+                            model.extension_points = extension_points.clone();
+                        }
                         UmlClassPropChange::UseCaseRenderStyleChange(render_style) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -7894,6 +8001,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         self.stereotype_controller.refresh(&model.stereotype);
         self.name_buffer = (*model.name).clone();
         self.is_abstract_buffer = model.is_abstract;
+        self.extension_points_buffer = (*model.extension_points).clone();
         self.comment_buffer = (*model.comment).clone();
     }
 
@@ -7937,11 +8045,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
             is_abstract_buffer: self.is_abstract_buffer,
+            extension_points_buffer: self.extension_points_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
-            bounds_radius: self.bounds_radius,
+            bounds_rect: self.bounds_rect,
             background_color: self.background_color,
             render_style: self.render_style,
             _profile: PhantomData,

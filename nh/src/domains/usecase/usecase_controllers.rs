@@ -390,11 +390,22 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 render_style: UseCaseRenderStyle::Ellipse,
                 background_color: MGlobalColor::None,
             },
-            "Use case",
+            "Icon Use Case",
             Some(egui::KeyboardShortcut::new(
                 egui::Modifiers::COMMAND,
                 egui::Key::Num3,
             )),
+        ),
+        (
+            UmlClassToolStage::UseCase {
+                name: "Registration".to_owned(),
+                stereotype: usecase_models::NONE.to_owned(),
+                is_abstract: false,
+                render_style: UseCaseRenderStyle::RectangleWithEllipseIcon,
+                background_color: MGlobalColor::None,
+            },
+            "Rectangle Use Case",
+            None,
         ),
     ];
 

@@ -1294,6 +1294,7 @@ pub struct UmlUseCase {
     pub stereotype: Arc<String>,
     #[full_text_searchable(skip)]
     pub is_abstract: bool,
+    pub extension_points: Arc<String>,
 
     pub comment: Arc<String>,
 }
@@ -1305,6 +1306,7 @@ impl UmlUseCase {
             name: Arc::new(name),
             stereotype: Arc::new(stereotype),
             is_abstract,
+            extension_points: Arc::new("".to_owned()),
             comment: Arc::new("".to_owned()),
         }
     }
@@ -1314,6 +1316,7 @@ impl UmlUseCase {
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             is_abstract: self.is_abstract,
+            extension_points: self.extension_points.clone(),
             comment: self.comment.clone(),
         })
     }
