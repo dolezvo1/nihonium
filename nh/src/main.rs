@@ -372,7 +372,7 @@ struct NHContext {
     )>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
     shortcut_being_set: Option<SetShortcut>,
-    new_global_color_name: String,
+    selected_global_color: Option<uuid::Uuid>,
 
     search_query: String,
     search_error: String,
@@ -1544,52 +1544,144 @@ impl NHContext {
                     self.drawing_context.global_colors
                 };
             }
-            let mut color_to_remove = None;
-            for (idx, id) in gc!().colors_order.iter().enumerate() {
-                ui.horizontal(|ui| {
-                    if let Some(c) = gc!().colors.get_mut(id) {
-                        anything_changed |= egui::widgets::color_picker::color_edit_button_srgba(
-                            ui,
-                            &mut c.1,
-                            egui::widgets::color_picker::Alpha::OnlyBlend,
-                        )
-                        .changed();
 
-                        anything_changed |= ui.text_edit_singleline(&mut c.0).changed();
-
-                        if ui.button("X").clicked() {
-                            color_to_remove = Some(idx);
+            ui.columns(2, |columns| {
+                enum ColorCommand {
+                    Add((String, egui::Color32)),
+                    Delete(uuid::Uuid),
+                }
+                let mut cmd = None;
+                let (_, actions) = egui_ltreeview::TreeView::new(
+                    columns[0].make_persistent_id("global colors treeview"),
+                )
+                .allow_multi_selection(false)
+                .show(&mut columns[0], |builder| {
+                    let root = egui_ltreeview::NodeBuilder::dir(uuid::Uuid::nil())
+                        .label("Global Colors")
+                        .context_menu(|ui| {
+                            if ui.button("Add Color").clicked() {
+                                cmd = Some(ColorCommand::Add((
+                                    "New Color".to_owned(),
+                                    egui::Color32::WHITE,
+                                )));
+                            }
+                        });
+                    builder.node(root);
+                    for k in gc!().colors_order.iter() {
+                        if let Some(v) = gc!().colors.get(k) {
+                            let node = egui_ltreeview::NodeBuilder::leaf(*k)
+                                .label_ui(|ui| {
+                                    let (r, p) = ui.allocate_painter(
+                                        egui::Vec2::splat(15.0),
+                                        egui::Sense::empty(),
+                                    );
+                                    p.rect(
+                                        r.rect,
+                                        egui::CornerRadius::ZERO,
+                                        v.1,
+                                        egui::Stroke::new(0.0, egui::Color32::TRANSPARENT),
+                                        egui::StrokeKind::Middle,
+                                    );
+                                    ui.label(&v.0);
+                                })
+                                .context_menu(|ui| {
+                                    if ui.button("Add Color").clicked() {
+                                        cmd = Some(ColorCommand::Add((
+                                            "New Color".to_owned(),
+                                            egui::Color32::WHITE,
+                                        )));
+                                    }
+                                    if ui.button("Duplicate").clicked() {
+                                        cmd = Some(ColorCommand::Add(v.clone()));
+                                    }
+                                    if ui.button("Delete").clicked() {
+                                        cmd = Some(ColorCommand::Delete(*k));
+                                    }
+                                });
+                            builder.node(node);
                         }
                     }
+                    builder.close_dir();
                 });
-            }
-            if let Some(idx) = color_to_remove {
-                let id = gc!().colors_order.remove(idx);
-                gc!().colors.remove(&id);
-                anything_changed = true;
-            }
+                for e in actions {
+                    match e {
+                        egui_ltreeview::Action::SetSelected(items) => {
+                            self.selected_global_color =
+                                items.iter().filter(|e| !e.is_nil()).next().cloned();
+                        }
+                        egui_ltreeview::Action::Move(drag_and_drop) => {
+                            for src in drag_and_drop.source {
+                                if let Some(src_idx) =
+                                    gc!().colors_order.iter().position(|e| *e == src)
+                                {
+                                    gc!().colors_order.remove(src_idx);
+                                    let tgt_idx = match drag_and_drop.position {
+                                        egui_ltreeview::DirPosition::First => 0,
+                                        egui_ltreeview::DirPosition::Last => {
+                                            gc!().colors_order.len()
+                                        }
+                                        egui_ltreeview::DirPosition::Before(before) => gc!()
+                                            .colors_order
+                                            .iter()
+                                            .position(|e| *e == before)
+                                            .unwrap(),
+                                        egui_ltreeview::DirPosition::After(after) => {
+                                            gc!()
+                                                .colors_order
+                                                .iter()
+                                                .position(|e| *e == after)
+                                                .unwrap()
+                                                + 1
+                                        }
+                                    };
+                                    gc!().colors_order.insert(tgt_idx, src);
+                                }
+                            }
+                            anything_changed = true;
+                        }
+                        egui_ltreeview::Action::Activate(_)
+                        | egui_ltreeview::Action::Drag(_)
+                        | egui_ltreeview::Action::DragExternal(_)
+                        | egui_ltreeview::Action::MoveExternal(_) => {}
+                    }
+                }
 
-            ui.horizontal(|ui| {
-                let r = ui.text_edit_singleline(&mut self.new_global_color_name);
-
-                if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                    || ui
-                        .button(
-                            self.drawing_context
-                                .translate_0("nh-tab-projectsettings-globalcolors-addnew"),
-                        )
-                        .clicked()
+                if let Some(k) = &self.selected_global_color
+                    && let Some(v) = gc!().colors.get_mut(k)
                 {
-                    let new_uuid = uuid::Uuid::now_v7();
-                    gc!().colors_order.push(new_uuid);
-                    gc!().colors.insert(
-                        new_uuid,
-                        (
-                            std::mem::take(&mut self.new_global_color_name),
-                            egui::Color32::WHITE,
-                        ),
-                    );
-                    anything_changed = true;
+                    anything_changed |= columns[1]
+                        .labeled_text_edit_singleline("Name", &mut v.0)
+                        .changed();
+
+                    columns[1].label("Color:");
+                    anything_changed |= egui::widgets::color_picker::color_edit_button_srgba(
+                        &mut columns[1],
+                        &mut v.1,
+                        egui::widgets::color_picker::Alpha::OnlyBlend,
+                    )
+                    .changed();
+
+                    columns[1].separator();
+                    if columns[1].button("Delete").clicked() {
+                        cmd = Some(ColorCommand::Delete(*k));
+                    }
+                }
+
+                match cmd {
+                    Some(ColorCommand::Add(new_color)) => {
+                        let new_uuid = uuid::Uuid::now_v7();
+                        gc!().colors_order.push(new_uuid);
+                        gc!().colors.insert(new_uuid, new_color);
+                        anything_changed = true;
+                    }
+                    Some(ColorCommand::Delete(uuid)) => {
+                        gc!().colors.remove(&uuid);
+                        gc!().colors_order.retain(|e| *e != uuid);
+                        self.selected_global_color =
+                            self.selected_global_color.filter(|e| *e != uuid);
+                        anything_changed = true;
+                    }
+                    None => {}
                 }
             });
         });
@@ -2938,7 +3030,7 @@ impl NHApp {
             svg_export_menu: None,
             confirm_modal_reason: None,
             shortcut_being_set: None,
-            new_global_color_name: String::new(),
+            selected_global_color: None,
 
             search_query: "".to_owned(),
             search_error: "".to_owned(),
