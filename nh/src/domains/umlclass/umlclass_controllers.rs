@@ -2495,9 +2495,12 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<UmlClassElement>) -> egui::Color32 {
+    fn targetting_for_section(
+        &self,
+        element: Result<UmlClassElement, ERef<UmlClassDiagram>>,
+    ) -> egui::Color32 {
         match element {
-            None | Some(UmlClassElement::Package(..)) => match self.current_stage {
+            Err(_) | Ok(UmlClassElement::Package(..)) => match self.current_stage {
                 UmlClassToolStage::Instance { .. }
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::UseCase { .. }
@@ -2513,7 +2516,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::LinkAddEnding { .. }
                 | UmlClassToolStage::NoteLinkStart => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlClassElement::Instance(..)) => match self.current_stage {
+            Ok(UmlClassElement::Instance(..)) => match self.current_stage {
                 UmlClassToolStage::Instance { .. }
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::ClassProperty { .. }
@@ -2540,7 +2543,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     _ => NON_TARGETTABLE_COLOR,
                 },
             },
-            Some(UmlClassElement::Class(..)) => match self.current_stage {
+            Ok(UmlClassElement::Class(..)) => match self.current_stage {
                 UmlClassToolStage::ClassProperty { .. }
                 | UmlClassToolStage::ClassOperation { .. }
                 | UmlClassToolStage::LinkStart { .. }
@@ -2567,10 +2570,10 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     }
                 }
             },
-            Some(UmlClassElement::Property(..) | UmlClassElement::Operation(..)) => {
+            Ok(UmlClassElement::Property(..) | UmlClassElement::Operation(..)) => {
                 NON_TARGETTABLE_COLOR
             }
-            Some(UmlClassElement::UseCase(..)) => match self.current_stage {
+            Ok(UmlClassElement::UseCase(..)) => match self.current_stage {
                 UmlClassToolStage::Instance { .. }
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::ClassProperty { .. }
@@ -2599,7 +2602,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     }
                 }
             },
-            Some(UmlClassElement::Note(..)) => match self.current_stage {
+            Ok(UmlClassElement::Note(..)) => match self.current_stage {
                 UmlClassToolStage::NoteLinkStart => TARGETTABLE_COLOR,
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
@@ -2614,7 +2617,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::Note { .. }
                 | UmlClassToolStage::NoteLinkEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(
+            Ok(
                 UmlClassElement::Generalization(..)
                 | UmlClassElement::Dependency(..)
                 | UmlClassElement::Association(..)
@@ -3918,7 +3921,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -4489,7 +4492,7 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                tool.targetting_for_section(Some(self.model.clone().into())),
+                tool.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                 canvas::Highlight::NONE,
             );
@@ -5301,7 +5304,7 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                tool.targetting_for_section(Some(self.model.clone().into())),
+                tool.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                 canvas::Highlight::NONE,
             );
@@ -6597,7 +6600,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(
                         match self.render_style {
                             UmlClassRenderStyle::Class => 1.0,
@@ -7774,7 +7777,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                 .filter(|e| self.min_shape().contains(e.0))
                 .map(|e| e.1)
         {
-            let targetting = t.targetting_for_section(Some(self.model()));
+            let targetting = t.targetting_for_section(Ok(self.model()));
             match self.render_style {
                 UseCaseRenderStyle::Ellipse => {
                     canvas.draw_ellipse(
@@ -10252,7 +10255,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );

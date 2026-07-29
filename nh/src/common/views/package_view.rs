@@ -429,7 +429,7 @@ where
                     canvas.draw_rectangle(
                         self.bounds_rect,
                         egui::CornerRadius::ZERO,
-                        t.targetting_for_section(Some(self.adapter.model_section())),
+                        t.targetting_for_section(Ok(self.adapter.model_section())),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );

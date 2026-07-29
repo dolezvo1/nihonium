@@ -1919,10 +1919,13 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<UmlActivityElement>) -> egui::Color32 {
+    fn targetting_for_section(
+        &self,
+        element: Result<UmlActivityElement, ERef<UmlActivityDiagram>>,
+    ) -> egui::Color32 {
         match element {
-            None
-            | Some(
+            Err(_)
+            | Ok(
                 UmlActivityElement::Activity(_)
                 | UmlActivityElement::InterruptibleRegion(_)
                 | UmlActivityElement::Partition(_)
@@ -1934,19 +1937,19 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 | UmlActivityToolStage::NoteLinkEnd => NON_TARGETTABLE_COLOR,
                 _ => TARGETTABLE_COLOR,
             },
-            Some(UmlActivityElement::InitialNode(_)) => match self.current_stage {
+            Ok(UmlActivityElement::InitialNode(_)) => match self.current_stage {
                 UmlActivityToolStage::LinkStart { .. } | UmlActivityToolStage::NoteLinkEnd => {
                     TARGETTABLE_COLOR
                 }
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlActivityElement::FinalNode(_)) => match self.current_stage {
+            Ok(UmlActivityElement::FinalNode(_)) => match self.current_stage {
                 UmlActivityToolStage::LinkEnd | UmlActivityToolStage::NoteLinkEnd => {
                     TARGETTABLE_COLOR
                 }
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(
+            Ok(
                 UmlActivityElement::ActionNode(_)
                 | UmlActivityElement::DecisionNode(_)
                 | UmlActivityElement::ForkNode(_)
@@ -1957,11 +1960,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 | UmlActivityToolStage::NoteLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlActivityElement::Note(_)) => match self.current_stage {
+            Ok(UmlActivityElement::Note(_)) => match self.current_stage {
                 UmlActivityToolStage::NoteLinkStart => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlActivityElement::Edge(_) | UmlActivityElement::NoteLink(_)) => {
+            Ok(UmlActivityElement::Edge(_) | UmlActivityElement::NoteLink(_)) => {
                 unreachable!()
             }
         }
@@ -4286,7 +4289,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
-            tool.targetting_for_section(Some(self.model.clone().into())),
+            tool.targetting_for_section(Ok(self.model.clone().into())),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.temporaries.highlight,
         );
@@ -5293,7 +5296,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -5710,7 +5713,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
             canvas.draw_ellipse(
                 self.position,
                 egui::Vec2::splat(Self::CIRCLE_RADIUS),
-                tool.targetting_for_section(Some(self.model.clone().into())),
+                tool.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                 canvas::Highlight::NONE,
             );
@@ -6124,7 +6127,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
                 canvas.draw_ellipse(
                     self.position,
                     egui::Vec2::splat(r),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -6539,7 +6542,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
                     self.position - egui::Vec2::new(self.bounds_radius.x, 0.0),
                 ]
                 .to_vec(),
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -6945,7 +6948,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -7408,7 +7411,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -8293,7 +8296,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );

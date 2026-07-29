@@ -1289,9 +1289,12 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<DemoCsdElement>) -> egui::Color32 {
+    fn targetting_for_section(
+        &self,
+        element: Result<DemoCsdElement, ERef<DemoCsdDiagram>>,
+    ) -> egui::Color32 {
         match element {
-            None | Some(DemoCsdElement::Package(..)) => match self.current_stage {
+            Err(_) | Ok(DemoCsdElement::Package(..)) => match self.current_stage {
                 DemoCsdToolStage::Transactor { .. }
                 | DemoCsdToolStage::Bank { .. }
                 | DemoCsdToolStage::PackageStart { .. }
@@ -1301,7 +1304,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(DemoCsdElement::Transactor(inner)) => match self.current_stage {
+            Ok(DemoCsdElement::Transactor(inner)) => match self.current_stage {
                 DemoCsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
                 DemoCsdToolStage::Bank { .. } if inner.read().transaction.as_ref().is_none() => {
                     TARGETTABLE_COLOR
@@ -1313,7 +1316,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::PackageEnd
                 | DemoCsdToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoCsdElement::Transaction(tx)) => match self.current_stage {
+            Ok(DemoCsdElement::Transaction(tx)) => match self.current_stage {
                 DemoCsdToolStage::LinkEnd => match &self.result {
                     PartialDemoCsdElement::Link { source, .. } => {
                         if source
@@ -1336,8 +1339,8 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::PackageEnd
                 | DemoCsdToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoCsdElement::Link(..)) => unreachable!(),
-            Some(DemoCsdElement::Note(..)) => NON_TARGETTABLE_COLOR,
+            Ok(DemoCsdElement::Link(..)) => unreachable!(),
+            Ok(DemoCsdElement::Note(..)) => NON_TARGETTABLE_COLOR,
         }
     }
     fn draw_status_hint(
@@ -2386,7 +2389,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -3317,7 +3320,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     self.position - TX_MULTIPLE_OFFSET
                 },
                 egui::Vec2::splat(radius),
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -4114,7 +4117,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );

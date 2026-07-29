@@ -1035,9 +1035,12 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<RdfElement>) -> egui::Color32 {
+    fn targetting_for_section(
+        &self,
+        element: Result<RdfElement, ERef<RdfDiagram>>,
+    ) -> egui::Color32 {
         match element {
-            None => match self.current_stage {
+            Err(_) => match self.current_stage {
                 RdfToolStage::Literal { .. }
                 | RdfToolStage::Node { .. }
                 | RdfToolStage::GraphStart { .. }
@@ -1046,14 +1049,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(RdfElement::RdfGraph(..)) => match self.current_stage {
+            Ok(RdfElement::RdfGraph(..)) => match self.current_stage {
                 RdfToolStage::Literal { .. } | RdfToolStage::Node { .. } => TARGETTABLE_COLOR,
                 RdfToolStage::PredicateStart { .. }
                 | RdfToolStage::PredicateEnd
                 | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(RdfElement::RdfLiteral(..)) => match self.current_stage {
+            Ok(RdfElement::RdfLiteral(..)) => match self.current_stage {
                 RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal { .. }
                 | RdfToolStage::Node { .. }
@@ -1061,7 +1064,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(RdfElement::RdfNode(..)) => match self.current_stage {
+            Ok(RdfElement::RdfNode(..)) => match self.current_stage {
                 RdfToolStage::PredicateStart { .. } | RdfToolStage::PredicateEnd => {
                     TARGETTABLE_COLOR
                 }
@@ -1070,7 +1073,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(RdfElement::RdfPredicate(..)) => unreachable!(),
+            Ok(RdfElement::RdfPredicate(..)) => unreachable!(),
         }
     }
     fn draw_status_hint(
@@ -1875,7 +1878,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             canvas.draw_ellipse(
                 self.position,
                 self.bounds_radius,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -2419,7 +2422,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );

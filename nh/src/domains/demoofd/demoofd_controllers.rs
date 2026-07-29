@@ -1422,9 +1422,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<DemoOfdElement>) -> egui::Color32 {
+    fn targetting_for_section(
+        &self,
+        element: Result<DemoOfdElement, ERef<DemoOfdDiagram>>,
+    ) -> egui::Color32 {
         match element {
-            None | Some(DemoOfdElement::Package(..)) => match self.current_stage {
+            Err(_) | Ok(DemoOfdElement::Package(..)) => match self.current_stage {
                 DemoOfdToolStage::Entity { .. }
                 | DemoOfdToolStage::EventEnd
                 | DemoOfdToolStage::PackageStart { .. }
@@ -1435,7 +1438,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdToolStage::LinkEnd
                 | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoOfdElement::EntityType(inner)) => match self.current_stage {
+            Ok(DemoOfdElement::EntityType(inner)) => match self.current_stage {
                 DemoOfdToolStage::LinkEnd => match &self.result {
                     PartialDemoOfdElement::EntityLink { source, .. }
                         if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage =>
@@ -1481,7 +1484,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdToolStage::PackageEnd
                 | DemoOfdToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoOfdElement::EventType(inner)) => match self.current_stage {
+            Ok(DemoOfdElement::EventType(inner)) => match self.current_stage {
                 DemoOfdToolStage::Entity { .. } => {
                     if inner.read().specialization_entity_type.is_some() {
                         NON_TARGETTABLE_COLOR
@@ -1522,8 +1525,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     _ => NON_TARGETTABLE_COLOR,
                 },
             },
-            Some(DemoOfdElement::Note(..)) => NON_TARGETTABLE_COLOR,
-            Some(
+            Ok(DemoOfdElement::Note(..)) => NON_TARGETTABLE_COLOR,
+            Ok(
                 DemoOfdElement::PropertyType(..)
                 | DemoOfdElement::Specialization(..)
                 | DemoOfdElement::Aggregation(..)
@@ -2579,7 +2582,7 @@ impl DemoOfdEntityView {
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     CORNER_RADIUS,
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -3392,7 +3395,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         pos - egui::Vec2::new(Self::RADIUS, 0.0),
                     ]
                     .to_vec(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(
                         1.0,
                         match read.kind {
@@ -5505,7 +5508,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );

@@ -1954,17 +1954,17 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
 
     fn targetting_for_section(
         &self,
-        element: Option<UmlSequenceViewTargettingSection>,
+        element: Result<UmlSequenceViewTargettingSection, ERef<UmlSequenceDiagramBoard>>,
     ) -> egui::Color32 {
         match element.map(|e| e.element) {
-            None => match self.current_stage {
+            Err(_) => match self.current_stage {
                 UmlSequenceToolStage::DiagramStart
                 | UmlSequenceToolStage::DiagramEnd
                 | UmlSequenceToolStage::DurationConstraintX
                 | UmlSequenceToolStage::Note { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlSequenceElement::Diagram(_)) => match self.current_stage {
+            Ok(UmlSequenceElement::Diagram(_)) => match self.current_stage {
                 UmlSequenceToolStage::Note { .. }
                 | UmlSequenceToolStage::Lifeline { .. }
                 | UmlSequenceToolStage::LinkStart { .. }
@@ -1975,7 +1975,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 | UmlSequenceToolStage::RefEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlSequenceElement::CombinedFragmentSection(_)) => match self.current_stage {
+            Ok(UmlSequenceElement::CombinedFragmentSection(_)) => match self.current_stage {
                 UmlSequenceToolStage::LinkStart { .. }
                 | UmlSequenceToolStage::LinkEnd
                 | UmlSequenceToolStage::CombinedFragmentStart { .. }
@@ -1984,7 +1984,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 | UmlSequenceToolStage::RefEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlSequenceElement::Message(_) | UmlSequenceElement::Ref(_))
+            Ok(UmlSequenceElement::Message(_) | UmlSequenceElement::Ref(_))
                 if matches!(
                     self.current_stage,
                     UmlSequenceToolStage::DurationConstraintY1 { .. }
@@ -3036,7 +3036,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             canvas.draw_rectangle(
                                 self.lifeline_insertion_place(*pos).1,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                                     element: self.model.clone().into(),
                                     end: false,
                                 })),
@@ -3054,7 +3054,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                                 canvas.draw_rectangle(
                                     lr,
                                     egui::CornerRadius::ZERO,
-                                    t.targetting_for_section(Some(
+                                    t.targetting_for_section(Ok(
                                         UmlSequenceViewTargettingSection {
                                             element: self.model.clone().into(),
                                             end: false,
@@ -3066,7 +3066,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                                 canvas.draw_rectangle(
                                     hr,
                                     egui::CornerRadius::ZERO,
-                                    t.targetting_for_section(Some(
+                                    t.targetting_for_section(Ok(
                                         UmlSequenceViewTargettingSection {
                                             element: self.model.clone().into(),
                                             end: false,
@@ -3081,7 +3081,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             canvas.draw_rectangle(
                                 self.bounds_rect,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                                     element: self.model.clone().into(),
                                     end: false,
                                 })),
@@ -5324,7 +5324,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                             canvas.draw_rectangle(
                                 lr,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                                     element: self.model.clone().into(),
                                     end: false,
                                 })),
@@ -5334,7 +5334,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                             canvas.draw_rectangle(
                                 hr,
                                 egui::CornerRadius::ZERO,
-                                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                                t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                                     element: self.model.clone().into(),
                                     end: false,
                                 })),
@@ -5347,7 +5347,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                         canvas.draw_rectangle(
                             self.bounds_rect,
                             egui::CornerRadius::ZERO,
-                            t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                            t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                                 element: self.model.clone().into(),
                                 end: false,
                             })),
@@ -6470,7 +6470,7 @@ impl UmlSequenceLifelineView {
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                    t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                         element: self.model(),
                         end: false,
                     })),
@@ -7187,7 +7187,7 @@ impl UmlSequenceMessageView {
             canvas.draw_rectangle(
                 targetting_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                     element: self.model(),
                     end: false,
                 })),
@@ -7894,7 +7894,7 @@ impl UmlSequenceRefView {
             canvas.draw_rectangle(
                 targetting_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                     element: self.model(),
                     end: false,
                 })),
@@ -8914,7 +8914,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(UmlSequenceViewTargettingSection {
+                    t.targetting_for_section(Ok(UmlSequenceViewTargettingSection {
                         element: self.model(),
                         end: false,
                     })),

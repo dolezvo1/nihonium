@@ -1523,9 +1523,12 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<NetworkElement>) -> egui::Color32 {
+    fn targetting_for_section(
+        &self,
+        element: Result<NetworkElement, ERef<NetworkDiagram>>,
+    ) -> egui::Color32 {
         match element {
-            None | Some(NetworkElement::Container(_)) => match self.current_stage {
+            Err(_) | Ok(NetworkElement::Container(_)) => match self.current_stage {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
                 | NetworkToolStage::File { .. }
@@ -1537,7 +1540,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(
+            Ok(
                 NetworkElement::Node(_)
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
@@ -1555,7 +1558,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(NetworkElement::Association(_)) => unreachable!(),
+            Ok(NetworkElement::Association(_)) => unreachable!(),
         }
     }
     fn draw_status_hint(
@@ -2928,7 +2931,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             canvas.draw_rectangle(
                 egui::Rect::from_center_size(self.position, INNER_SIZE),
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -3558,7 +3561,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             canvas.draw_rectangle(
                 inner_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -4090,7 +4093,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             canvas.draw_rectangle(
                 inner_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -4692,7 +4695,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
             canvas.draw_rectangle(
                 inner_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model())),
+                t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -5756,7 +5759,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );

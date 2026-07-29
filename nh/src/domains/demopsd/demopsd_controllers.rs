@@ -1387,11 +1387,11 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
 
     fn targetting_for_section(
         &self,
-        element: Option<DemoPsdElementTargettingSection>,
+        element: Result<DemoPsdElementTargettingSection, ERef<DemoPsdDiagram>>,
     ) -> egui::Color32 {
         type TS = DemoPsdElementTargettingSection;
         match element {
-            None | Some(TS::Package(..)) => match self.current_stage {
+            Err(_) | Ok(TS::Package(..)) => match self.current_stage {
                 DemoPsdToolStage::TransactionStart { .. }
                 | DemoPsdToolStage::TransactionEnd
                 | DemoPsdToolStage::Fact { .. }
@@ -1403,7 +1403,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(TS::Transaction(tx, align)) => {
+            Ok(TS::Transaction(tx, align)) => {
                 if align == egui::Align2::CENTER_CENTER {
                     return if matches!(self.current_stage, DemoPsdToolStage::Act { .. })
                         && !tx.read().p_act.is_some()
@@ -1423,7 +1423,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     NON_TARGETTABLE_COLOR
                 }
             }
-            Some(TS::Fact(..)) => match self.current_stage {
+            Ok(TS::Fact(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
                 DemoPsdToolStage::TransactionStart { .. }
                 | DemoPsdToolStage::TransactionEnd
@@ -1434,7 +1434,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 | DemoPsdToolStage::PackageEnd
                 | DemoPsdToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(TS::Act(..)) => match self.current_stage {
+            Ok(TS::Act(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkEnd => TARGETTABLE_COLOR,
                 DemoPsdToolStage::TransactionStart { .. }
                 | DemoPsdToolStage::TransactionEnd
@@ -1445,8 +1445,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 | DemoPsdToolStage::PackageEnd
                 | DemoPsdToolStage::Note { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(TS::Note(..)) => NON_TARGETTABLE_COLOR,
-            Some(TS::Link(..)) => unreachable!(),
+            Ok(TS::Note(..)) => NON_TARGETTABLE_COLOR,
+            Ok(TS::Link(..)) => unreachable!(),
         }
     }
     fn draw_status_hint(
@@ -2518,7 +2518,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 canvas.draw_rectangle(
                     self.tx_outer_rectangle,
                     egui::CornerRadius::ZERO,
-                    tool.targetting_for_section(Some(section.into())),
+                    tool.targetting_for_section(Ok(section.into())),
                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2533,7 +2533,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         tx_mark_center - egui::Vec2::new(radius, 0.0),
                         tx_mark_center - egui::Vec2::new(0.0, radius),
                     ],
-                    tool.targetting_for_section(Some(section.into())),
+                    tool.targetting_for_section(Ok(section.into())),
                     canvas::Stroke::new_solid(1.0, detail_color),
                     canvas::Highlight::NONE,
                 );
@@ -2542,7 +2542,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 canvas.draw_rectangle(
                     self.state_insertion_place(section.1, *pos).1,
                     egui::CornerRadius::ZERO,
-                    tool.targetting_for_section(Some(section.into())),
+                    tool.targetting_for_section(Ok(section.into())),
                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -3620,7 +3620,7 @@ impl DemoPsdFactView {
             canvas.draw_ellipse(
                 self.position,
                 Self::RADIUS,
-                t.targetting_for_section(Some(self.model.clone().into())),
+                t.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -4094,7 +4094,7 @@ impl DemoPsdActView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_section(Some(self.model.clone().into())),
+                t.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -5031,7 +5031,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model.clone().into())),
+                    t.targetting_for_section(Ok(self.model.clone().into())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );

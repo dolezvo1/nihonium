@@ -1446,7 +1446,7 @@ pub trait Tool<DomainT: Domain> {
 
     fn targetting_for_section(
         &self,
-        element: Option<DomainT::ViewTargettingSectionT>,
+        element: Result<DomainT::ViewTargettingSectionT, ERef<DomainT::DiagramModelT>>,
     ) -> egui::Color32;
     fn draw_status_hint(
         &self,
@@ -4471,7 +4471,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     canvas.draw_rectangle(
                         egui::Rect::EVERYTHING,
                         egui::CornerRadius::ZERO,
-                        tool.targetting_for_section(None),
+                        tool.targetting_for_section(Err(self.adapter.model())),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );

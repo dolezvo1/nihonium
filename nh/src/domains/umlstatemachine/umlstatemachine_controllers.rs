@@ -27,7 +27,8 @@ use crate::domains::umlstatemachine::umlstatemachine_models::{
     UmlStateMachineDiagram, UmlStateMachineEdge, UmlStateMachineElement, UmlStateMachineFinalState,
     UmlStateMachineInitialPseudostate, UmlStateMachineInternalTransition,
     UmlStateMachineNonFinalNode, UmlStateMachineNonInitialNode, UmlStateMachineNote,
-    UmlStateMachineNoteLink, UmlStateMachineSimpleState, UmlStateMachineTerminatePseudostate,
+    UmlStateMachineNoteLink, UmlStateMachineSimpleState, UmlStateMachineStandaloneElement,
+    UmlStateMachineTerminatePseudostate,
 };
 use crate::{
     CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -1738,10 +1739,44 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
         self.is_spent.is_some_and(|e| e)
     }
 
-    fn targetting_for_section(&self, element: Option<UmlStateMachineElement>) -> egui::Color32 {
+    fn targetting_for_section(
+        &self,
+        element: Result<UmlStateMachineElement, ERef<UmlStateMachineDiagram>>,
+    ) -> egui::Color32 {
+        macro_rules! already_contains_initial {
+            ($c:expr) => {
+                $c.contained_elements
+                    .iter()
+                    .any(|e| matches!(e, UmlStateMachineStandaloneElement::InitialPseudostate(_)))
+            };
+        }
         match element {
-            None
-            | Some(
+            Err(d)
+                if matches!(
+                    self.current_stage,
+                    UmlStateMachineToolStage::InitialPseudostate { .. }
+                ) && already_contains_initial!(d.read()) =>
+            {
+                NON_TARGETTABLE_COLOR
+            }
+            Ok(UmlStateMachineElement::StateMachine(c))
+                if matches!(
+                    self.current_stage,
+                    UmlStateMachineToolStage::InitialPseudostate { .. }
+                ) && already_contains_initial!(c.read()) =>
+            {
+                NON_TARGETTABLE_COLOR
+            }
+            Ok(UmlStateMachineElement::CompositeStateRegion(c))
+                if matches!(
+                    self.current_stage,
+                    UmlStateMachineToolStage::InitialPseudostate { .. }
+                ) && already_contains_initial!(c.read()) =>
+            {
+                NON_TARGETTABLE_COLOR
+            }
+            Err(_)
+            | Ok(
                 UmlStateMachineElement::StateMachine(_)
                 | UmlStateMachineElement::CompositeStateRegion(_),
             ) => match self.current_stage {
@@ -1751,13 +1786,13 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 | UmlStateMachineToolStage::NoteLinkEnd => NON_TARGETTABLE_COLOR,
                 _ => TARGETTABLE_COLOR,
             },
-            Some(UmlStateMachineElement::CompositeState(_)) => TARGETTABLE_COLOR,
-            Some(UmlStateMachineElement::InitialPseudostate(_)) => match self.current_stage {
+            Ok(UmlStateMachineElement::CompositeState(_)) => TARGETTABLE_COLOR,
+            Ok(UmlStateMachineElement::InitialPseudostate(_)) => match self.current_stage {
                 UmlStateMachineToolStage::LinkStart { .. }
                 | UmlStateMachineToolStage::NoteLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(
+            Ok(
                 UmlStateMachineElement::TerminatePseudostate(_)
                 | UmlStateMachineElement::FinalState(_),
             ) => match self.current_stage {
@@ -1766,18 +1801,18 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 }
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlStateMachineElement::SimpleState(_)) => match self.current_stage {
+            Ok(UmlStateMachineElement::SimpleState(_)) => match self.current_stage {
                 UmlStateMachineToolStage::LinkStart { .. }
                 | UmlStateMachineToolStage::LinkEnd
                 | UmlStateMachineToolStage::NoteLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlStateMachineElement::InternalTransition(_)) => NON_TARGETTABLE_COLOR,
-            Some(UmlStateMachineElement::Note(_)) => match self.current_stage {
+            Ok(UmlStateMachineElement::InternalTransition(_)) => NON_TARGETTABLE_COLOR,
+            Ok(UmlStateMachineElement::Note(_)) => match self.current_stage {
                 UmlStateMachineToolStage::NoteLinkStart => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlStateMachineElement::Edge(_) | UmlStateMachineElement::NoteLink(_)) => {
+            Ok(UmlStateMachineElement::Edge(_) | UmlStateMachineElement::NoteLink(_)) => {
                 unreachable!()
             }
         }
@@ -2901,7 +2936,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                tool.targetting_for_section(Some(self.model.clone().into())),
+                tool.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -4369,7 +4404,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
-            tool.targetting_for_section(Some(self.model.clone().into())),
+            tool.targetting_for_section(Ok(self.model.clone().into())),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.temporaries.highlight,
         );
@@ -5231,7 +5266,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -5984,7 +6019,7 @@ impl UmlStateMachineInternalTransitionView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                tool.targetting_for_section(Some(self.model.clone().into())),
+                tool.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                 canvas::Highlight::NONE,
             );
@@ -6407,7 +6442,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInitialPseu
             canvas.draw_ellipse(
                 self.position,
                 egui::Vec2::splat(Self::CIRCLE_RADIUS),
-                tool.targetting_for_section(Some(self.model.clone().into())),
+                tool.targetting_for_section(Ok(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                 canvas::Highlight::NONE,
             );
@@ -6775,7 +6810,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineTerminatePs
                 canvas.draw_ellipse(
                     self.position,
                     egui::Vec2::splat(r),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -7121,7 +7156,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineFinalStateV
                 canvas.draw_ellipse(
                     self.position,
                     egui::Vec2::splat(r),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -7917,7 +7952,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
                     ]
                     .into_iter()
                     .collect(),
-                    t.targetting_for_section(Some(self.model())),
+                    t.targetting_for_section(Ok(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
