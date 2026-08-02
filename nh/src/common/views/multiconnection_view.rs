@@ -250,7 +250,7 @@ pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter
     targets: Vec<Ending<DomainT::CommonElementViewT>>,
 
     #[nh_context_serde(skip_and_default)]
-    dragged_node: Option<(ViewUuid, egui::Pos2)>,
+    dragged_vertex: Option<(ViewUuid, egui::Pos2)>,
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     #[nh_context_serde(skip_and_default)]
@@ -291,7 +291,7 @@ where
             adapter,
             sources,
             targets,
-            dragged_node: None,
+            dragged_vertex: None,
             highlight: canvas::Highlight::NONE,
             selected_vertices: HashSet::new(),
 
@@ -843,7 +843,7 @@ where
             .chain(self.targets.iter().flat_map(|e| e.points.iter().skip(1)))
         {
             am.add_shape(
-                *self.uuid,
+                p.0,
                 canvas::NHShape::Rect {
                     inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO),
                 },
@@ -896,18 +896,18 @@ where
                 // Check whether over center point
                 match self.center_point {
                     UFOption::Some((uuid, pos2)) if is_over(pos, pos2) => {
-                        self.dragged_node = Some((uuid, pos));
+                        self.dragged_vertex = Some((uuid, pos));
                         return EventHandlingStatus::HandledByContainer;
                     }
                     UFOption::None if is_over(pos, self.position()) => {
-                        self.dragged_node = Some((ViewUuid::now_v7(), pos));
+                        self.dragged_vertex = Some((ViewUuid::now_v7(), pos));
                         commands.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
                             bucket: MULTICONNECTION_VERTEX_BUCKET,
                             position: None,
                             element: VertexInformation {
                                 after: ViewUuid::nil(),
-                                id: self.dragged_node.unwrap().0,
+                                id: self.dragged_vertex.unwrap().0,
                                 position: self.position(),
                             }
                             .into(),
@@ -939,7 +939,7 @@ where
 
                                 let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                                 if is_over(pos, midpoint) {
-                                    self.dragged_node = Some((ViewUuid::now_v7(), pos));
+                                    self.dragged_vertex = Some((ViewUuid::now_v7(), pos));
                                     commands.push(
                                         InsensitiveCommand::AddDependency {
                                             target: *self.uuid,
@@ -947,7 +947,7 @@ where
                                             position: None,
                                             element: VertexInformation {
                                                 after: u.0,
-                                                id: self.dragged_node.unwrap().0,
+                                                id: self.dragged_vertex.unwrap().0,
                                                 position: pos,
                                             }
                                             .into(),
@@ -972,7 +972,7 @@ where
                             let stop_idx = e.points.len();
                             for joint in &mut e.points[1..stop_idx] {
                                 if is_over(pos, joint.1) {
-                                    self.dragged_node = Some((joint.0, pos));
+                                    self.dragged_vertex = Some((joint.0, pos));
 
                                     return EventHandlingStatus::HandledByContainer;
                                 }
@@ -986,7 +986,7 @@ where
                 EventHandlingStatus::NotHandled
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_node.take().is_some() {
+                if self.dragged_vertex.take().is_some() {
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -1073,40 +1073,42 @@ where
                 EventHandlingStatus::NotHandled
             }
             InputEvent::Drag { delta, .. } => {
-                let Some(dragged_node) = self.dragged_node else {
+                let Some(dragged_vertex) = self.dragged_vertex else {
                     return EventHandlingStatus::NotHandled;
                 };
 
-                let translated_real_pos = dragged_node.1 + delta;
-                self.dragged_node = Some((dragged_node.0, translated_real_pos));
+                let translated_real_pos = dragged_vertex.1 + delta;
+                self.dragged_vertex = Some((dragged_vertex.0, translated_real_pos));
                 let translated_real_shape = canvas::NHShape::Rect {
-                    inner: egui::Rect::from_min_size(translated_real_pos, egui::Vec2::ZERO),
+                    inner: egui::Rect::from_pos(translated_real_pos),
                 };
-                let coerced_pos = if self.highlight.selected {
+                let coerced_pos = if self.selected_vertices.contains(&dragged_vertex.0) {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
-                        !ehc.all_elements
-                            .get(e)
-                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                        *e != dragged_vertex.0
+                            && !ehc
+                                .all_elements
+                                .get(e)
+                                .is_some_and(|e| *e != SelectionStatus::NotSelected)
                     })
                 } else {
                     ehc.snap_manager
-                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                        .coerce(translated_real_shape, |e| *e != dragged_vertex.0)
                 };
                 let coerced_delta = coerced_pos
                     - self
                         .all_vertices()
-                        .find(|e| e.0 == dragged_node.0)
+                        .find(|e| e.0 == dragged_vertex.0)
                         .unwrap()
                         .1;
 
-                if self.selected_vertices.contains(&dragged_node.0) {
+                if self.selected_vertices.contains(&dragged_vertex.0) {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
                     ));
                 } else {
                     commands.push(InsensitiveCommand::MovePositional(
-                        std::iter::once(dragged_node.0).collect(),
+                        std::iter::once(dragged_vertex.0).collect(),
                         coerced_delta,
                     ));
                 }
@@ -1562,7 +1564,7 @@ where
             adapter: self.adapter.deep_copy_init(model_uuid, m),
             sources,
             targets,
-            dragged_node: None,
+            dragged_vertex: None,
             highlight: self.highlight,
             selected_vertices: self.selected_vertices.clone(),
             center_point,
