@@ -96,6 +96,12 @@ pub fn init_points(
     }
 }
 
+pub enum LoopTargetMoveBehavior {
+    Never,
+    OneToOneOnly,
+    AnyToAny,
+}
+
 pub trait MulticonnectionAdapter<DomainT: Domain>:
     serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync
 {
@@ -159,6 +165,9 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
             >,
         >,
     ) -> PropertiesStatus<DomainT>;
+    fn loop_target_move_behavior(&self) -> LoopTargetMoveBehavior {
+        LoopTargetMoveBehavior::OneToOneOnly
+    }
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
@@ -1176,12 +1185,34 @@ where
                     || all_pts_mut!().find(|p| !rect.contains(p.1)).is_none();
             }
             InsensitiveCommand::MovePositional(uuids, delta) if !uuids.contains(&*self.uuid) => {
-                for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
-                    p.1 += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MovePositional(
-                        std::iter::once(p.0).collect(),
-                        -*delta,
-                    ));
+                let already_moved_all = match self.adapter.loop_target_move_behavior() {
+                    LoopTargetMoveBehavior::OneToOneOnly
+                        if self.sources.len() == 1
+                            && self.targets.len() == 1
+                            && let Some(s) = self.sources.first().map(|e| *e.element.uuid())
+                            && uuids.contains(&s)
+                            && self.targets.first().is_some_and(|e| *e.element.uuid() == s) =>
+                    {
+                        for p in all_pts_mut!() {
+                            p.1 += *delta;
+                        }
+                        true
+                    }
+                    LoopTargetMoveBehavior::AnyToAny => {
+                        // TODO: implement moving of vertices on M:N multiconnection that involves a loop?
+                        false
+                    }
+                    _ => false,
+                };
+
+                if !already_moved_all {
+                    for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
+                        p.1 += *delta;
+                        undo_accumulator.push(InsensitiveCommand::MovePositional(
+                            std::iter::once(p.0).collect(),
+                            -*delta,
+                        ));
+                    }
                 }
             }
             InsensitiveCommand::MovePositional(_, delta)
