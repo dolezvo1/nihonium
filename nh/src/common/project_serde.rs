@@ -10,7 +10,7 @@ use crate::{ProjectMeta, egui};
 use serde::{Deserialize, Serialize};
 
 use crate::DeserializeControllerF;
-use crate::common::controller::{ColorBundle, HierarchyNode};
+use crate::common::controller::{ColorBundle, ColorHierarchyNode, HierarchyNode};
 
 use super::entity::EntityUuid;
 use super::eref::ERef;
@@ -212,10 +212,9 @@ enum NHProjectHierarchyNodeSerialization {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct GlobalColorDTO {
-    uuid: uuid::Uuid,
-    name: String,
-    color: egui::Color32,
+pub enum ColorHierarchyNodeDTO {
+    Folder(uuid::Uuid, String, Vec<ColorHierarchyNodeDTO>),
+    Color(uuid::Uuid, String, egui::Color32),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -226,7 +225,7 @@ pub struct NHProjectSerialization {
     new_diagram_no_counter: usize,
     hierarchy: Vec<NHProjectHierarchyNodeSerialization>,
     controllers: Vec<NHControllerInfo>,
-    global_colors: Vec<GlobalColorDTO>,
+    global_colors_hierarchy: ColorHierarchyNodeDTO,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -253,7 +252,7 @@ impl NHProjectSerialization {
         diagram_controllers: &HashMap<ViewUuid, ERef<dyn DiagramController>>,
         documents: &HashMap<ViewUuid, (String, String)>,
     ) -> Result<(), NHSerializeError> {
-        fn h(
+        fn ph(
             e: &HierarchyNode,
             d: &HashMap<ViewUuid, (String, String)>,
         ) -> NHProjectHierarchyNodeSerialization {
@@ -262,7 +261,7 @@ impl NHProjectSerialization {
                     NHProjectHierarchyNodeSerialization::Folder {
                         uuid: *uuid,
                         name: (**name).clone(),
-                        hierarchy: children.iter().map(|e| h(e, d)).collect(),
+                        hierarchy: children.iter().map(|e| ph(e, d)).collect(),
                     }
                 }
                 HierarchyNode::Diagram(uuid, _c) => {
@@ -291,24 +290,30 @@ impl NHProjectSerialization {
             )?;
         }
 
-        let global_colors = global_colors
-            .colors_order
-            .iter()
-            .flat_map(|k| {
-                global_colors.colors.get(k).map(|e| GlobalColorDTO {
-                    uuid: *k,
-                    name: e.0.clone(),
-                    color: e.1,
-                })
-            })
-            .collect();
+        fn ch(e: &ColorHierarchyNode, gc: &ColorBundle) -> ColorHierarchyNodeDTO {
+            match e {
+                ColorHierarchyNode::Folder(uuid, children) => {
+                    let f = gc.folders.get(uuid).unwrap();
+                    ColorHierarchyNodeDTO::Folder(
+                        *uuid,
+                        f.clone(),
+                        children.iter().map(|e| ch(e, gc)).collect(),
+                    )
+                }
+                ColorHierarchyNode::Color(uuid) => {
+                    let c = gc.colors.get(uuid).unwrap();
+                    ColorHierarchyNodeDTO::Color(*uuid, c.0.clone(), c.1)
+                }
+            }
+        }
+        let global_colors_hierarchy = ch(&global_colors.colors_hierarchy, global_colors);
 
         let project_serialization = Self {
             format_version: env!("COMMIT_IDENTIFIER").to_owned(),
             project_meta: project_meta.clone(),
             sources_root: sources_root.to_owned(),
             new_diagram_no_counter,
-            hierarchy: hierarchy.iter().map(|e| h(e, documents)).collect(),
+            hierarchy: hierarchy.iter().map(|e| ph(e, documents)).collect(),
             controllers: {
                 let mut controllers: Vec<_> = unique_diagram_controllers
                     .into_iter()
@@ -320,7 +325,7 @@ impl NHProjectSerialization {
                 controllers.sort_by_key(|e| e.uuid);
                 controllers
             },
-            global_colors,
+            global_colors_hierarchy,
         };
         wa.write_manifest_file(toml::to_string(&project_serialization)?.as_bytes())?;
 
@@ -334,15 +339,33 @@ impl NHProjectSerialization {
         self.new_diagram_no_counter
     }
     pub fn global_colors(&self) -> ColorBundle {
-        let o = self.global_colors.iter().map(|e| e.uuid).collect();
-        let c = self
-            .global_colors
-            .iter()
-            .map(|e| (e.uuid, (e.name.clone(), e.color)))
-            .collect();
+        fn ch(
+            e: &ColorHierarchyNodeDTO,
+            folders: &mut HashMap<uuid::Uuid, String>,
+            colors: &mut HashMap<uuid::Uuid, (String, egui::Color32)>,
+        ) -> ColorHierarchyNode {
+            match e {
+                ColorHierarchyNodeDTO::Folder(uuid, name, children) => {
+                    folders.insert(*uuid, name.clone());
+                    ColorHierarchyNode::Folder(
+                        *uuid,
+                        children.iter().map(|e| ch(e, folders, colors)).collect(),
+                    )
+                }
+                ColorHierarchyNodeDTO::Color(uuid, name, color) => {
+                    colors.insert(*uuid, (name.clone(), color.clone()));
+                    ColorHierarchyNode::Color(*uuid)
+                }
+            }
+        }
+        let mut folders = HashMap::new();
+        let mut colors = HashMap::new();
+        let colors_hierarchy = ch(&self.global_colors_hierarchy, &mut folders, &mut colors);
+
         ColorBundle {
-            colors_order: o,
-            colors: c,
+            colors_hierarchy,
+            folders,
+            colors,
         }
     }
 

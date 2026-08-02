@@ -29,8 +29,8 @@ mod domains;
 
 use crate::common::canvas::{HeaderMode, Highlight, MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{
-    ColorBundle, DeleteKind, DiagramCommand, DiagramController, LabelProvider, ModifierKeys,
-    ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT,
+    ColorBundle, ColorHierarchyNode, DeleteKind, DiagramCommand, DiagramController, LabelProvider,
+    ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT,
 };
 use crate::common::diagram_settings::{DiagramSettings, ShowSettingsResult};
 use crate::common::eref::ERef;
@@ -806,7 +806,7 @@ impl NHContext {
         self.new_diagram_no = 1;
         self.documents.clear();
         self.custom_tabs.clear();
-        self.drawing_context.global_colors.clear();
+        self.drawing_context.global_colors = ColorBundle::new();
 
         self.unprocessed_commands.clear();
         self.should_change_title = true;
@@ -1547,7 +1547,15 @@ impl NHContext {
 
             ui.columns(2, |columns| {
                 enum ColorCommand {
-                    Add((String, egui::Color32)),
+                    AddFolder {
+                        name: String,
+                        into: uuid::Uuid,
+                    },
+                    AddColor {
+                        name: String,
+                        color: egui::Color32,
+                        into: uuid::Uuid,
+                    },
                     Delete(uuid::Uuid),
                 }
                 let mut cmd = None;
@@ -1556,52 +1564,92 @@ impl NHContext {
                 )
                 .allow_multi_selection(false)
                 .show(&mut columns[0], |builder| {
-                    let root = egui_ltreeview::NodeBuilder::dir(uuid::Uuid::nil())
-                        .label("Global Colors")
-                        .context_menu(|ui| {
-                            if ui.button("Add Color").clicked() {
-                                cmd = Some(ColorCommand::Add((
-                                    "New Color".to_owned(),
-                                    egui::Color32::WHITE,
-                                )));
+                    fn h(
+                        e: &ColorHierarchyNode,
+                        gc: &ColorBundle,
+                        builder: &mut egui_ltreeview::TreeViewBuilder<'_, uuid::Uuid>,
+                        cmd: &mut Option<ColorCommand>,
+                    ) {
+                        match e {
+                            ColorHierarchyNode::Folder(uuid, color_hierarchy_nodes) => {
+                                if let Some(name) = gc.folders.get(uuid) {
+                                    let node = egui_ltreeview::NodeBuilder::dir(*uuid)
+                                        .label(name)
+                                        .context_menu(|ui| {
+                                            if ui.button("Add Folder").clicked() {
+                                                *cmd = Some(ColorCommand::AddFolder {
+                                                    name: "New Folder".to_owned(),
+                                                    into: *uuid,
+                                                });
+                                            }
+                                            if ui.button("Add Color").clicked() {
+                                                *cmd = Some(ColorCommand::AddColor {
+                                                    name: "New Color".to_owned(),
+                                                    color: egui::Color32::WHITE,
+                                                    into: *uuid,
+                                                });
+                                            }
+                                            if ui.button("Delete").clicked() {
+                                                *cmd = Some(ColorCommand::Delete(*uuid));
+                                            }
+                                        });
+                                    builder.node(node);
+
+                                    for e in color_hierarchy_nodes {
+                                        h(e, gc, builder, cmd);
+                                    }
+
+                                    builder.close_dir();
+                                }
                             }
-                        });
-                    builder.node(root);
-                    for k in gc!().colors_order.iter() {
-                        if let Some(v) = gc!().colors.get(k) {
-                            let node = egui_ltreeview::NodeBuilder::leaf(*k)
-                                .label_ui(|ui| {
-                                    let (r, p) = ui.allocate_painter(
-                                        egui::Vec2::splat(15.0),
-                                        egui::Sense::empty(),
-                                    );
-                                    p.rect(
-                                        r.rect,
-                                        egui::CornerRadius::ZERO,
-                                        v.1,
-                                        egui::Stroke::new(0.0, egui::Color32::TRANSPARENT),
-                                        egui::StrokeKind::Middle,
-                                    );
-                                    ui.label(&v.0);
-                                })
-                                .context_menu(|ui| {
-                                    if ui.button("Add Color").clicked() {
-                                        cmd = Some(ColorCommand::Add((
-                                            "New Color".to_owned(),
-                                            egui::Color32::WHITE,
-                                        )));
-                                    }
-                                    if ui.button("Duplicate").clicked() {
-                                        cmd = Some(ColorCommand::Add(v.clone()));
-                                    }
-                                    if ui.button("Delete").clicked() {
-                                        cmd = Some(ColorCommand::Delete(*k));
-                                    }
-                                });
-                            builder.node(node);
+                            ColorHierarchyNode::Color(uuid) => {
+                                if let Some(v) = gc.colors.get(uuid) {
+                                    let node = egui_ltreeview::NodeBuilder::leaf(*uuid)
+                                        .label_ui(|ui| {
+                                            let (r, p) = ui.allocate_painter(
+                                                egui::Vec2::splat(15.0),
+                                                egui::Sense::empty(),
+                                            );
+                                            p.rect(
+                                                r.rect,
+                                                egui::CornerRadius::ZERO,
+                                                v.1,
+                                                egui::Stroke::new(0.0, egui::Color32::TRANSPARENT),
+                                                egui::StrokeKind::Middle,
+                                            );
+                                            ui.label(&v.0);
+                                        })
+                                        .context_menu(|ui| {
+                                            if ui.button("Add Folder").clicked() {
+                                                *cmd = Some(ColorCommand::AddFolder {
+                                                    name: "New Folder".to_owned(),
+                                                    into: uuid::Uuid::nil(),
+                                                });
+                                            }
+                                            if ui.button("Add Color").clicked() {
+                                                *cmd = Some(ColorCommand::AddColor {
+                                                    name: "New Color".to_owned(),
+                                                    color: egui::Color32::WHITE,
+                                                    into: uuid::Uuid::nil(),
+                                                });
+                                            }
+                                            if ui.button("Duplicate").clicked() {
+                                                *cmd = Some(ColorCommand::AddColor {
+                                                    name: v.0.clone(),
+                                                    color: v.1,
+                                                    into: uuid::Uuid::nil(),
+                                                });
+                                            }
+                                            if ui.button("Delete").clicked() {
+                                                *cmd = Some(ColorCommand::Delete(*uuid));
+                                            }
+                                        });
+                                    builder.node(node);
+                                }
+                            }
                         }
                     }
-                    builder.close_dir();
+                    h(&gc!().colors_hierarchy, &gc!(), builder, &mut cmd);
                 });
                 for e in actions {
                     match e {
@@ -1611,31 +1659,14 @@ impl NHContext {
                         }
                         egui_ltreeview::Action::Move(drag_and_drop) => {
                             for src in drag_and_drop.source {
-                                if let Some(src_idx) =
-                                    gc!().colors_order.iter().position(|e| *e == src)
-                                {
-                                    gc!().colors_order.remove(src_idx);
-                                    let tgt_idx = match drag_and_drop.position {
-                                        egui_ltreeview::DirPosition::First => 0,
-                                        egui_ltreeview::DirPosition::Last => {
-                                            gc!().colors_order.len()
-                                        }
-                                        egui_ltreeview::DirPosition::Before(before) => gc!()
-                                            .colors_order
-                                            .iter()
-                                            .position(|e| *e == before)
-                                            .unwrap(),
-                                        egui_ltreeview::DirPosition::After(after) => {
-                                            gc!()
-                                                .colors_order
-                                                .iter()
-                                                .position(|e| *e == after)
-                                                .unwrap()
-                                                + 1
-                                        }
-                                    };
-                                    gc!().colors_order.insert(tgt_idx, src);
-                                }
+                                let Some(node) = gc!().colors_hierarchy.remove(&src) else {
+                                    continue;
+                                };
+                                let _ = gc!().colors_hierarchy.insert(
+                                    &drag_and_drop.target,
+                                    drag_and_drop.position,
+                                    node,
+                                );
                             }
                             anything_changed = true;
                         }
@@ -1646,37 +1677,59 @@ impl NHContext {
                     }
                 }
 
-                if let Some(k) = &self.selected_global_color
-                    && let Some(v) = gc!().colors.get_mut(k)
-                {
-                    anything_changed |= columns[1]
-                        .labeled_text_edit_singleline("Name", &mut v.0)
+                if let Some(k) = &self.selected_global_color {
+                    if let Some(v) = gc!().colors.get_mut(k) {
+                        anything_changed |= columns[1]
+                            .labeled_text_edit_singleline("Name", &mut v.0)
+                            .changed();
+
+                        columns[1].label("Color:");
+                        anything_changed |= egui::widgets::color_picker::color_edit_button_srgba(
+                            &mut columns[1],
+                            &mut v.1,
+                            egui::widgets::color_picker::Alpha::OnlyBlend,
+                        )
                         .changed();
 
-                    columns[1].label("Color:");
-                    anything_changed |= egui::widgets::color_picker::color_edit_button_srgba(
-                        &mut columns[1],
-                        &mut v.1,
-                        egui::widgets::color_picker::Alpha::OnlyBlend,
-                    )
-                    .changed();
+                        columns[1].separator();
+                        if columns[1].button("Delete").clicked() {
+                            cmd = Some(ColorCommand::Delete(*k));
+                        }
+                    } else if let Some(v) = gc!().folders.get_mut(k) {
+                        anything_changed |=
+                            columns[1].labeled_text_edit_singleline("Name", v).changed();
 
-                    columns[1].separator();
-                    if columns[1].button("Delete").clicked() {
-                        cmd = Some(ColorCommand::Delete(*k));
+                        columns[1].separator();
+                        if columns[1].button("Delete").clicked() {
+                            cmd = Some(ColorCommand::Delete(*k));
+                        }
                     }
                 }
 
                 match cmd {
-                    Some(ColorCommand::Add(new_color)) => {
+                    Some(ColorCommand::AddFolder { name, into }) => {
                         let new_uuid = uuid::Uuid::now_v7();
-                        gc!().colors_order.push(new_uuid);
-                        gc!().colors.insert(new_uuid, new_color);
+                        let _ = gc!().colors_hierarchy.insert(
+                            &into,
+                            egui_ltreeview::DirPosition::Last,
+                            common::controller::ColorHierarchyNode::Folder(new_uuid, Vec::new()),
+                        );
+                        gc!().folders.insert(new_uuid, name);
+                        anything_changed = true;
+                    }
+                    Some(ColorCommand::AddColor { name, color, into }) => {
+                        let new_uuid = uuid::Uuid::now_v7();
+                        let _ = gc!().colors_hierarchy.insert(
+                            &into,
+                            egui_ltreeview::DirPosition::Last,
+                            common::controller::ColorHierarchyNode::Color(new_uuid),
+                        );
+                        gc!().colors.insert(new_uuid, (name, color));
                         anything_changed = true;
                     }
                     Some(ColorCommand::Delete(uuid)) => {
                         gc!().colors.remove(&uuid);
-                        gc!().colors_order.retain(|e| *e != uuid);
+                        gc!().colors_hierarchy.remove(&uuid);
                         self.selected_global_color =
                             self.selected_global_color.filter(|e| *e != uuid);
                         anything_changed = true;

@@ -487,25 +487,53 @@ pub fn mglobalcolor_edit_button(
                     |ui| {
                         ui.indent("global color", |ui| {
                             let gc = &gdc.global_colors;
-                            for id in gc.colors_order.iter() {
-                                ui.horizontal(|ui| {
-                                    if let Some(c) = gc.colors.get(id) {
-                                        egui::widgets::color_picker::show_color(
-                                            ui,
-                                            c.1,
-                                            COLOR_RECT_SIZE,
-                                        );
-
-                                        let text = if *id == state.global_color {
-                                            &format!("[{}]", c.0)
-                                        } else {
-                                            &c.0
-                                        };
-                                        if ui.label(text).clicked() {
-                                            state.global_color = *id;
+                            fn h(
+                                e: &ColorHierarchyNode,
+                                gc: &ColorBundle,
+                                ui: &mut egui::Ui,
+                                state: &mut ColorChangePopupState,
+                            ) {
+                                match e {
+                                    ColorHierarchyNode::Folder(uuid, children) => {
+                                        if let Some(v) = gc.folders.get(uuid) {
+                                            egui::CollapsingHeader::new(v).id_salt(*uuid).show(
+                                                ui,
+                                                |ui| {
+                                                    for e in children {
+                                                        h(e, gc, ui, state);
+                                                    }
+                                                },
+                                            );
                                         }
                                     }
-                                });
+                                    ColorHierarchyNode::Color(uuid) => {
+                                        ui.horizontal(|ui| {
+                                            if let Some(c) = gc.colors.get(uuid) {
+                                                egui::widgets::color_picker::show_color(
+                                                    ui,
+                                                    c.1,
+                                                    COLOR_RECT_SIZE,
+                                                );
+
+                                                let text = if *uuid == state.global_color {
+                                                    &format!("[{}]", c.0)
+                                                } else {
+                                                    &c.0
+                                                };
+                                                if ui.label(text).clicked() {
+                                                    state.global_color = *uuid;
+                                                }
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                            let ColorHierarchyNode::Folder(.., children) = &gc.colors_hierarchy
+                            else {
+                                return;
+                            };
+                            for e in children {
+                                h(e, gc, ui, &mut state);
                             }
                         });
                     },
@@ -548,15 +576,120 @@ pub fn mglobalcolor_edit_button(
 }
 
 #[derive(Clone, Debug)]
+pub enum ColorHierarchyNode {
+    Folder(uuid::Uuid, Vec<ColorHierarchyNode>),
+    Color(uuid::Uuid),
+}
+
+impl ColorHierarchyNode {
+    pub fn uuid(&self) -> uuid::Uuid {
+        match self {
+            Self::Folder(uuid, ..) => *uuid,
+            Self::Color(uuid) => *uuid,
+        }
+    }
+
+    pub fn get(&self, id: &uuid::Uuid) -> Option<&ColorHierarchyNode> {
+        match self {
+            Self::Folder(.., children) => {
+                for c in children {
+                    if c.uuid() == *id {
+                        return Some(c);
+                    }
+                    if let Some(e) = c.get(id) {
+                        return Some(e);
+                    }
+                }
+            }
+            Self::Color(..) => {}
+        }
+        None
+    }
+    pub fn remove(&mut self, id: &uuid::Uuid) -> Option<ColorHierarchyNode> {
+        match self {
+            Self::Folder(.., children) => {
+                if let Some(index) = children.iter().position(|e| e.uuid() == *id) {
+                    Some(children.remove(index))
+                } else {
+                    for node in children.iter_mut() {
+                        let r = node.remove(id);
+                        if r.is_some() {
+                            return r;
+                        }
+                    }
+                    None
+                }
+            }
+            Self::Color(..) => None,
+        }
+    }
+    pub fn insert(
+        &mut self,
+        id: &uuid::Uuid,
+        position: DirPosition<uuid::Uuid>,
+        value: ColorHierarchyNode,
+    ) -> Result<(), ColorHierarchyNode> {
+        let self_uuid = self.uuid();
+        match self {
+            Self::Folder(.., children) => {
+                if self_uuid == *id {
+                    match position {
+                        DirPosition::First => children.insert(0, value),
+                        DirPosition::Last => children.push(value),
+                        DirPosition::Before(id2) | DirPosition::After(id2) => {
+                            if let Some(index) = children.iter().position(|n| n.uuid() == id2) {
+                                children.insert(
+                                    index
+                                        + if matches!(position, DirPosition::After(_)) {
+                                            1
+                                        } else {
+                                            0
+                                        },
+                                    value,
+                                );
+                            }
+                        }
+                    }
+                    Ok(())
+                } else {
+                    let mut value = Err(value);
+                    for node in children.iter_mut() {
+                        if let Err(v) = value {
+                            value = node.insert(id, position, v);
+                        }
+                    }
+                    value
+                }
+            }
+            Self::Color(..) => Err(value),
+        }
+    }
+    pub fn for_each(&self, f: &mut impl FnMut(&Self)) {
+        f(self);
+        match self {
+            Self::Folder(.., children) => {
+                children.iter().for_each(|e| e.for_each(f));
+            }
+            Self::Color(..) => {}
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct ColorBundle {
-    pub colors_order: Vec<uuid::Uuid>,
+    pub colors_hierarchy: ColorHierarchyNode,
+    pub folders: HashMap<uuid::Uuid, String>,
     pub colors: HashMap<uuid::Uuid, (String, egui::Color32)>,
 }
 
 impl ColorBundle {
     pub fn new() -> Self {
+        let mut folders = HashMap::new();
+        folders.insert(uuid::Uuid::nil(), "Global Colors Root".to_owned());
+
         Self {
-            colors_order: Vec::new(),
+            colors_hierarchy: ColorHierarchyNode::Folder(uuid::Uuid::nil(), Vec::new()),
+            folders,
             colors: HashMap::new(),
         }
     }
@@ -566,10 +699,6 @@ impl ColorBundle {
             MGlobalColor::Local(color32) => Some(*color32),
             MGlobalColor::Global(uuid) => self.colors.get(uuid).map(|e| e.1),
         }
-    }
-    pub fn clear(&mut self) {
-        self.colors_order.clear();
-        self.colors.clear();
     }
 }
 
