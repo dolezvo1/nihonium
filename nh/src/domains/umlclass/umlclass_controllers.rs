@@ -3044,9 +3044,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     && q.is_contained(&source_view.uuid(), preferred_container)
                     && q.is_contained(&target_view.uuid(), preferred_container)
                 {
-                    self.current_stage = UmlClassToolStage::LinkStart {
-                        link_type: link_type.clone(),
-                    };
+                    self.current_stage = self.initial_stage.clone();
 
                     let link_view: UmlClassElementView<_> = match link_type {
                         LinkType::Generalization { set_name } => {
@@ -6761,8 +6759,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                    if matches!(
+                        tool.initial_stage,
+                        UmlClassToolStage::ClassProperty { .. }
+                            | UmlClassToolStage::ClassOperation { .. }
+                    ) && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
                         && ehc
                             .modifier_settings
                             .alternative_tool_mode
