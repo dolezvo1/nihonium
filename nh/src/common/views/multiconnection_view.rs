@@ -96,9 +96,13 @@ pub fn init_points(
     }
 }
 
+/// Specifies behavior on target move for loops
 pub enum LoopTargetMoveBehavior {
+    /// Never move vertices when only target is moved
     Never,
+    /// Move all vertices if 1:1 relation loop
     OneToOneOnly,
+    /// Move all vertices even on a M:N relation loop
     AnyToAny,
 }
 
@@ -1186,7 +1190,7 @@ where
                 self.highlight.selected = (self.highlight.selected && *retain)
                     || all_pts_mut!().find(|p| !rect.contains(p.1)).is_none();
             }
-            InsensitiveCommand::MovePositional(uuids, delta) if !uuids.contains(&*self.uuid) => {
+            InsensitiveCommand::MovePositional(uuids, delta) => {
                 let already_moved_all = match self.adapter.loop_target_move_behavior() {
                     LoopTargetMoveBehavior::OneToOneOnly
                         if self.sources.len() == 1
@@ -1208,7 +1212,8 @@ where
                 };
 
                 if !already_moved_all {
-                    for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
+                    let move_all = uuids.contains(&*self.uuid);
+                    for p in all_pts_mut!().filter(|e| move_all || uuids.contains(&e.0)) {
                         p.1 += *delta;
                         undo_accumulator.push(InsensitiveCommand::MovePositional(
                             std::iter::once(p.0).collect(),
@@ -1217,8 +1222,8 @@ where
                     }
                 }
             }
-            InsensitiveCommand::MovePositional(_, delta)
-            | InsensitiveCommand::MovePositionalAll(delta) => {
+            InsensitiveCommand::MovePositionalAll(delta) => {
+                // TODO: I'm not sure if this is technically correct, since there is no way to tell whether a loop target was moved
                 for p in all_pts_mut!() {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MovePositional(
