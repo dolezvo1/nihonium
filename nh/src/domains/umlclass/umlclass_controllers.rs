@@ -3478,9 +3478,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         let model = if let Some(UmlClassElement::Package(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -3495,14 +3493,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         }
     }
 
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlClassElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()) {
-                *e = new_model.clone();
-            }
-        }
-    }
+    fn deep_copy_finish(&mut self, _m: &HashMap<ModelUuid, UmlClassElement>) {}
 }
 
 fn new_umlclass_instance<P: UmlClassProfile>(
@@ -4192,9 +4183,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         let modelish = if let Some(UmlClassElement::Instance(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -5010,9 +4999,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         let modelish = if let Some(UmlClassElement::Property(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -5772,9 +5759,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         let modelish = if let Some(UmlClassElement::Operation(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -7293,9 +7278,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         let modelish = if let Some(UmlClassElement::Class(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let mut dev_null = HashMap::new();
@@ -7348,25 +7331,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
-    }
-    fn deep_copy_relink(
-        &mut self,
-        _c: &HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
-        m: &HashMap<ModelUuid, <UmlClassDomain<P> as Domain>::CommonElementT>,
-    ) {
-        let mut w = self.model.write();
-        for e in w.properties.iter_mut() {
-            let uuid = *e.read().uuid;
-            if let Some(UmlClassElement::Property(new_property)) = m.get(&uuid) {
-                *e = new_property.clone();
-            }
-        }
-        for e in w.operations.iter_mut() {
-            let uuid = *e.read().uuid;
-            if let Some(UmlClassElement::Operation(new_operation)) = m.get(&uuid) {
-                *e = new_operation.clone();
-            }
-        }
     }
 }
 
@@ -8037,9 +8001,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         let modelish = if let Some(UmlClassElement::UseCase(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -8465,9 +8427,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         let model = if let Some(UmlClassElement::Generalization(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -8477,20 +8437,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlClassElement>) {
-        let mut model = self.model.write();
-
-        for e in model.sources.iter_mut() {
-            let sid = *e.read().uuid;
-            if let Some(UmlClassElement::Class(new_source)) = m.get(&sid) {
-                *e = new_source.clone();
-            }
-        }
-        for e in model.targets.iter_mut() {
-            let tid = *e.read().uuid;
-            if let Some(UmlClassElement::Class(new_target)) = m.get(&tid) {
-                *e = new_target.clone();
-            }
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -8798,9 +8745,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         let model = if let Some(UmlClassElement::Dependency(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -8810,16 +8755,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlClassElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.uuid();
-        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_associable()) {
-            model.source = new_source;
-        }
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_associable()) {
-            model.target = new_target;
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -9437,9 +9373,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         let model = if let Some(UmlClassElement::Association(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -9449,16 +9383,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlClassElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.uuid();
-        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_associable()) {
-            model.source = new_source;
-        }
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_associable()) {
-            model.target = new_target;
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -9865,9 +9790,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -9877,20 +9800,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlClassElement>) {
-        let mut model = self.model.write();
-
-        for e in model.sources.iter_mut() {
-            let sid = *e.read().uuid;
-            if let Some(UmlClassElement::UseCase(new_source)) = m.get(&sid) {
-                *e = new_source.clone();
-            }
-        }
-        for e in model.targets.iter_mut() {
-            let tid = *e.read().uuid;
-            if let Some(UmlClassElement::UseCase(new_target)) = m.get(&tid) {
-                *e = new_target.clone();
-            }
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -10511,9 +10421,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         let modelish = if let Some(UmlClassElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -10684,9 +10592,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassN
         let model = if let Some(UmlClassElement::NoteLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -10696,15 +10602,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassN
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlClassElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.read().uuid();
-        if let Some(UmlClassElement::Note(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone();
-        }
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid) {
-            model.target = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }

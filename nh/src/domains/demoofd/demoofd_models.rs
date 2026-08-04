@@ -59,6 +59,39 @@ impl DemoOfdElement {
             | DemoOfdElement::Note(..) => None,
         }
     }
+
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> Self {
+        match self {
+            Self::Package(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::EntityType(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::EventType(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::PropertyType(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Specialization(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Aggregation(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Precedence(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Exclusion(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+
+    pub fn deep_copy_relink(&self, m: &HashMap<ModelUuid, DemoOfdElement>) {
+        match self {
+            Self::Package(..) | Self::EntityType(..) => {}
+            Self::EventType(inner) => inner.write().deep_copy_relink(m),
+            Self::PropertyType(inner) => inner.write().deep_copy_relink(m),
+            Self::Aggregation(inner) => inner.write().deep_copy_relink(m),
+            Self::Precedence(inner) => inner.write().deep_copy_relink(m),
+            Self::Specialization(inner) => inner.write().deep_copy_relink(m),
+            Self::Exclusion(inner) => inner.write().deep_copy_relink(m),
+            Self::Note(_) => {}
+        }
+    }
 }
 
 impl VisitableElement for DemoOfdElement {
@@ -100,144 +133,13 @@ pub enum DemoOfdType {
 pub fn deep_copy_diagram(
     d: &DemoOfdDiagram,
 ) -> (ERef<DemoOfdDiagram>, HashMap<ModelUuid, DemoOfdElement>) {
-    fn walk(e: &DemoOfdElement, into: &mut HashMap<ModelUuid, DemoOfdElement>) -> DemoOfdElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            DemoOfdElement::Package(inner) => {
-                let model = inner.read();
-
-                let new_model = DemoOfdPackage {
-                    uuid: new_uuid,
-                    name: model.name.clone(),
-                    kind: model.kind,
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(e, into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            new_model
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                ERef::new(new_model).into()
-            }
-            DemoOfdElement::EntityType(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::EventType(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::PropertyType(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::Specialization(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::Aggregation(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::Precedence(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::Exclusion(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoOfdElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(e: &mut DemoOfdElement, all_models: &HashMap<ModelUuid, DemoOfdElement>) {
-        match e {
-            DemoOfdElement::Package(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
-                }
-            }
-            DemoOfdElement::EntityType(..) => {}
-            DemoOfdElement::EventType(inner) => {
-                let mut model = inner.write();
-
-                let base_id = *model.base_entity_type.read().uuid;
-                if let Some(DemoOfdElement::EntityType(b)) = all_models.get(&base_id) {
-                    model.base_entity_type = b.clone();
-                }
-                if let UFOption::Some(spec) = &mut model.specialization_entity_type {
-                    let spec_id = *spec.read().uuid;
-                    if let Some(DemoOfdElement::EntityType(s)) = all_models.get(&spec_id) {
-                        *spec = s.clone();
-                    }
-                }
-            }
-            DemoOfdElement::PropertyType(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.domain_element.read().uuid;
-                if let Some(DemoOfdElement::EntityType(de)) = all_models.get(&source_uuid) {
-                    model.domain_element = de.clone();
-                }
-                let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::EntityType(re)) = all_models.get(&target_uuid) {
-                    model.range_element = re.clone();
-                }
-            }
-            DemoOfdElement::Aggregation(inner) => {
-                let mut model = inner.write();
-
-                for e in model.domain_elements.iter_mut() {
-                    let source_uuid = *e.read().uuid;
-                    if let Some(DemoOfdElement::EntityType(de)) = all_models.get(&source_uuid) {
-                        *e = de.clone();
-                    }
-                }
-                let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::EntityType(re)) = all_models.get(&target_uuid) {
-                    model.range_element = re.clone();
-                }
-            }
-            DemoOfdElement::Precedence(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.domain_element.read().uuid;
-                if let Some(DemoOfdElement::EventType(de)) = all_models.get(&source_uuid) {
-                    model.domain_element = de.clone();
-                }
-                let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::EventType(re)) = all_models.get(&target_uuid) {
-                    model.range_element = re.clone();
-                }
-            }
-            DemoOfdElement::Specialization(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.domain_element.read().uuid;
-                if let Some(DemoOfdElement::EntityType(de)) = all_models.get(&source_uuid) {
-                    model.domain_element = de.clone();
-                }
-                let target_uuid = *model.range_element.read().uuid;
-                if let Some(DemoOfdElement::EntityType(re)) = all_models.get(&target_uuid) {
-                    model.range_element = re.clone();
-                }
-            }
-            DemoOfdElement::Exclusion(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.domain_element.uuid();
-                if let Some(de) = all_models
-                    .get(&source_uuid)
-                    .and_then(|e| e.clone().as_type())
-                {
-                    model.domain_element = de.clone();
-                }
-                let target_uuid = *model.range_element.uuid();
-                if let Some(re) = all_models
-                    .get(&target_uuid)
-                    .and_then(|e| e.clone().as_type())
-                {
-                    model.range_element = re.clone();
-                }
-            }
-            DemoOfdElement::Note(_) => {}
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(e, &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = DemoOfdDiagram {
@@ -555,14 +457,25 @@ impl DemoOfdPackage {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(DemoOfdPackage {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
-            contained_elements: self.contained_elements.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -665,14 +578,21 @@ impl DemoOfdEntityType {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             properties: self.properties.clone(),
             internal: self.internal,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -724,16 +644,39 @@ impl DemoOfdEventType {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_specialization = self
+            .specialization_entity_type
+            .as_ref()
+            .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into));
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
             kind: self.kind,
             identifier: self.identifier.clone(),
             name: self.name.clone(),
             base_entity_type: self.base_entity_type.clone(),
-            specialization_entity_type: self.specialization_entity_type.clone(),
+            specialization_entity_type: new_specialization.into(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
+        let base_id = *self.base_entity_type.read().uuid;
+        if let Some(DemoOfdElement::EntityType(b)) = m.get(&base_id) {
+            self.base_entity_type = b.clone();
+        }
+        if let UFOption::Some(spec) = &mut self.specialization_entity_type {
+            let spec_id = *spec.read().uuid;
+            if let Some(DemoOfdElement::EntityType(s)) = m.get(&spec_id) {
+                *spec = s.clone();
+            }
+        }
     }
 }
 
@@ -858,8 +801,12 @@ impl DemoOfdPropertyType {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
             domain_element: self.domain_element.clone(),
@@ -867,7 +814,20 @@ impl DemoOfdPropertyType {
             range_element: self.range_element.clone(),
             range_multiplicity: self.range_multiplicity.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
+        let source_uuid = *self.domain_element.read().uuid;
+        if let Some(DemoOfdElement::EntityType(de)) = m.get(&source_uuid) {
+            self.domain_element = de.clone();
+        }
+        let target_uuid = *self.range_element.read().uuid;
+        if let Some(DemoOfdElement::EntityType(re)) = m.get(&target_uuid) {
+            self.range_element = re.clone();
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.domain_element, &mut self.range_element);
@@ -916,13 +876,30 @@ impl DemoOfdSpecialization {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
             domain_element: self.domain_element.clone(),
             range_element: self.range_element.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
+        let source_uuid = *self.domain_element.read().uuid;
+        if let Some(DemoOfdElement::EntityType(de)) = m.get(&source_uuid) {
+            self.domain_element = de.clone();
+        }
+        let target_uuid = *self.range_element.read().uuid;
+        if let Some(DemoOfdElement::EntityType(re)) = m.get(&target_uuid) {
+            self.range_element = re.clone();
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.domain_element, &mut self.range_element);
@@ -975,14 +952,33 @@ impl DemoOfdAggregation {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
             domain_elements: self.domain_elements.clone(),
             range_element: self.range_element.clone(),
             is_generalization: self.is_generalization,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
+        for e in self.domain_elements.iter_mut() {
+            let source_uuid = *e.read().uuid;
+            if let Some(DemoOfdElement::EntityType(de)) = m.get(&source_uuid) {
+                *e = de.clone();
+            }
+        }
+        let target_uuid = *self.range_element.read().uuid;
+        if let Some(DemoOfdElement::EntityType(re)) = m.get(&target_uuid) {
+            self.range_element = re.clone();
+        }
     }
     pub fn flip_multiconnection(&mut self) -> Result<(), ()> {
         if self.domain_elements.len() == 1 {
@@ -1086,13 +1082,30 @@ impl DemoOfdPrecedence {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
             domain_element: self.domain_element.clone(),
             range_element: self.range_element.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
+        let source_uuid = *self.domain_element.read().uuid;
+        if let Some(DemoOfdElement::EventType(de)) = m.get(&source_uuid) {
+            self.domain_element = de.clone();
+        }
+        let target_uuid = *self.range_element.read().uuid;
+        if let Some(DemoOfdElement::EventType(re)) = m.get(&target_uuid) {
+            self.range_element = re.clone();
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.domain_element, &mut self.range_element);
@@ -1137,13 +1150,30 @@ impl DemoOfdExclusion {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
             domain_element: self.domain_element.clone(),
             range_element: self.range_element.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
+        let source_uuid = *self.domain_element.uuid();
+        if let Some(de) = m.get(&source_uuid).and_then(|e| e.clone().as_type()) {
+            self.domain_element = de.clone();
+        }
+        let target_uuid = *self.range_element.uuid();
+        if let Some(re) = m.get(&target_uuid).and_then(|e| e.clone().as_type()) {
+            self.range_element = re.clone();
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.domain_element, &mut self.range_element);
@@ -1179,11 +1209,18 @@ impl DemoOfdNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 

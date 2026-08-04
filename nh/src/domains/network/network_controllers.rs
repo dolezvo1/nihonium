@@ -2050,9 +2050,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         let model = if let Some(NetworkElement::Container(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
         Self {
             model,
@@ -2062,14 +2060,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         }
     }
 
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, NetworkElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()) {
-                *e = new_model.clone();
-            }
-        }
-    }
+    fn deep_copy_finish(&mut self, _m: &HashMap<ModelUuid, NetworkElement>) {}
 }
 
 fn element_button_rect(
@@ -3139,9 +3130,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         let modelish = if let Some(NetworkElement::Node(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -3778,9 +3767,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         let modelish = if let Some(NetworkElement::User(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -4310,9 +4297,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         let modelish = if let Some(NetworkElement::File(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -4902,9 +4887,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         let modelish = if let Some(NetworkElement::Location(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -5420,9 +5403,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         let model = if let Some(NetworkElement::Association(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -5432,17 +5413,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, NetworkElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.uuid();
-        if let Some(new_source) = m.get(&source_uuid) {
-            model.source = new_source.clone();
-        }
-
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid) {
-            model.target = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -5968,9 +5939,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         let modelish = if let Some(NetworkElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {

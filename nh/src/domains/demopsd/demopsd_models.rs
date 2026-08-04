@@ -67,6 +67,29 @@ impl DemoPsdElement {
             Self::Package(..) | Self::Transaction(..) | Self::Link(..) | Self::Note(..) => None,
         }
     }
+
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> DemoPsdElement {
+        match self {
+            Self::Package(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Transaction(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Fact(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Act(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Link(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+
+    pub fn deep_copy_relink(&self, m: &HashMap<ModelUuid, DemoPsdElement>) {
+        match self {
+            Self::Package(..) | Self::Transaction(..) | Self::Fact(..) | Self::Act(..) => {}
+            Self::Link(inner) => inner.write().deep_copy_relink(m),
+            Self::Note(..) => {}
+        }
+    }
 }
 
 impl DemoPsdState {
@@ -74,6 +97,16 @@ impl DemoPsdState {
         match self {
             Self::Fact(inner) => DemoPsdElement::Fact(inner),
             Self::Act(inner) => DemoPsdElement::Act(inner),
+        }
+    }
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> Self {
+        match self {
+            Self::Fact(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Act(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
         }
     }
 }
@@ -113,120 +146,13 @@ impl VisitableElement for DemoPsdElement {
 pub fn deep_copy_diagram(
     d: &DemoPsdDiagram,
 ) -> (ERef<DemoPsdDiagram>, HashMap<ModelUuid, DemoPsdElement>) {
-    fn walk(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdElement>) -> DemoPsdElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            DemoPsdElement::Package(inner) => {
-                let model = inner.read();
-
-                let new_model = DemoPsdPackage {
-                    uuid: new_uuid,
-                    name: model.name.clone(),
-                    kind: model.kind,
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(e, into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            new_model
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                DemoPsdElement::Package(ERef::new(new_model))
-            }
-            DemoPsdElement::Transaction(inner) => {
-                let model = inner.read();
-
-                let new_model = DemoPsdTransaction {
-                    uuid: new_uuid,
-                    kind: model.kind,
-                    identifier: model.identifier.clone(),
-                    name: model.name.clone(),
-                    before: model
-                        .before
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.state.clone().to_element(), into);
-                            into.insert(*e.state.uuid(), new_model.clone());
-                            DemoPsdStateInfo {
-                                state: new_model.to_state().unwrap(),
-                                executor: e.executor,
-                            }
-                        })
-                        .collect(),
-                    p_act: match &model.p_act {
-                        UFOption::None => UFOption::None,
-                        UFOption::Some(inner) => {
-                            let new_model = walk(&((*inner).clone().into()), into);
-                            into.insert(*inner.read().uuid(), new_model.clone());
-                            match new_model {
-                                DemoPsdElement::Act(inner) => UFOption::Some(inner),
-                                _ => unreachable!(),
-                            }
-                        }
-                    },
-                    after: model
-                        .after
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.state.clone().to_element(), into);
-                            into.insert(*e.state.uuid(), new_model.clone());
-                            DemoPsdStateInfo {
-                                state: new_model.to_state().unwrap(),
-                                executor: e.executor,
-                            }
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-
-                DemoPsdElement::Transaction(ERef::new(new_model))
-            }
-            DemoPsdElement::Fact(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoPsdElement::Act(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoPsdElement::Link(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoPsdElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(e: &mut DemoPsdElement, all_models: &HashMap<ModelUuid, DemoPsdElement>) {
-        match e {
-            DemoPsdElement::Package(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
-                }
-            }
-            DemoPsdElement::Transaction(..)
-            | DemoPsdElement::Fact(..)
-            | DemoPsdElement::Act(..) => {}
-            DemoPsdElement::Link(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(DemoPsdElement::Fact(ta)) = all_models.get(&source_uuid) {
-                    model.source = ta.clone();
-                }
-                let target_uuid = *model.target.read().uuid();
-                if let Some(DemoPsdElement::Act(tx)) = all_models.get(&target_uuid) {
-                    model.target = tx.clone();
-                }
-            }
-            DemoPsdElement::Note(..) => {}
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(e, &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = DemoPsdDiagram {
@@ -504,14 +430,25 @@ impl DemoPsdPackage {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(DemoPsdPackage {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
-            contained_elements: self.contained_elements.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -643,17 +580,42 @@ impl DemoPsdTransaction {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(DemoPsdTransaction {
+            uuid: new_uuid.into(),
             kind: self.kind,
             identifier: self.identifier.clone(),
             name: self.name.clone(),
-            before: self.before.clone(),
-            p_act: self.p_act.clone(),
-            after: self.after.clone(),
+            before: self
+                .before
+                .iter()
+                .map(|e| DemoPsdStateInfo {
+                    state: e.state.deep_copy_clone(ModelUuid::now_v7(), into),
+                    executor: e.executor,
+                })
+                .collect(),
+            p_act: self
+                .p_act
+                .as_ref()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .into(),
+            after: self
+                .after
+                .iter()
+                .map(|e| DemoPsdStateInfo {
+                    state: e.state.deep_copy_clone(ModelUuid::now_v7(), into),
+                    executor: e.executor,
+                })
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
     pub fn move_element(&mut self, element: &ModelUuid, pos: PositionNoT) {
         if let Some((idx, _e)) = self
@@ -875,13 +837,20 @@ impl DemoPsdFact {
         }
     }
 
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             identifier: self.identifier.clone(),
             internal: self.internal,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -921,13 +890,20 @@ impl DemoPsdAct {
         }
     }
 
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             identifier: self.identifier.clone(),
             internal: self.internal,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1006,15 +982,32 @@ impl DemoPsdLink {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             link_type: self.link_type,
             source: self.source.clone(),
             target: self.target.clone(),
             multiplicity: self.multiplicity.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoPsdElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(DemoPsdElement::Fact(ta)) = m.get(&source_uuid) {
+            self.source = ta.clone();
+        }
+        let target_uuid = *self.target.read().uuid();
+        if let Some(DemoPsdElement::Act(tx)) = m.get(&target_uuid) {
+            self.target = tx.clone();
+        }
     }
 }
 
@@ -1047,11 +1040,18 @@ impl DemoPsdNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoPsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 

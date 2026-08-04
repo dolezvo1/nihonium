@@ -4081,9 +4081,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         let modelish = if let Some(UmlSequenceElement::Diagram(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let mut inner = HashMap::new();
@@ -4151,27 +4149,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         self.standalone_views
             .iter_mut()
             .for_each(|v| v.deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.vertical_elements.iter_mut() {
-            let id = *e.read().uuid();
-            if let Some(UmlSequenceElement::Lifeline(new_model)) = m.get(&id) {
-                *e = new_model.clone();
-            }
-        }
-        for e in w.horizontal_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()).and_then(|e| e.clone().as_horizontal()) {
-                *e = new_model;
-            }
-        }
-        for e in w.standalone_elements.iter_mut() {
-            if let Some(new_model) = m
-                .get(&*e.uuid())
-                .and_then(|e| e.clone().as_nondiagram_standalone())
-            {
-                *e = new_model;
-            }
-        }
     }
 }
 
@@ -5128,9 +5105,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         let model = if let Some(UmlSequenceElement::CombinedFragment(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let mut inner = HashMap::new();
@@ -5170,14 +5145,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         self.sections
             .iter_mut()
             .for_each(|v| v.write().deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.sections.iter_mut() {
-            let uuid = *e.read().uuid;
-            if let Some(UmlSequenceElement::CombinedFragmentSection(new_model)) = m.get(&uuid) {
-                *e = new_model.clone();
-            }
-        }
     }
 }
 
@@ -6014,9 +5981,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
             if let Some(UmlSequenceElement::CombinedFragmentSection(m)) = m.get(&old_model.uuid) {
                 m.clone()
             } else {
-                let modelish = old_model.clone_with(model_uuid);
-                m.insert(*old_model.uuid, modelish.clone().into());
-                modelish
+                old_model.deep_copy_clone_inner(model_uuid, m)
             };
 
         let mut inner = HashMap::new();
@@ -6053,14 +6018,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         self.horizontal_element_views
             .iter_mut()
             .for_each(|v| v.deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.horizontal_elements.iter_mut() {
-            let uuid = *e.uuid();
-            if let Some(new_model) = m.get(&uuid).and_then(|e| e.as_horizontal()) {
-                *e = new_model.clone();
-            }
-        }
     }
 }
 
@@ -6902,9 +6859,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         let modelish = if let Some(UmlSequenceElement::Lifeline(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -7665,9 +7620,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         let model = if let Some(UmlSequenceElement::Message(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -7689,16 +7642,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         _c: &HashMap<ViewUuid, UmlSequenceElementView>,
         m: &HashMap<ModelUuid, UmlSequenceElement>,
     ) {
-        let mut model = self.model.write();
-
-        let source_model_uuid = *model.source.read().uuid();
-        if let Some(UmlSequenceElement::Lifeline(new_source)) = m.get(&source_model_uuid) {
-            model.source = new_source.clone();
-        }
-        let target_model_uuid = *model.target.read().uuid();
-        if let Some(UmlSequenceElement::Lifeline(new_target)) = m.get(&target_model_uuid) {
-            model.target = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -8143,9 +8087,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         let model = if let Some(UmlSequenceElement::Ref(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -8559,9 +8501,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
         {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -8582,16 +8522,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
         _c: &HashMap<ViewUuid, UmlSequenceElementView>,
         m: &HashMap<ModelUuid, UmlSequenceElement>,
     ) {
-        let mut model = self.model.write();
-
-        let source_model_uuid = *model.source.element.uuid();
-        if let Some(new_source) = m.get(&source_model_uuid).and_then(|e| e.as_horizontal()) {
-            model.source.element = new_source;
-        }
-        let target_model_uuid = *model.target.element.uuid();
-        if let Some(new_target) = m.get(&target_model_uuid).and_then(|e| e.as_horizontal()) {
-            model.target.element = new_target;
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 

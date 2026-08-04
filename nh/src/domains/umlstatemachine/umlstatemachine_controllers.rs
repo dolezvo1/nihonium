@@ -2590,9 +2590,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         let model = if let Some(UmlStateMachineElement::StateMachine(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -2606,14 +2604,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         }
     }
 
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlStateMachineElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()).and_then(|e| e.as_standalone()) {
-                *e = new_model;
-            }
-        }
-    }
+    fn deep_copy_finish(&mut self, _m: &HashMap<ModelUuid, UmlStateMachineElement>) {}
 }
 
 pub fn new_umlstatemachine_compositestate(
@@ -4082,9 +4073,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let mut inner = HashMap::new();
@@ -4139,20 +4128,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         self.region_views
             .iter_mut()
             .for_each(|v| v.write().deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.internal_transitions.iter_mut() {
-            let uuid = *e.read().uuid;
-            if let Some(UmlStateMachineElement::InternalTransition(new_model)) = m.get(&uuid) {
-                *e = new_model.clone();
-            }
-        }
-        for e in w.regions.iter_mut() {
-            let uuid = *e.read().uuid;
-            if let Some(UmlStateMachineElement::CompositeStateRegion(new_model)) = m.get(&uuid) {
-                *e = new_model.clone();
-            }
-        }
     }
 }
 
@@ -4864,9 +4839,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             if let Some(UmlStateMachineElement::CompositeStateRegion(m)) = m.get(&old_model.uuid) {
                 m.clone()
             } else {
-                let modelish = old_model.clone_with(model_uuid);
-                m.insert(*old_model.uuid, modelish.clone().into());
-                modelish
+                old_model.deep_copy_clone_inner(model_uuid, m)
             };
 
         let mut inner = HashMap::new();
@@ -4892,14 +4865,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
     ) {
         self.contained_elements
             .event_order_foreach_mut(|v| v.deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            let uuid = *e.uuid();
-            if let Some(new_model) = m.get(&uuid).and_then(|e| e.as_standalone()) {
-                *e = new_model;
-            }
-        }
     }
 }
 
@@ -5777,9 +5742,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
         {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let mut inner = HashMap::new();
@@ -5817,14 +5780,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
         self.internal_transition_views
             .iter_mut()
             .for_each(|v| v.write().deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.internal_transitions.iter_mut() {
-            let uuid = *e.read().uuid;
-            if let Some(UmlStateMachineElement::InternalTransition(new_model)) = m.get(&uuid) {
-                *e = new_model.clone();
-            }
-        }
     }
 }
 
@@ -6266,9 +6221,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTra
             if let Some(UmlStateMachineElement::InternalTransition(m)) = m.get(&old_model.uuid) {
                 m.clone()
             } else {
-                let modelish = old_model.clone_with(model_uuid);
-                m.insert(*old_model.uuid, modelish.clone().into());
-                modelish
+                old_model.deep_copy_clone_inner(model_uuid, m)
             };
 
         let cloneish = ERef::new(Self {
@@ -6641,9 +6594,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInitialPseu
             if let Some(UmlStateMachineElement::InitialPseudostate(m)) = m.get(&old_model.uuid) {
                 m.clone()
             } else {
-                let modelish = old_model.clone_with(model_uuid);
-                m.insert(*old_model.uuid, modelish.clone().into());
-                modelish
+                old_model.deep_copy_clone_inner(model_uuid, m)
             };
 
         let cloneish = ERef::new(Self {
@@ -6985,9 +6936,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineTerminatePs
             if let Some(UmlStateMachineElement::TerminatePseudostate(m)) = m.get(&old_model.uuid) {
                 m.clone()
             } else {
-                let modelish = old_model.clone_with(model_uuid);
-                m.insert(*old_model.uuid, modelish.clone().into());
-                modelish
+                old_model.deep_copy_clone_inner(model_uuid, m)
             };
 
         let cloneish = ERef::new(Self {
@@ -7330,9 +7279,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineFinalStateV
         let modelish = if let Some(UmlStateMachineElement::FinalState(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -7564,9 +7511,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
         let model = if let Some(UmlStateMachineElement::Edge(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -7576,16 +7521,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlStateMachineElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.uuid();
-        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_nonfinal()) {
-            model.source = new_source;
-        }
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_noninitial()) {
-            model.target = new_target;
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -8208,9 +8144,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
         let modelish = if let Some(UmlStateMachineElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -8380,9 +8314,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAd
         let model = if let Some(UmlStateMachineElement::NoteLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -8392,15 +8324,6 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAd
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlStateMachineElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.read().uuid();
-        if let Some(UmlStateMachineElement::Note(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone();
-        }
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid) {
-            model.target = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }

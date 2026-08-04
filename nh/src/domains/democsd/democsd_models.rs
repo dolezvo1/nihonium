@@ -34,6 +34,28 @@ pub enum DemoCsdElement {
     Note(ERef<DemoCsdNote>),
 }
 
+impl DemoCsdElement {
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) -> Self {
+        match self {
+            Self::Package(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Transactor(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Transaction(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Link(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+    pub fn deep_copy_relink(&self, m: &HashMap<ModelUuid, DemoCsdElement>) {
+        match self {
+            DemoCsdElement::Link(inner) => inner.write().deep_copy_relink(m),
+            _ => {}
+        }
+    }
+}
+
 impl VisitableElement for DemoCsdElement {
     fn accept(&self, v: &mut dyn ElementVisitor<Self>)
     where
@@ -64,93 +86,13 @@ impl VisitableElement for DemoCsdElement {
 pub fn deep_copy_diagram(
     d: &DemoCsdDiagram,
 ) -> (ERef<DemoCsdDiagram>, HashMap<ModelUuid, DemoCsdElement>) {
-    fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) -> DemoCsdElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            DemoCsdElement::Package(inner) => {
-                let model = inner.read();
-
-                let new_model = DemoCsdPackage {
-                    uuid: new_uuid,
-                    name: model.name.clone(),
-                    kind: model.kind,
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(e, into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            new_model
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                DemoCsdElement::Package(ERef::new(new_model))
-            }
-            DemoCsdElement::Transactor(inner) => {
-                let model = inner.read();
-
-                let new_tx = if let UFOption::Some(tx) = &model.transaction {
-                    let new_tx = walk(&DemoCsdElement::Transaction(tx.clone()), into);
-                    into.insert(*tx.read().uuid(), new_tx.clone());
-                    if let DemoCsdElement::Transaction(new_tx) = new_tx {
-                        Some(new_tx)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-                let new_model = model.clone_with(*new_uuid);
-                new_model.write().transaction = new_tx.into();
-                DemoCsdElement::Transactor(new_model)
-            }
-            DemoCsdElement::Transaction(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoCsdElement::Link(inner) => inner.read().clone_with(*new_uuid).into(),
-            DemoCsdElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(e: &mut DemoCsdElement, all_models: &HashMap<ModelUuid, DemoCsdElement>) {
-        match e {
-            DemoCsdElement::Package(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
-                }
-            }
-            DemoCsdElement::Transactor(inner) => {
-                let mut model = inner.write();
-                if let UFOption::Some(ta) = &mut model.transaction {
-                    relink(&mut DemoCsdElement::Transaction(ta.clone()), all_models);
-                }
-            }
-            DemoCsdElement::Transaction(_) => {}
-            DemoCsdElement::Link(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(DemoCsdElement::Transactor(ta)) = all_models.get(&source_uuid) {
-                    model.source = ta.clone();
-                }
-                let target_uuid = *model.target.read().uuid();
-                if let Some(DemoCsdElement::Transaction(tx)) = all_models.get(&target_uuid) {
-                    model.target = tx.clone();
-                }
-            }
-            DemoCsdElement::Note(_) => {}
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(e, &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = DemoCsdDiagram {
@@ -414,14 +356,24 @@ impl DemoCsdPackage {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(DemoCsdPackage {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
-            contained_elements: self.contained_elements.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -540,17 +492,29 @@ impl DemoCsdTransactor {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) -> ERef<Self> {
+        let new_tx = if let UFOption::Some(tx) = &self.transaction {
+            Some(tx.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+        } else {
+            None
+        };
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             identifier: self.identifier.clone(),
             name: self.name.clone(),
             internal: self.internal,
             composite: self.composite,
-            transaction: self.transaction.clone(),
+            transaction: new_tx.into(),
             transaction_selfactivating: self.transaction_selfactivating,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -671,8 +635,12 @@ impl DemoCsdTransaction {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
 
             kind: self.kind,
@@ -681,7 +649,10 @@ impl DemoCsdTransaction {
             multiple: self.multiple,
 
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -759,15 +730,32 @@ impl DemoCsdLink {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
             uuid: Arc::new(new_uuid),
             link_type: self.link_type,
             multiplicity: self.multiplicity.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, m: &HashMap<ModelUuid, DemoCsdElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(DemoCsdElement::Transactor(ta)) = m.get(&source_uuid) {
+            self.source = ta.clone();
+        }
+        let target_uuid = *self.target.read().uuid();
+        if let Some(DemoCsdElement::Transaction(tx)) = m.get(&target_uuid) {
+            self.target = tx.clone();
+        }
     }
 }
 
@@ -809,11 +797,18 @@ impl DemoCsdNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 

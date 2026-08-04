@@ -2804,9 +2804,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         let model = if let Some(UmlActivityElement::Activity(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -2820,14 +2818,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         }
     }
 
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlActivityElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()).and_then(|e| e.as_standalone()) {
-                *e = new_model;
-            }
-        }
-    }
+    fn deep_copy_finish(&mut self, _m: &HashMap<ModelUuid, UmlActivityElement>) {}
 }
 
 pub fn new_umlactivity_interruptibleregion(
@@ -3028,9 +3019,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -3041,14 +3030,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         }
     }
 
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlActivityElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()).and_then(|e| e.as_standalone()) {
-                *e = new_model;
-            }
-        }
-    }
+    fn deep_copy_finish(&mut self, _m: &HashMap<ModelUuid, UmlActivityElement>) {}
 }
 
 pub fn new_umlactivity_partition(
@@ -3863,9 +3845,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         let model = if let Some(UmlActivityElement::Partition(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let mut inner = HashMap::new();
@@ -3902,14 +3882,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         self.section_views
             .iter_mut()
             .for_each(|v| v.write().deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.sections.iter_mut() {
-            let uuid = *e.read().uuid;
-            if let Some(UmlActivityElement::PartitionSection(new_model)) = m.get(&uuid) {
-                *e = new_model.clone();
-            }
-        }
     }
 }
 
@@ -4802,9 +4774,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         let model = if let Some(UmlActivityElement::PartitionSection(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let mut inner = HashMap::new();
@@ -4831,14 +4801,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
     ) {
         self.contained_elements
             .event_order_foreach_mut(|v| v.deep_copy_relink(c, m));
-
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            let uuid = *e.uuid();
-            if let Some(new_model) = m.get(&uuid).and_then(|e| e.as_standalone()) {
-                *e = new_model;
-            }
-        }
     }
 }
 
@@ -5541,9 +5503,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         let modelish = if let Some(UmlActivityElement::ActionNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -5908,9 +5868,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
         let modelish = if let Some(UmlActivityElement::InitialNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -6316,9 +6274,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
         let modelish = if let Some(UmlActivityElement::FinalNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -6740,9 +6696,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
         let modelish = if let Some(UmlActivityElement::DecisionNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -7152,9 +7106,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
         let modelish = if let Some(UmlActivityElement::ForkNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -7636,9 +7588,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         let modelish = if let Some(UmlActivityElement::ObjectNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -7911,9 +7861,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
         let model = if let Some(UmlActivityElement::Edge(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -7923,16 +7871,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlActivityElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.uuid();
-        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_nonfinal()) {
-            model.source = new_source;
-        }
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_noninitial()) {
-            model.target = new_target;
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -8547,9 +8486,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
         let modelish = if let Some(UmlActivityElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -8719,9 +8656,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityNoteLinkAdapter {
         let model = if let Some(UmlActivityElement::NoteLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -8731,15 +8666,6 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityNoteLinkAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, UmlActivityElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.read().uuid();
-        if let Some(UmlActivityElement::Note(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone();
-        }
-        let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid) {
-            model.target = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }

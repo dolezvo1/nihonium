@@ -1830,9 +1830,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         let model = if let Some(DemoCsdElement::Package(m)) = m.get(&model_uuid) {
             m.clone()
         } else {
-            let model = self.model.read().clone_with(new_uuid);
-            m.insert(model_uuid, model.clone().into());
-            model
+            self.model.read().deep_copy_clone_inner(new_uuid, m)
         };
         Self {
             model,
@@ -1841,14 +1839,10 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
             comment_buffer: self.comment_buffer.clone(),
         }
     }
-
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoCsdElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()) {
-                *e = new_model.clone();
-            }
-        }
+    fn deep_copy_finish(
+        &mut self,
+        _m: &HashMap<ModelUuid, <DemoCsdDomain as Domain>::CommonElementT>,
+    ) {
     }
 }
 
@@ -2899,9 +2893,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         let modelish = if let Some(DemoCsdElement::Transactor(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -3525,9 +3517,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         let modelish = if let Some(DemoCsdElement::Transaction(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -3781,9 +3771,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         let model = if let Some(DemoCsdElement::Link(m)) = m.get(&model.uuid) {
             m.clone()
         } else {
-            let modelish = model.clone_with(new_uuid);
-            m.insert(*model.uuid, modelish.clone().into());
-            modelish
+            model.deep_copy_clone_inner(new_uuid, m)
         };
         Self {
             model,
@@ -3792,17 +3780,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoCsdElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.read().uuid();
-        if let Some(DemoCsdElement::Transactor(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone();
-        }
-
-        let target_uuid = *model.target.read().uuid();
-        if let Some(DemoCsdElement::Transaction(new_target)) = m.get(&target_uuid) {
-            model.target = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -4326,9 +4304,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
         let modelish = if let Some(DemoCsdElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {

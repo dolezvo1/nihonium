@@ -16,186 +16,13 @@ pub fn deep_copy_diagram(
     ERef<UmlActivityDiagram>,
     HashMap<ModelUuid, UmlActivityElement>,
 ) {
-    fn walk(
-        e: &UmlActivityElement,
-        into: &mut HashMap<ModelUuid, UmlActivityElement>,
-    ) -> UmlActivityElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            UmlActivityElement::Activity(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlActivity {
-                    uuid: new_uuid,
-                    stereotype: model.stereotype.clone(),
-                    name: model.name.clone(),
-                    parameters: model.stereotype.clone(),
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            match new_model.as_standalone() {
-                                Some(new_model) => new_model,
-                                None => unreachable!(),
-                            }
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlActivityElement::InterruptibleRegion(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlActivityInterruptibleRegion {
-                    uuid: new_uuid,
-                    stereotype: model.stereotype.clone(),
-                    name: model.name.clone(),
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            match new_model.as_standalone() {
-                                Some(new_model) => new_model,
-                                None => unreachable!(),
-                            }
-                        })
-                        .collect(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlActivityElement::Partition(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlActivityPartition {
-                    uuid: new_uuid,
-                    sections: model
-                        .sections
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().into(), into);
-                            if let UmlActivityElement::PartitionSection(new_model) = new_model {
-                                into.insert(*e.read().uuid(), new_model.clone().into());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlActivityElement::PartitionSection(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlActivityPartitionSection {
-                    uuid: new_uuid,
-                    stereotype: model.stereotype.clone(),
-                    name: model.name.clone(),
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            match new_model.as_standalone() {
-                                Some(new_model) => new_model,
-                                None => unreachable!(),
-                            }
-                        })
-                        .collect(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlActivityElement::ActionNode(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::InitialNode(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::FinalNode(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::DecisionNode(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::ForkNode(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::ObjectNode(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::Edge(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlActivityElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(e: &mut UmlActivityElement, all_models: &HashMap<ModelUuid, UmlActivityElement>) {
-        match e {
-            UmlActivityElement::Activity(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-            }
-            UmlActivityElement::InterruptibleRegion(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-            }
-            UmlActivityElement::Partition(inner) => {
-                let mut model = inner.write();
-                for e in model.sections.iter_mut() {
-                    relink(&mut e.clone().into(), all_models);
-                }
-            }
-            UmlActivityElement::PartitionSection(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-            }
-            UmlActivityElement::ActionNode(..)
-            | UmlActivityElement::InitialNode(..)
-            | UmlActivityElement::FinalNode(..)
-            | UmlActivityElement::DecisionNode(..)
-            | UmlActivityElement::ForkNode(..)
-            | UmlActivityElement::ObjectNode(..)
-            | UmlActivityElement::Note(..) => {}
-            UmlActivityElement::Edge(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.uuid();
-                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_nonfinal()) {
-                    model.source = s;
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_noninitial()) {
-                    model.target = t;
-                }
-            }
-            UmlActivityElement::NoteLink(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(UmlActivityElement::Note(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
-                }
-            }
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e.clone().to_element(), &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        let new_model = match new_model.as_standalone() {
-            Some(new_model) => new_model,
-            None => unreachable!(),
-        };
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(&mut e.clone().to_element(), &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = UmlActivityDiagram {
@@ -404,19 +231,63 @@ pub enum UmlActivityElement {
 impl UmlActivityElement {
     pub fn as_standalone(&self) -> Option<UmlActivityStandaloneElement> {
         match &self {
-            UmlActivityElement::Activity(inner) => Some(inner.clone().into()),
-            UmlActivityElement::InterruptibleRegion(inner) => Some(inner.clone().into()),
-            UmlActivityElement::Partition(inner) => Some(inner.clone().into()),
-            UmlActivityElement::PartitionSection(_) => None,
-            UmlActivityElement::ActionNode(inner) => Some(inner.clone().into()),
-            UmlActivityElement::InitialNode(inner) => Some(inner.clone().into()),
-            UmlActivityElement::FinalNode(inner) => Some(inner.clone().into()),
-            UmlActivityElement::DecisionNode(inner) => Some(inner.clone().into()),
-            UmlActivityElement::ForkNode(inner) => Some(inner.clone().into()),
-            UmlActivityElement::ObjectNode(inner) => Some(inner.clone().into()),
-            UmlActivityElement::Edge(inner) => Some(inner.clone().into()),
-            UmlActivityElement::Note(inner) => Some(inner.clone().into()),
-            UmlActivityElement::NoteLink(inner) => Some(inner.clone().into()),
+            Self::Activity(inner) => Some(inner.clone().into()),
+            Self::InterruptibleRegion(inner) => Some(inner.clone().into()),
+            Self::Partition(inner) => Some(inner.clone().into()),
+            Self::PartitionSection(_) => None,
+            Self::ActionNode(inner) => Some(inner.clone().into()),
+            Self::InitialNode(inner) => Some(inner.clone().into()),
+            Self::FinalNode(inner) => Some(inner.clone().into()),
+            Self::DecisionNode(inner) => Some(inner.clone().into()),
+            Self::ForkNode(inner) => Some(inner.clone().into()),
+            Self::ObjectNode(inner) => Some(inner.clone().into()),
+            Self::Edge(inner) => Some(inner.clone().into()),
+            Self::Note(inner) => Some(inner.clone().into()),
+            Self::NoteLink(inner) => Some(inner.clone().into()),
+        }
+    }
+
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> Self {
+        match self {
+            Self::Activity(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::InterruptibleRegion(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Partition(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::PartitionSection(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::ActionNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::InitialNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::FinalNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::DecisionNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::ForkNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::ObjectNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Edge(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+
+    pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, UmlActivityElement>) {
+        match self {
+            Self::Activity(..)
+            | Self::InterruptibleRegion(..)
+            | Self::Partition(..)
+            | Self::PartitionSection(..) => {}
+            Self::ActionNode(..)
+            | Self::InitialNode(..)
+            | Self::FinalNode(..)
+            | Self::DecisionNode(..)
+            | Self::ForkNode(..)
+            | Self::ObjectNode(..)
+            | Self::Note(..) => {}
+            Self::Edge(inner) => inner.write().deep_copy_relink(all_models),
+            Self::NoteLink(inner) => inner.write().deep_copy_relink(all_models),
         }
     }
 }
@@ -454,18 +325,41 @@ pub enum UmlActivityStandaloneElement {
 impl UmlActivityStandaloneElement {
     pub fn to_element(self) -> UmlActivityElement {
         match self {
-            UmlActivityStandaloneElement::Activity(inner) => inner.into(),
-            UmlActivityStandaloneElement::InterruptibleRegion(inner) => inner.into(),
-            UmlActivityStandaloneElement::Partition(inner) => inner.into(),
-            UmlActivityStandaloneElement::ActionNode(inner) => inner.into(),
-            UmlActivityStandaloneElement::InitialNode(inner) => inner.into(),
-            UmlActivityStandaloneElement::FinalNode(inner) => inner.into(),
-            UmlActivityStandaloneElement::DecisionNode(inner) => inner.into(),
-            UmlActivityStandaloneElement::ForkNode(inner) => inner.into(),
-            UmlActivityStandaloneElement::ObjectNode(inner) => inner.into(),
-            UmlActivityStandaloneElement::Edge(inner) => inner.into(),
-            UmlActivityStandaloneElement::Note(inner) => inner.into(),
-            UmlActivityStandaloneElement::NoteLink(inner) => inner.into(),
+            Self::Activity(inner) => inner.into(),
+            Self::InterruptibleRegion(inner) => inner.into(),
+            Self::Partition(inner) => inner.into(),
+            Self::ActionNode(inner) => inner.into(),
+            Self::InitialNode(inner) => inner.into(),
+            Self::FinalNode(inner) => inner.into(),
+            Self::DecisionNode(inner) => inner.into(),
+            Self::ForkNode(inner) => inner.into(),
+            Self::ObjectNode(inner) => inner.into(),
+            Self::Edge(inner) => inner.into(),
+            Self::Note(inner) => inner.into(),
+            Self::NoteLink(inner) => inner.into(),
+        }
+    }
+
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> Self {
+        match self {
+            Self::Activity(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::InterruptibleRegion(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Partition(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::ActionNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::InitialNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::FinalNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::DecisionNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::ForkNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::ObjectNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Edge(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
         }
     }
 }
@@ -842,15 +736,26 @@ impl UmlActivity {
             comment: "".to_owned().into(),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlActivity {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
-            parameters: self.parameters.clone(),
-            contained_elements: self.contained_elements.clone(),
+            parameters: self.stereotype.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model.into()
     }
 }
 
@@ -964,13 +869,24 @@ impl UmlActivityInterruptibleRegion {
             contained_elements,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlActivityInterruptibleRegion {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
-            contained_elements: self.contained_elements.clone(),
-        })
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1072,11 +988,22 @@ impl UmlActivityPartition {
             sections: contained_elements,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
-            sections: self.sections.clone(),
-        })
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlActivityPartition {
+            uuid: new_uuid.into(),
+            sections: self
+                .sections
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 
     pub fn move_element(
@@ -1199,13 +1126,24 @@ impl UmlActivityPartitionSection {
             contained_elements,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlActivityPartitionSection {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
-            contained_elements: self.contained_elements.clone(),
-        })
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model.into()
     }
 }
 
@@ -1346,13 +1284,20 @@ impl UmlActivityActionNode {
             kind,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
             kind: self.kind,
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1383,10 +1328,17 @@ impl UmlActivityInitialNode {
             uuid: Arc::new(uuid),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
-        })
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1438,11 +1390,18 @@ impl UmlActivityFinalNode {
             kind,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             kind: self.kind,
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1475,11 +1434,18 @@ impl UmlActivityDecisionNode {
             name: Arc::new(name),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1510,10 +1476,17 @@ impl UmlActivityForkNode {
             uuid: Arc::new(uuid),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
-        })
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1548,12 +1521,19 @@ impl UmlActivityObjectNode {
             name: Arc::new(name),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: Arc::new(new_uuid),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1622,14 +1602,31 @@ impl UmlActivityFlowEdge {
             target,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
             source: self.source.clone(),
             target: self.target.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlActivityElement>) {
+        let source_uuid = *self.source.uuid();
+        if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_nonfinal()) {
+            self.source = s;
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_noninitial()) {
+            self.target = t;
+        }
     }
 }
 
@@ -1664,12 +1661,19 @@ impl UmlActivityNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1708,12 +1712,29 @@ impl UmlActivityNoteLink {
             target,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             source: self.source.clone(),
             target: self.target.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlActivityElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(UmlActivityElement::Note(s)) = all_models.get(&source_uuid) {
+            self.source = s.clone();
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid) {
+            self.target = t.clone();
+        }
     }
 }
 

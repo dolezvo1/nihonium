@@ -83,6 +83,43 @@ impl UmlSequenceElement {
             | UmlSequenceElement::NoteLink(..) => None,
         }
     }
+
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> Self {
+        match self {
+            Self::Diagram(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::CombinedFragment(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::CombinedFragmentSection(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Lifeline(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Message(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Ref(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::DurationConstraint(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+    pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, UmlSequenceElement>) {
+        match self {
+            Self::Diagram(..)
+            | Self::CombinedFragment(..)
+            | Self::CombinedFragmentSection(..)
+            | Self::Lifeline(..) => {}
+            Self::Message(inner) => inner.write().deep_copy_relink(all_models),
+            Self::Ref(..) => {}
+            Self::DurationConstraint(inner) => inner.write().deep_copy_relink(all_models),
+            Self::Note(..) => {}
+            Self::NoteLink(inner) => inner.write().deep_copy_relink(all_models),
+        }
+    }
 }
 
 impl VisitableElement for UmlSequenceElement {
@@ -129,200 +166,13 @@ pub fn deep_copy_diagram(
     ERef<UmlSequenceDiagramBoard>,
     HashMap<ModelUuid, UmlSequenceElement>,
 ) {
-    fn walk(
-        e: &UmlSequenceElement,
-        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
-    ) -> UmlSequenceElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            UmlSequenceElement::Diagram(inner) => {
-                let model = inner.read();
-                let new_model = UmlSequenceDiagram {
-                    uuid: new_uuid,
-                    name: model.name.clone(),
-                    vertical_elements: model
-                        .vertical_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().into(), into);
-                            if let UmlSequenceElement::Lifeline(new_model) = new_model {
-                                into.insert(*e.read().uuid(), new_model.clone().into());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                    horizontal_elements: model
-                        .horizontal_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            if let Some(new_model) = new_model.as_horizontal() {
-                                into.insert(*e.uuid(), new_model.clone().to_element());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                    standalone_elements: model
-                        .standalone_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            if let Some(new_model) = new_model.as_nondiagram_standalone() {
-                                into.insert(*e.uuid(), new_model.clone().to_element());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                UmlSequenceElement::Diagram(ERef::new(new_model))
-            }
-            UmlSequenceElement::CombinedFragment(inner) => {
-                let model = inner.read();
-                let new_model = UmlSequenceCombinedFragment {
-                    uuid: new_uuid,
-                    kind: model.kind,
-                    kind_argument: model.kind_argument.clone(),
-                    end_behaviour: model.end_behaviour,
-                    horizontal_span: model.horizontal_span.clone(),
-                    sections: model
-                        .sections
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().into(), into);
-                            if let UmlSequenceElement::CombinedFragmentSection(new_model) =
-                                new_model
-                            {
-                                into.insert(*e.read().uuid(), new_model.clone().into());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                UmlSequenceElement::CombinedFragment(ERef::new(new_model))
-            }
-            UmlSequenceElement::CombinedFragmentSection(inner) => {
-                let model = inner.read();
-                let new_model = UmlSequenceCombinedFragmentSection {
-                    uuid: new_uuid,
-                    guard: model.guard.clone(),
-                    horizontal_elements: model
-                        .horizontal_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            if let Some(new_model) = new_model.as_horizontal() {
-                                into.insert(*e.uuid(), new_model.clone().to_element());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                };
-                UmlSequenceElement::CombinedFragmentSection(ERef::new(new_model))
-            }
-            UmlSequenceElement::Lifeline(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlSequenceElement::Message(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlSequenceElement::Ref(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlSequenceElement::DurationConstraint(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            }
-            UmlSequenceElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlSequenceElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(e: &mut UmlSequenceElement, all_models: &HashMap<ModelUuid, UmlSequenceElement>) {
-        match e {
-            UmlSequenceElement::Diagram(inner) => {
-                let mut model = inner.write();
-                for e in model.vertical_elements.iter_mut() {
-                    relink(&mut e.clone().into(), all_models);
-                }
-                for e in model.horizontal_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-                for e in model.standalone_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-            }
-            UmlSequenceElement::CombinedFragment(inner) => {
-                let mut model = inner.write();
-                for e in model.sections.iter_mut() {
-                    relink(&mut e.clone().into(), all_models);
-                }
-            }
-            UmlSequenceElement::CombinedFragmentSection(inner) => {
-                let mut model = inner.write();
-                for e in model.horizontal_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-            }
-            UmlSequenceElement::Lifeline(..) => {}
-            UmlSequenceElement::Message(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(UmlSequenceElement::Lifeline(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
-                }
-                let target_uuid = *model.target.read().uuid();
-                if let Some(UmlSequenceElement::Lifeline(t)) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
-                }
-            }
-            UmlSequenceElement::Ref(..) => {}
-            UmlSequenceElement::DurationConstraint(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.element.uuid();
-                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_horizontal()) {
-                    model.source.element = s;
-                }
-                let target_uuid = *model.target.element.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_horizontal()) {
-                    model.target.element = t;
-                }
-            }
-            UmlSequenceElement::Note(..) => {}
-            UmlSequenceElement::NoteLink(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(UmlSequenceElement::Note(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
-                }
-            }
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_elements = Vec::new();
     for e in &d.elements {
-        let new_model = walk(&e.clone().to_element(), &mut all_models);
-        if let Some(new_model) = new_model.as_standalone() {
-            all_models.insert(*e.uuid(), new_model.clone().to_element());
-            new_elements.push(new_model);
-        } else {
-            new_elements.push(e.clone());
-        }
+        new_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_elements.iter_mut() {
-        relink(&mut e.clone().to_element(), &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = UmlSequenceDiagramBoard {
@@ -529,16 +379,30 @@ pub const NONDIAGRAM_STANDALONE_BUCKET: BucketNoT = 3;
 pub enum UmlSequenceStandaloneElement {
     #[container_model(passthrough = "eref")]
     Diagram(ERef<UmlSequenceDiagram>),
-    Note(ERef<UmlSequenceNote>),
     DurationConstraint(ERef<UmlSequenceDurationConstraint>),
+    Note(ERef<UmlSequenceNote>),
 }
 
 impl UmlSequenceStandaloneElement {
     pub fn to_element(self) -> UmlSequenceElement {
         match self {
             UmlSequenceStandaloneElement::Diagram(inner) => inner.into(),
-            UmlSequenceStandaloneElement::Note(inner) => inner.into(),
             UmlSequenceStandaloneElement::DurationConstraint(inner) => inner.into(),
+            UmlSequenceStandaloneElement::Note(inner) => inner.into(),
+        }
+    }
+
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> Self {
+        match self {
+            Self::Diagram(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::DurationConstraint(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
         }
     }
 }
@@ -567,6 +431,19 @@ impl UmlSequenceNonDiagramStandaloneElement {
             UmlSequenceNonDiagramStandaloneElement::DurationConstraint(inner) => inner.into(),
         }
     }
+
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> Self {
+        match self {
+            Self::DurationConstraint(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
 }
 
 #[derive(
@@ -592,6 +469,19 @@ impl UmlSequenceHorizontalElement {
             UmlSequenceHorizontalElement::CombinedFragment(inner) => inner.into(),
             UmlSequenceHorizontalElement::Message(inner) => inner.into(),
             UmlSequenceHorizontalElement::Ref(inner) => inner.into(),
+        }
+    }
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> Self {
+        match self {
+            Self::CombinedFragment(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Message(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Ref(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
         }
     }
 }
@@ -890,15 +780,34 @@ impl UmlSequenceDiagram {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlSequenceDiagram {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
-            vertical_elements: self.vertical_elements.clone(),
-            horizontal_elements: self.horizontal_elements.clone(),
-            standalone_elements: self.standalone_elements.clone(),
+            vertical_elements: self
+                .vertical_elements
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
+            horizontal_elements: self
+                .horizontal_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
+            standalone_elements: self
+                .standalone_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
     pub fn move_element(
         &mut self,
@@ -1086,13 +995,20 @@ impl UmlSequenceLifeline {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1206,9 +1122,13 @@ impl UmlSequenceMessage {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             state_invariant: self.state_invariant.clone(),
             synchronicity: self.synchronicity,
@@ -1218,7 +1138,20 @@ impl UmlSequenceMessage {
             source: self.source.clone(),
             target: self.target.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlSequenceElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(UmlSequenceElement::Lifeline(s)) = all_models.get(&source_uuid) {
+            self.source = s.clone();
+        }
+        let target_uuid = *self.target.read().uuid();
+        if let Some(UmlSequenceElement::Lifeline(t)) = all_models.get(&target_uuid) {
+            self.target = t.clone();
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.source, &mut self.target);
@@ -1357,16 +1290,27 @@ impl UmlSequenceCombinedFragment {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlSequenceCombinedFragment {
+            uuid: new_uuid.into(),
             kind: self.kind,
             kind_argument: self.kind_argument.clone(),
             end_behaviour: self.end_behaviour,
             horizontal_span: self.horizontal_span.clone(),
-            sections: self.sections.clone(),
+            sections: self
+                .sections
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
     pub fn move_element(
         &mut self,
@@ -1490,12 +1434,23 @@ impl UmlSequenceCombinedFragmentSection {
             horizontal_elements,
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlSequenceCombinedFragmentSection {
+            uuid: new_uuid.into(),
             guard: self.guard.clone(),
-            horizontal_elements: self.horizontal_elements.clone(),
-        })
+            horizontal_elements: self
+                .horizontal_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
     pub fn move_element(
         &mut self,
@@ -1611,12 +1566,19 @@ impl UmlSequenceRef {
             horizontal_span,
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             text: self.text.clone(),
             horizontal_span: self.horizontal_span.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1680,14 +1642,31 @@ impl UmlSequenceDurationConstraint {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             text: self.text.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlSequenceElement>) {
+        let source_uuid = *self.source.element.uuid();
+        if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_horizontal()) {
+            self.source.element = s;
+        }
+        let target_uuid = *self.target.element.uuid();
+        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_horizontal()) {
+            self.target.element = t;
+        }
     }
 }
 
@@ -1720,11 +1699,18 @@ impl UmlSequenceNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1763,12 +1749,29 @@ impl UmlSequenceNoteLink {
             target,
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             source: self.source.clone(),
             target: self.target.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlSequenceElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(UmlSequenceElement::Note(s)) = all_models.get(&source_uuid) {
+            self.source = s.clone();
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid) {
+            self.target = t.clone();
+        }
     }
 }
 

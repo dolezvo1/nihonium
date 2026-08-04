@@ -65,6 +65,25 @@ impl RdfElement {
         }
     }
 
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, RdfElement>,
+    ) -> Self {
+        match self {
+            Self::RdfGraph(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::RdfLiteral(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::RdfNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::RdfPredicate(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+    pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, RdfElement>) {
+        match self {
+            Self::RdfGraph(_) | Self::RdfLiteral(_) | Self::RdfNode(_) => {}
+            Self::RdfPredicate(inner) => inner.write().deep_copy_relink(all_models),
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn accept_collector(&self, collector: &mut RdfCollector<'static>) {
         match self {
@@ -125,101 +144,13 @@ impl VisitableElement for RdfElement {
 }
 
 pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid, RdfElement>) {
-    fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) -> RdfElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            RdfElement::RdfGraph(inner) => {
-                let model = inner.read();
-
-                let new_model = RdfGraph {
-                    uuid: new_uuid,
-                    iri: model.iri.clone(),
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(e, into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            new_model
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                RdfElement::RdfGraph(ERef::new(new_model))
-            }
-            RdfElement::RdfLiteral(inner) => {
-                let model = inner.read();
-
-                let new_model = RdfLiteral {
-                    uuid: new_uuid,
-                    content: model.content.clone(),
-                    datatype: model.datatype.clone(),
-                    langtag: model.langtag.clone(),
-                    comment: model.comment.clone(),
-                };
-                RdfElement::RdfLiteral(ERef::new(new_model))
-            }
-            RdfElement::RdfNode(inner) => {
-                let model = inner.read();
-
-                let new_model = RdfNode {
-                    uuid: new_uuid,
-                    iri: model.iri.clone(),
-                    comment: model.comment.clone(),
-                };
-                RdfElement::RdfNode(ERef::new(new_model))
-            }
-            RdfElement::RdfPredicate(inner) => {
-                let model = inner.read();
-
-                let new_model = RdfPredicate {
-                    uuid: new_uuid,
-                    iri: model.iri.clone(),
-                    source: model.source.clone(),
-                    target: model.target.clone(),
-                    comment: model.comment.clone(),
-                };
-                RdfElement::RdfPredicate(ERef::new(new_model))
-            }
-        }
-    }
-
-    fn relink(e: &mut RdfElement, all_models: &HashMap<ModelUuid, RdfElement>) {
-        match e {
-            RdfElement::RdfGraph(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
-                }
-            }
-            RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {}
-            RdfElement::RdfPredicate(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(RdfElement::RdfNode(n)) = all_models.get(&source_uuid) {
-                    model.source = n.clone();
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models
-                    .get(&target_uuid)
-                    .and_then(|e| e.as_targettable_element())
-                {
-                    model.target = t;
-                }
-            }
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(e, &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = RdfDiagram {
@@ -543,13 +474,24 @@ impl RdfGraph {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, RdfElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(RdfGraph {
+            uuid: new_uuid.into(),
             iri: self.iri.clone(),
-            contained_elements: self.contained_elements.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -651,14 +593,21 @@ impl RdfLiteral {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, RdfElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             content: self.content.clone(),
             datatype: self.datatype.clone(),
             langtag: self.langtag.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -716,12 +665,19 @@ impl RdfNode {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, RdfElement>,
+    ) -> ERef<Self> {
+        let new_uuid = ERef::new(Self {
+            uuid: new_uuid.into(),
             iri: self.iri.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_uuid.clone().into());
+        new_uuid
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -775,14 +731,34 @@ impl RdfPredicate {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, RdfElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             iri: self.iri.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, RdfElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(RdfElement::RdfNode(n)) = all_models.get(&source_uuid) {
+            self.source = n.clone();
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models
+            .get(&target_uuid)
+            .and_then(|e| e.as_targettable_element())
+        {
+            self.target = t;
+        }
     }
 }
 

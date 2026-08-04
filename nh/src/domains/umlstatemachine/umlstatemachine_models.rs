@@ -16,212 +16,13 @@ pub fn deep_copy_diagram(
     ERef<UmlStateMachineDiagram>,
     HashMap<ModelUuid, UmlStateMachineElement>,
 ) {
-    fn walk(
-        e: &UmlStateMachineElement,
-        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
-    ) -> UmlStateMachineElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            UmlStateMachineElement::StateMachine(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlStateMachine {
-                    uuid: new_uuid,
-                    stereotype: model.stereotype.clone(),
-                    name: model.name.clone(),
-                    is_protocol: model.is_protocol,
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            match new_model.as_standalone() {
-                                Some(new_model) => new_model,
-                                None => unreachable!(),
-                            }
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlStateMachineElement::CompositeState(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlStateMachineCompositeState {
-                    uuid: new_uuid,
-                    stereotype: model.stereotype.clone(),
-                    name: model.name.clone(),
-                    internal_transitions: model
-                        .internal_transitions
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().into(), into);
-                            if let UmlStateMachineElement::InternalTransition(new_model) = new_model
-                            {
-                                into.insert(*e.read().uuid(), new_model.clone().into());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                    regions: model
-                        .regions
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().into(), into);
-                            if let UmlStateMachineElement::CompositeStateRegion(new_model) =
-                                new_model
-                            {
-                                into.insert(*e.read().uuid(), new_model.clone().into());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlStateMachineElement::CompositeStateRegion(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlStateMachineCompositeStateRegion {
-                    uuid: new_uuid,
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().to_element(), into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            match new_model.as_standalone() {
-                                Some(new_model) => new_model,
-                                None => unreachable!(),
-                            }
-                        })
-                        .collect(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlStateMachineElement::SimpleState(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlStateMachineSimpleState {
-                    uuid: new_uuid,
-                    stereotype: model.stereotype.clone(),
-                    name: model.name.clone(),
-                    internal_transitions: model
-                        .internal_transitions
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(&e.clone().into(), into);
-                            if let UmlStateMachineElement::InternalTransition(new_model) = new_model
-                            {
-                                into.insert(*e.read().uuid(), new_model.clone().into());
-                                new_model
-                            } else {
-                                e.clone()
-                            }
-                        })
-                        .collect(),
-                };
-                ERef::new(new_model).into()
-            }
-            UmlStateMachineElement::InternalTransition(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            }
-            UmlStateMachineElement::InitialPseudostate(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            }
-            UmlStateMachineElement::TerminatePseudostate(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            }
-            UmlStateMachineElement::FinalState(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlStateMachineElement::Edge(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlStateMachineElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlStateMachineElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(
-        e: &mut UmlStateMachineElement,
-        all_models: &HashMap<ModelUuid, UmlStateMachineElement>,
-    ) {
-        match e {
-            UmlStateMachineElement::StateMachine(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-            }
-            UmlStateMachineElement::CompositeState(inner) => {
-                let mut model = inner.write();
-                for e in model.internal_transitions.iter_mut() {
-                    relink(&mut e.clone().into(), all_models);
-                }
-                for e in model.regions.iter_mut() {
-                    relink(&mut e.clone().into(), all_models);
-                }
-            }
-            UmlStateMachineElement::CompositeStateRegion(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(&mut e.clone().to_element(), all_models);
-                }
-            }
-            UmlStateMachineElement::SimpleState(inner) => {
-                let mut model = inner.write();
-                for e in model.internal_transitions.iter_mut() {
-                    relink(&mut e.clone().into(), all_models);
-                }
-            }
-            UmlStateMachineElement::InternalTransition(..)
-            | UmlStateMachineElement::InitialPseudostate(..)
-            | UmlStateMachineElement::TerminatePseudostate(..)
-            | UmlStateMachineElement::FinalState(..)
-            | UmlStateMachineElement::Note(..) => {}
-            UmlStateMachineElement::Edge(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.uuid();
-                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_nonfinal()) {
-                    model.source = s;
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_noninitial()) {
-                    model.target = t;
-                }
-            }
-            UmlStateMachineElement::NoteLink(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(UmlStateMachineElement::Note(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
-                }
-            }
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e.clone().to_element(), &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        let new_model = match new_model.as_standalone() {
-            Some(new_model) => new_model,
-            None => unreachable!(),
-        };
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(&mut e.clone().to_element(), &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = UmlStateMachineDiagram {
@@ -452,6 +253,51 @@ impl UmlStateMachineElement {
             UmlStateMachineElement::NoteLink(inner) => Some(inner.clone().into()),
         }
     }
+
+    fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> Self {
+        match self {
+            Self::StateMachine(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::CompositeState(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::CompositeStateRegion(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::SimpleState(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::InternalTransition(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::InitialPseudostate(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::TerminatePseudostate(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::FinalState(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Edge(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+    fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, UmlStateMachineElement>) {
+        match self {
+            UmlStateMachineElement::StateMachine(_)
+            | UmlStateMachineElement::CompositeState(_)
+            | UmlStateMachineElement::CompositeStateRegion(_)
+            | UmlStateMachineElement::SimpleState(_) => {}
+            UmlStateMachineElement::InternalTransition(..)
+            | UmlStateMachineElement::InitialPseudostate(..)
+            | UmlStateMachineElement::TerminatePseudostate(..)
+            | UmlStateMachineElement::FinalState(..)
+            | UmlStateMachineElement::Note(..) => {}
+            UmlStateMachineElement::Edge(inner) => inner.write().deep_copy_relink(all_models),
+            UmlStateMachineElement::NoteLink(inner) => inner.write().deep_copy_relink(all_models),
+        }
+    }
 }
 
 #[derive(
@@ -492,6 +338,30 @@ impl UmlStateMachineStandaloneElement {
             UmlStateMachineStandaloneElement::Edge(inner) => inner.into(),
             UmlStateMachineStandaloneElement::Note(inner) => inner.into(),
             UmlStateMachineStandaloneElement::NoteLink(inner) => inner.into(),
+        }
+    }
+
+    fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> Self {
+        match self {
+            Self::StateMachine(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::CompositeState(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::SimpleState(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::InitialPseudostate(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::TerminatePseudostate(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::FinalState(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Edge(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
         }
     }
 }
@@ -872,15 +742,26 @@ impl UmlStateMachine {
             comment: "".to_owned().into(),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlStateMachine {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
             is_protocol: self.is_protocol,
-            contained_elements: self.contained_elements.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1000,14 +881,29 @@ impl UmlStateMachineCompositeState {
             regions,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlStateMachineCompositeState {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
-            internal_transitions: self.internal_transitions.clone(),
-            regions: self.regions.clone(),
-        })
+            internal_transitions: self
+                .internal_transitions
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
+            regions: self
+                .regions
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 
     pub fn move_element(
@@ -1165,11 +1061,22 @@ impl UmlStateMachineCompositeStateRegion {
             contained_elements,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
-            contained_elements: self.contained_elements.clone(),
-        })
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlStateMachineCompositeStateRegion {
+            uuid: new_uuid.into(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1274,13 +1181,24 @@ impl UmlStateMachineSimpleState {
             internal_transitions,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlStateMachineSimpleState {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
-            internal_transitions: self.internal_transitions.clone(),
-        })
+            internal_transitions: self
+                .internal_transitions
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1389,13 +1307,20 @@ impl UmlStateMachineInternalTransition {
             behavior: Arc::new(behavior),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             trigger: self.trigger.clone(),
             guard: self.guard.clone(),
             behavior: self.behavior.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1426,10 +1351,17 @@ impl UmlStateMachineInitialPseudostate {
             uuid: Arc::new(uuid),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
-        })
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1460,10 +1392,17 @@ impl UmlStateMachineTerminatePseudostate {
             uuid: Arc::new(uuid),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
-        })
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1494,10 +1433,17 @@ impl UmlStateMachineFinalState {
             uuid: Arc::new(uuid),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
-        })
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1544,13 +1490,30 @@ impl UmlStateMachineEdge {
             target,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlStateMachineElement>) {
+        let source_uuid = *self.source.uuid();
+        if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_nonfinal()) {
+            self.source = s;
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_noninitial()) {
+            self.target = t;
+        }
     }
 }
 
@@ -1585,12 +1548,19 @@ impl UmlStateMachineNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1633,12 +1603,29 @@ impl UmlStateMachineNoteLink {
             target,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: Arc::new(new_uuid),
             source: self.source.clone(),
             target: self.target.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlStateMachineElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(UmlStateMachineElement::Note(s)) = all_models.get(&source_uuid) {
+            self.source = s.clone();
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid) {
+            self.target = t.clone();
+        }
     }
 }
 

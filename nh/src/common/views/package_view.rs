@@ -975,13 +975,14 @@ where
             (*self.uuid, *self.model_uuid())
         };
 
+        let new_adapter = self.adapter.deep_copy_init(model_uuid, m);
         let mut inner = HashMap::new();
         self.owned_views
             .event_order_foreach(|v| v.deep_copy_clone(uuid_present, &mut inner, c, m));
 
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
-            adapter: self.adapter.deep_copy_init(model_uuid, m),
+            adapter: new_adapter,
             owned_views: OrderedViews::new(inner.into_values().collect()),
             all_elements: HashMap::new(),
             selected_direct_elements: self.selected_direct_elements.clone(),

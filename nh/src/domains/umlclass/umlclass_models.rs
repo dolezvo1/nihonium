@@ -91,6 +91,49 @@ impl UmlClassElement {
         }
     }
 
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> Self {
+        match self {
+            Self::Package(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Instance(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Class(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Property(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Operation(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::UseCase(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Generalization(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Dependency(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Association(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::UseCaseGeneralization(inner) => {
+                inner.read().deep_copy_clone_inner(new_uuid, into).into()
+            }
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+    pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, UmlClassElement>) {
+        match self {
+            UmlClassElement::Package(..)
+            | UmlClassElement::Instance(..)
+            | UmlClassElement::Class(..)
+            | UmlClassElement::Property(..)
+            | UmlClassElement::Operation(..)
+            | UmlClassElement::UseCase(..) => {}
+            UmlClassElement::Generalization(inner) => inner.write().deep_copy_relink(all_models),
+            UmlClassElement::Dependency(inner) => inner.write().deep_copy_relink(all_models),
+            UmlClassElement::Association(inner) => inner.write().deep_copy_relink(all_models),
+            UmlClassElement::UseCaseGeneralization(inner) => {
+                inner.write().deep_copy_relink(all_models)
+            }
+            UmlClassElement::Note(..) => {}
+            UmlClassElement::NoteLink(inner) => inner.write().deep_copy_relink(all_models),
+        }
+    }
+
     pub fn accept_uml(&self, visitor: &mut dyn UmlClassVisitor) {
         match self {
             UmlClassElement::Package(inner) => visitor.visit_package(&inner.read()),
@@ -142,143 +185,13 @@ impl VisitableElement for UmlClassElement {
 pub fn deep_copy_diagram(
     d: &UmlClassDiagram,
 ) -> (ERef<UmlClassDiagram>, HashMap<ModelUuid, UmlClassElement>) {
-    fn walk(
-        e: &UmlClassElement,
-        into: &mut HashMap<ModelUuid, UmlClassElement>,
-    ) -> UmlClassElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            UmlClassElement::Package(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlClassPackage {
-                    uuid: new_uuid,
-                    name: model.name.clone(),
-                    stereotype: model.stereotype.clone(),
-                    kind: model.kind,
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(e, into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            new_model
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                UmlClassElement::Package(ERef::new(new_model))
-            }
-            UmlClassElement::Instance(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::Class(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::Property(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::Operation(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UseCase(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::Generalization(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::Dependency(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UseCaseGeneralization(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            }
-            UmlClassElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::NoteLink(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(e: &mut UmlClassElement, all_models: &HashMap<ModelUuid, UmlClassElement>) {
-        match e {
-            UmlClassElement::Package(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
-                }
-            }
-            UmlClassElement::Instance(..)
-            | UmlClassElement::Class(..)
-            | UmlClassElement::Property(..)
-            | UmlClassElement::Operation(..)
-            | UmlClassElement::UseCase(..) => {}
-            UmlClassElement::Generalization(inner) => {
-                let mut model = inner.write();
-
-                for e in model.sources.iter_mut() {
-                    let sid = *e.read().uuid;
-                    if let Some(UmlClassElement::Class(s)) = all_models.get(&sid) {
-                        *e = s.clone();
-                    }
-                }
-                for e in model.targets.iter_mut() {
-                    let tid = *e.read().uuid;
-                    if let Some(UmlClassElement::Class(t)) = all_models.get(&tid) {
-                        *e = t.clone();
-                    }
-                }
-            }
-            UmlClassElement::Dependency(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.uuid();
-                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
-                    model.source = s;
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
-                    model.target = t;
-                }
-            }
-            UmlClassElement::Association(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.uuid();
-                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
-                    model.source = s;
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
-                    model.target = t;
-                }
-            }
-            UmlClassElement::UseCaseGeneralization(inner) => {
-                let mut model = inner.write();
-
-                for e in model.sources.iter_mut() {
-                    let sid = *e.read().uuid;
-                    if let Some(UmlClassElement::UseCase(s)) = all_models.get(&sid) {
-                        *e = s.clone();
-                    }
-                }
-                for e in model.targets.iter_mut() {
-                    let tid = *e.read().uuid;
-                    if let Some(UmlClassElement::UseCase(t)) = all_models.get(&tid) {
-                        *e = t.clone();
-                    }
-                }
-            }
-            UmlClassElement::Note(..) => {}
-            UmlClassElement::NoteLink(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.read().uuid();
-                if let Some(UmlClassElement::Note(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
-                }
-            }
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(e, &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = UmlClassDiagram {
@@ -737,15 +650,26 @@ impl UmlClassPackage {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(UmlClassPackage {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             kind: self.kind,
-            contained_elements: self.contained_elements.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -861,15 +785,22 @@ impl UmlClassInstance {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             instance_name: self.instance_name.clone(),
             instance_type: self.instance_type.clone(),
             stereotype: self.stereotype.clone(),
             instance_slots: self.instance_slots.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -979,9 +910,13 @@ impl UmlClassProperty {
             is_id: false,
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             value_type: self.value_type.clone(),
             multiplicity: self.multiplicity.clone(),
@@ -996,7 +931,10 @@ impl UmlClassProperty {
             is_ordered: self.is_ordered,
             is_unique: self.is_unique,
             is_id: self.is_id,
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1065,9 +1003,13 @@ impl UmlClassOperation {
             is_unique: false,
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             parameters: self.parameters.clone(),
             return_type: self.return_type.clone(),
@@ -1080,7 +1022,10 @@ impl UmlClassOperation {
             is_query: self.is_query,
             is_ordered: self.is_ordered,
             is_unique: self.is_unique,
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1136,17 +1081,32 @@ impl UmlClass {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             template_parameters: self.template_parameters.clone(),
             is_abstract: self.is_abstract,
-            properties: self.properties.clone(),
-            operations: self.operations.clone(),
+            properties: self
+                .properties
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
+            operations: self
+                .operations
+                .iter()
+                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
     pub fn move_element(
         &mut self,
@@ -1310,15 +1270,22 @@ impl UmlUseCase {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             is_abstract: self.is_abstract,
             extension_points: self.extension_points.clone(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1376,9 +1343,13 @@ impl UmlClassGeneralization {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             sources: self.sources.clone(),
             targets: self.targets.clone(),
 
@@ -1387,7 +1358,24 @@ impl UmlClassGeneralization {
             set_is_disjoint: self.set_is_disjoint,
 
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlClassElement>) {
+        for e in self.sources.iter_mut() {
+            let sid = *e.read().uuid;
+            if let Some(UmlClassElement::Class(s)) = all_models.get(&sid) {
+                *e = s.clone();
+            }
+        }
+        for e in self.targets.iter_mut() {
+            let tid = *e.read().uuid;
+            if let Some(UmlClassElement::Class(t)) = all_models.get(&tid) {
+                *e = t.clone();
+            }
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.sources, &mut self.targets);
@@ -1497,16 +1485,33 @@ impl UmlClassDependency {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
             target_arrow_open: self.target_arrow_open,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlClassElement>) {
+        let source_uuid = *self.source.uuid();
+        if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
+            self.source = s;
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
+            self.target = t;
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.source, &mut self.target);
@@ -1623,9 +1628,13 @@ impl UmlClassAssociation {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
             source: self.source.clone(),
@@ -1641,7 +1650,20 @@ impl UmlClassAssociation {
             target_navigability: self.target_navigability,
             target_aggregation: self.target_aggregation,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlClassElement>) {
+        let source_uuid = *self.source.uuid();
+        if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
+            self.source = s;
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
+            self.target = t;
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.source, &mut self.target);
@@ -1701,9 +1723,13 @@ impl UmlUseCaseGeneralization {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             sources: self.sources.clone(),
             targets: self.targets.clone(),
 
@@ -1712,7 +1738,24 @@ impl UmlUseCaseGeneralization {
             set_is_disjoint: self.set_is_disjoint,
 
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlClassElement>) {
+        for e in self.sources.iter_mut() {
+            let sid = *e.read().uuid;
+            if let Some(UmlClassElement::UseCase(s)) = all_models.get(&sid) {
+                *e = s.clone();
+            }
+        }
+        for e in self.targets.iter_mut() {
+            let tid = *e.read().uuid;
+            if let Some(UmlClassElement::UseCase(t)) = all_models.get(&tid) {
+                *e = t.clone();
+            }
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.sources, &mut self.targets);
@@ -1801,12 +1844,19 @@ impl UmlClassNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             stereotype: self.stereotype.clone(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -1845,12 +1895,29 @@ impl UmlClassNoteLink {
             target,
         }
     }
-    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             source: self.source.clone(),
             target: self.target.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, UmlClassElement>) {
+        let source_uuid = *self.source.read().uuid();
+        if let Some(UmlClassElement::Note(s)) = all_models.get(&source_uuid) {
+            self.source = s.clone();
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid) {
+            self.target = t.clone();
+        }
     }
 }
 

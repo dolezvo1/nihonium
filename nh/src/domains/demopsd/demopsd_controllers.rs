@@ -1865,9 +1865,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         let model = if let Some(DemoPsdElement::Package(m)) = m.get(&model_uuid) {
             m.clone()
         } else {
-            let model = self.model.read().clone_with(new_uuid);
-            m.insert(model_uuid, model.clone().into());
-            model
+            self.model.read().deep_copy_clone_inner(new_uuid, m)
         };
         Self {
             model,
@@ -1877,14 +1875,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         }
     }
 
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoPsdElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()) {
-                *e = new_model.clone();
-            }
-        }
-    }
+    fn deep_copy_finish(&mut self, _m: &HashMap<ModelUuid, DemoPsdElement>) {}
 }
 
 fn new_demopsd_package(
@@ -3458,9 +3449,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         let modelish = if let Some(DemoPsdElement::Transaction(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -3483,32 +3472,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
-    }
-
-    fn deep_copy_relink(
-        &mut self,
-        _c: &HashMap<ViewUuid, <DemoPsdDomain as Domain>::CommonElementViewT>,
-        m: &HashMap<ModelUuid, <DemoPsdDomain as Domain>::CommonElementT>,
-    ) {
-        let mut w = self.model.write();
-        for e in w.before.iter_mut() {
-            let e_uuid = *e.state.uuid();
-            if let Some(new_state) = m.get(&e_uuid).and_then(|e| e.clone().to_state()) {
-                e.state = new_state;
-            }
-        }
-        if let UFOption::Some(p_act) = &w.p_act {
-            let p_act_uuid = *p_act.read().uuid;
-            if let Some(DemoPsdElement::Act(new_p_act)) = m.get(&p_act_uuid) {
-                w.p_act = UFOption::Some(new_p_act.clone());
-            }
-        }
-        for e in w.after.iter_mut() {
-            let e_uuid = *e.state.uuid();
-            if let Some(new_state) = m.get(&e_uuid).and_then(|e| e.clone().to_state()) {
-                e.state = new_state;
-            }
-        }
     }
 }
 
@@ -3967,9 +3930,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         let modelish = if let Some(DemoPsdElement::Fact(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -4440,9 +4401,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         let modelish = if let Some(DemoPsdElement::Act(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -4695,9 +4654,7 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
         let model = if let Some(DemoPsdElement::Link(m)) = m.get(&model.uuid) {
             m.clone()
         } else {
-            let modelish = model.clone_with(new_uuid);
-            m.insert(*model.uuid, modelish.clone().into());
-            modelish
+            model.deep_copy_clone_inner(new_uuid, m)
         };
         Self {
             model,
@@ -4706,17 +4663,7 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoPsdElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.source.read().uuid();
-        if let Some(DemoPsdElement::Fact(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone();
-        }
-
-        let target_uuid = *model.target.read().uuid();
-        if let Some(DemoPsdElement::Act(new_target)) = m.get(&target_uuid) {
-            model.target = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -5240,9 +5187,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
         let modelish = if let Some(DemoPsdElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {

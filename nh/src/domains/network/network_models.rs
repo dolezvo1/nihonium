@@ -17,74 +17,13 @@ use crate::common::{
 pub fn deep_copy_diagram(
     d: &NetworkDiagram,
 ) -> (ERef<NetworkDiagram>, HashMap<ModelUuid, NetworkElement>) {
-    fn walk(e: &NetworkElement, into: &mut HashMap<ModelUuid, NetworkElement>) -> NetworkElement {
-        let new_uuid = ModelUuid::now_v7().into();
-        match e {
-            NetworkElement::Container(inner) => {
-                let model = inner.read();
-
-                let new_model = NetworkContainer {
-                    uuid: new_uuid,
-                    name: model.name.clone(),
-                    contained_elements: model
-                        .contained_elements
-                        .iter()
-                        .map(|e| {
-                            let new_model = walk(e, into);
-                            into.insert(*e.uuid(), new_model.clone());
-                            new_model
-                        })
-                        .collect(),
-                    comment: model.comment.clone(),
-                };
-                ERef::new(new_model).into()
-            }
-            NetworkElement::Node(inner) => inner.read().clone_with(*new_uuid).into(),
-            NetworkElement::User(inner) => inner.read().clone_with(*new_uuid).into(),
-            NetworkElement::File(inner) => inner.read().clone_with(*new_uuid).into(),
-            NetworkElement::Location(inner) => inner.read().clone_with(*new_uuid).into(),
-            NetworkElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
-            NetworkElement::Note(inner) => inner.read().clone_with(*new_uuid).into(),
-        }
-    }
-
-    fn relink(e: &mut NetworkElement, all_models: &HashMap<ModelUuid, NetworkElement>) {
-        match e {
-            NetworkElement::Container(inner) => {
-                let mut model = inner.write();
-                for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
-                }
-            }
-            NetworkElement::Node(_)
-            | NetworkElement::User(_)
-            | NetworkElement::File(_)
-            | NetworkElement::Location(_) => {}
-            NetworkElement::Association(inner) => {
-                let mut model = inner.write();
-
-                let source_uuid = *model.source.uuid();
-                if let Some(s) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
-                }
-                let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
-                }
-            }
-            NetworkElement::Note(_) => {}
-        }
-    }
-
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), new_model.clone());
-        new_contained_elements.push(new_model);
+        new_contained_elements.push(e.deep_copy_clone(ModelUuid::now_v7(), &mut all_models));
     }
-    for e in new_contained_elements.iter_mut() {
-        relink(e, &all_models);
+    for e in all_models.values() {
+        e.deep_copy_relink(&all_models);
     }
 
     let new_diagram = NetworkDiagram {
@@ -214,6 +153,35 @@ pub enum NetworkElement {
     Association(ERef<NetworkAssociation>),
 
     Note(ERef<NetworkNote>),
+}
+
+impl NetworkElement {
+    pub fn deep_copy_clone(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> Self {
+        match self {
+            Self::Container(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Node(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::User(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::File(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Location(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Association(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+        }
+    }
+    pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, NetworkElement>) {
+        match self {
+            Self::Container(_)
+            | Self::Node(_)
+            | Self::User(_)
+            | Self::File(_)
+            | Self::Location(_) => {}
+            Self::Association(inner) => inner.write().deep_copy_relink(all_models),
+            Self::Note(_) => {}
+        }
+    }
 }
 
 impl VisitableElement for NetworkElement {
@@ -436,13 +404,24 @@ impl NetworkContainer {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(NetworkContainer {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
-            contained_elements: self.contained_elements.clone(),
+            contained_elements: self
+                .contained_elements
+                .iter()
+                .map(|e| e.deep_copy_clone(ModelUuid::now_v7(), into))
+                .collect(),
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -616,13 +595,20 @@ impl NetworkNode {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -701,13 +687,20 @@ impl NetworkUser {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -791,13 +784,20 @@ impl NetworkFile {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -866,13 +866,20 @@ impl NetworkLocation {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             name: self.name.clone(),
             kind: self.kind,
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 
@@ -983,9 +990,13 @@ impl NetworkAssociation {
             comment: Arc::new("".to_owned()),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
 
             line_type: self.line_type,
             source: self.source.clone(),
@@ -1000,7 +1011,20 @@ impl NetworkAssociation {
             target_label_reading: self.target_label_reading.clone(),
 
             comment: self.comment.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
+    }
+    pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, NetworkElement>) {
+        let source_uuid = *self.source.uuid();
+        if let Some(s) = all_models.get(&source_uuid) {
+            self.source = s.clone();
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(t) = all_models.get(&target_uuid) {
+            self.target = t.clone();
+        }
     }
     pub fn flip_multiconnection(&mut self) {
         std::mem::swap(&mut self.source, &mut self.target);
@@ -1036,11 +1060,18 @@ impl NetworkNote {
             text: Arc::new(text),
         }
     }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
+    pub fn deep_copy_clone_inner(
+        &self,
+        new_uuid: ModelUuid,
+        into: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> ERef<Self> {
+        let new_model = ERef::new(Self {
+            uuid: new_uuid.into(),
             text: self.text.clone(),
-        })
+        });
+
+        into.insert(*self.uuid, new_model.clone().into());
+        new_model
     }
 }
 

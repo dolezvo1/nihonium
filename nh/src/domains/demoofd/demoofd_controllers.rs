@@ -2231,9 +2231,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         let model = if let Some(DemoOfdElement::Package(m)) = m.get(&model_uuid) {
             m.clone()
         } else {
-            let model = self.model.read().clone_with(new_uuid);
-            m.insert(model_uuid, model.clone().into());
-            model
+            self.model.read().deep_copy_clone_inner(new_uuid, m)
         };
         Self {
             model,
@@ -2243,14 +2241,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         }
     }
 
-    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
-        let mut w = self.model.write();
-        for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()) {
-                *e = new_model.clone();
-            }
-        }
-    }
+    fn deep_copy_finish(&mut self, _m: &HashMap<ModelUuid, DemoOfdElement>) {}
 }
 
 fn new_demoofd_package(
@@ -2986,9 +2977,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         let modelish = if let Some(DemoOfdElement::EntityType(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
@@ -3815,9 +3804,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         let modelish = if let Some(DemoOfdElement::EventType(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let specialization_view = match &self.specialization_view {
@@ -3856,20 +3843,10 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         c: &HashMap<ViewUuid, <DemoOfdDomain as Domain>::CommonElementViewT>,
         m: &HashMap<ModelUuid, <DemoOfdDomain as Domain>::CommonElementT>,
     ) {
-        let mut w = self.model.write();
-        let base_model_uuid = *w.base_entity_type.read().uuid;
+        self.model.write().deep_copy_relink(m);
         let base_view_uuid = *self.base_entity_type.uuid();
-        if let (Some(DemoOfdElement::EntityType(new_base_model)), Some(new_base_view)) =
-            (m.get(&base_model_uuid), c.get(&base_view_uuid))
-        {
-            w.base_entity_type = new_base_model.clone();
+        if let Some(new_base_view) = c.get(&base_view_uuid) {
             self.base_entity_type = new_base_view.clone();
-        }
-        if let UFOption::Some(spec) = &w.specialization_entity_type {
-            let spec_uuid = *spec.read().uuid;
-            if let Some(DemoOfdElement::EntityType(new_spec)) = m.get(&spec_uuid) {
-                w.specialization_entity_type = UFOption::Some(new_spec.clone());
-            }
         }
     }
 }
@@ -4174,9 +4151,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         let model = if let Some(DemoOfdElement::PropertyType(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -4186,16 +4161,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.domain_element.read().uuid;
-        if let Some(DemoOfdElement::EntityType(new_source)) = m.get(&source_uuid) {
-            model.domain_element = new_source.clone();
-        }
-        let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::EntityType(new_target)) = m.get(&target_uuid) {
-            model.range_element = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -4391,9 +4357,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         let model = if let Some(DemoOfdElement::Specialization(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -4403,16 +4367,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.domain_element.read().uuid;
-        if let Some(DemoOfdElement::EntityType(new_source)) = m.get(&source_uuid) {
-            model.domain_element = new_source.clone();
-        }
-        let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::EntityType(new_target)) = m.get(&target_uuid) {
-            model.range_element = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -4703,9 +4658,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         let model = if let Some(DemoOfdElement::Aggregation(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -4715,18 +4668,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
-        let mut model = self.model.write();
-
-        for e in model.domain_elements.iter_mut() {
-            let sid = *e.read().uuid;
-            if let Some(DemoOfdElement::EntityType(new_source)) = m.get(&sid) {
-                *e = new_source.clone();
-            }
-        }
-        let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::EntityType(new_target)) = m.get(&target_uuid) {
-            model.range_element = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -4922,9 +4864,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         let model = if let Some(DemoOfdElement::Precedence(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -4934,16 +4874,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.domain_element.read().uuid;
-        if let Some(DemoOfdElement::EventType(new_source)) = m.get(&source_uuid) {
-            model.domain_element = new_source.clone();
-        }
-        let target_uuid = *model.range_element.read().uuid;
-        if let Some(DemoOfdElement::EventType(new_target)) = m.get(&target_uuid) {
-            model.range_element = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -5172,9 +5103,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         let model = if let Some(DemoOfdElement::Exclusion(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(new_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(new_uuid, m)
         };
 
         Self {
@@ -5184,16 +5113,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
     }
 
     fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DemoOfdElement>) {
-        let mut model = self.model.write();
-
-        let source_uuid = *model.domain_element.uuid();
-        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.clone().as_type()) {
-            model.domain_element = new_source.clone();
-        }
-        let target_uuid = *model.range_element.uuid();
-        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.clone().as_type()) {
-            model.range_element = new_target.clone();
-        }
+        self.model.write().deep_copy_relink(m);
     }
 }
 
@@ -5717,9 +5637,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
         let modelish = if let Some(DemoOfdElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = old_model.clone_with(model_uuid);
-            m.insert(*old_model.uuid, modelish.clone().into());
-            modelish
+            old_model.deep_copy_clone_inner(model_uuid, m)
         };
 
         let cloneish = ERef::new(Self {
