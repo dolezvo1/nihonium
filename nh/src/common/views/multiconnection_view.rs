@@ -320,11 +320,27 @@ where
         arrow_data: &HashMap<(bool, ModelUuid), ArrowData>,
     ) {
         let sources = self.sources.iter().map(|e| {
-            let ad = arrow_data.get(&(false, *e.element.model_uuid())).unwrap();
+            let ad = arrow_data
+                .get(&(false, *e.element.model_uuid()))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "cannot find source view for {:?} in {}",
+                        e.element.model_uuid(),
+                        std::any::type_name::<Self>()
+                    )
+                });
             (e, ad)
         });
         let destinations = self.targets.iter().map(|e| {
-            let ad = arrow_data.get(&(true, *e.element.model_uuid())).unwrap();
+            let ad = arrow_data
+                .get(&(true, *e.element.model_uuid()))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "cannot find destination view for {:?} in {}",
+                        e.element.model_uuid(),
+                        std::any::type_name::<Self>()
+                    )
+                });
             (e, ad)
         });
 
