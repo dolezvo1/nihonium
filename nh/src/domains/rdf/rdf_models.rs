@@ -427,7 +427,20 @@ impl DiagramModel for RdfDiagram {
         element: RdfElement,
     ) -> Result<PositionNoT, RdfElement> {
         if let RdfElement::Predicate(p) = &element {
-            // TODO: Check that predicate source and target are both directly inside the desired parent
+            // Check that predicate source and target are both directly inside the desired parent
+            let (source_uuid, target_uuid) = {
+                let r = p.read();
+                (*r.source.read().uuid, *r.target.uuid())
+            };
+            if self
+                .find_element(&source_uuid)
+                .is_none_or(|e| e.1 != target)
+                || self
+                    .find_element(&target_uuid)
+                    .is_none_or(|e| e.1 != target)
+            {
+                return Err(element);
+            }
         }
 
         if *self.uuid == target {

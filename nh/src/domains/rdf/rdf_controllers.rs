@@ -1082,6 +1082,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     ..
                 },
             ) => {
+                // TODO: don't show when such edge would not be valid
                 if let Some(source_view) = q.get_view_for(source) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1222,11 +1223,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     | RdfToolStage::Node {
                         with_predicate_from: Some(source),
                         ..
-                    } if let Some(RdfElementView::Node(source_view)) = q.get_view_for(&source)
-                        && q.get_parent(&source_view.read().uuid)
-                            .unwrap_or(q.get_root())
-                            == *preferred_container =>
-                    {
+                    } if let Some(RdfElementView::Node(source_view)) = q.get_view_for(&source) => {
                         let predicate_view = new_rdf_predicate(
                             "",
                             (source_view.read().model.clone(), source_view.clone().into()),
