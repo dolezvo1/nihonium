@@ -2010,6 +2010,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 },
                 _,
             ) => {
+                // TODO: don't show when such edge would not be valid
                 if let Some(source_view) = q.get_view_for(source_uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -2261,18 +2262,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                                     && !matches!(e, UmlActivityElementView::Partition(_))
                             })
                             .map(|e| e.0)
-                            .unwrap_or_else(|| q.get_root())
-                        && let source_activity = q
-                            .find_container(&source.uuid(), |_, e| {
-                                matches!(e, UmlActivityElementView::Activity(_))
-                            })
-                            .map(|e| e.0)
-                        && let target_activity = q
-                            .find_container_inclusive(preferred_container, |_, e| {
-                                matches!(e, UmlActivityElementView::Activity(_))
-                            })
-                            .map(|e| e.0)
-                        && source_activity == target_activity =>
+                            .unwrap_or_else(|| q.get_root()) =>
                     {
                         let edge_view = new_umlactivity_edge(
                             "",
