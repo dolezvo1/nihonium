@@ -7,8 +7,8 @@ use crate::common::{
     entity::{Entity, EntityUuid},
     eref::ERef,
     model::{
-        BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-        VisitableDiagram, VisitableElement,
+        BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+        PositionNoT, VisitableDiagram, VisitableElement,
     },
     search::FullTextSearchable,
     uuid::ModelUuid,
@@ -521,24 +521,33 @@ impl UmlSequenceDiagramBoard {
         }
     }
 
-    pub fn insert_element_into(
+    fn insert_element_unsafe(
         &mut self,
-        parent: ModelUuid,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
         element: UmlSequenceElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        if *self.uuid == parent {
-            self.insert_element(b, p, element)
-                .map(|_| ())
-                .map_err(|_| ())
-        } else {
-            self.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
+    ) -> Result<PositionNoT, UmlSequenceElement> {
+        if bucket != 0 {
+            return Err(element);
         }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.elements.len());
+        self.elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_safe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 
     pub fn delete_elements(
@@ -702,35 +711,61 @@ impl ContainerModel for UmlSequenceDiagramBoard {
         }
         None
     }
+}
 
-    fn insert_element(
+impl DiagramModel for UmlSequenceDiagramBoard {
+    fn insert_element_into(
         &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.elements.len());
-        self.elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        target: ModelUuid,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
+        element: UmlSequenceElement,
+    ) -> Result<PositionNoT, UmlSequenceElement> {
+        if *self.uuid == target {
+            self.insert_element_unsafe(b, p, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                UmlSequenceElement::Diagram(inner) => inner.write().insert_element(b, p, element),
+                UmlSequenceElement::CombinedFragment(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlSequenceElement::CombinedFragmentSection(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlSequenceElement::Lifeline(_)
+                | UmlSequenceElement::Message(_)
+                | UmlSequenceElement::Ref(_)
+                | UmlSequenceElement::DurationConstraint(_)
+                | UmlSequenceElement::Note(_)
+                | UmlSequenceElement::NoteLink(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_safe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                UmlSequenceElement::Diagram(inner) => inner.write().remove_element(uuid),
+                UmlSequenceElement::CombinedFragment(inner) => inner.write().remove_element(uuid),
+                UmlSequenceElement::CombinedFragmentSection(inner) => {
+                    inner.write().remove_element(uuid)
+                }
+                UmlSequenceElement::Lifeline(_)
+                | UmlSequenceElement::Message(_)
+                | UmlSequenceElement::Ref(_)
+                | UmlSequenceElement::DurationConstraint(_)
+                | UmlSequenceElement::Note(_)
+                | UmlSequenceElement::NoteLink(_) => None,
+            }
+        }
     }
 }
 
@@ -838,6 +873,61 @@ impl UmlSequenceDiagram {
                 .insert(target_pos.try_into().unwrap(), e);
         }
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlSequenceElement,
+    ) -> Result<PositionNoT, UmlSequenceElement> {
+        match bucket {
+            0 | VERTICALS_BUCKET if let UmlSequenceElement::Lifeline(element) = element => {
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.vertical_elements.len());
+                self.vertical_elements.insert(pos, element);
+                Ok(pos.try_into().unwrap())
+            }
+            0 | HORIZONTALS_BUCKET if let Some(element) = element.clone().as_horizontal() => {
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.horizontal_elements.len());
+                self.horizontal_elements.insert(pos, element);
+                Ok(pos.try_into().unwrap())
+            }
+            0 | NONDIAGRAM_STANDALONE_BUCKET
+                if let Some(element) = element.clone().as_nondiagram_standalone() =>
+            {
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.standalone_elements.len());
+                self.standalone_elements.insert(pos, element);
+                Ok(pos.try_into().unwrap())
+            }
+            _ => Err(element),
+        }
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.vertical_elements.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                self.vertical_elements.remove(idx);
+                return Some((VERTICALS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.horizontal_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.horizontal_elements.remove(idx);
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.standalone_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.standalone_elements.remove(idx);
+                return Some((NONDIAGRAM_STANDALONE_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for UmlSequenceDiagram {
@@ -892,60 +982,6 @@ impl ContainerModel for UmlSequenceDiagram {
         }
         for (idx, e) in self.standalone_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((NONDIAGRAM_STANDALONE_BUCKET, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: UmlSequenceElement,
-    ) -> Result<PositionNoT, UmlSequenceElement> {
-        match bucket {
-            0 | VERTICALS_BUCKET if let UmlSequenceElement::Lifeline(element) = element => {
-                let pos = position
-                    .map(|e| e.try_into().unwrap())
-                    .unwrap_or(self.vertical_elements.len());
-                self.vertical_elements.insert(pos, element);
-                Ok(pos.try_into().unwrap())
-            }
-            0 | HORIZONTALS_BUCKET if let Some(element) = element.clone().as_horizontal() => {
-                let pos = position
-                    .map(|e| e.try_into().unwrap())
-                    .unwrap_or(self.horizontal_elements.len());
-                self.horizontal_elements.insert(pos, element);
-                Ok(pos.try_into().unwrap())
-            }
-            0 | NONDIAGRAM_STANDALONE_BUCKET
-                if let Some(element) = element.clone().as_nondiagram_standalone() =>
-            {
-                let pos = position
-                    .map(|e| e.try_into().unwrap())
-                    .unwrap_or(self.standalone_elements.len());
-                self.standalone_elements.insert(pos, element);
-                Ok(pos.try_into().unwrap())
-            }
-            _ => Err(element),
-        }
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.vertical_elements.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                self.vertical_elements.remove(idx);
-                return Some((VERTICALS_BUCKET, idx.try_into().unwrap()));
-            }
-        }
-        for (idx, e) in self.horizontal_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.horizontal_elements.remove(idx);
-                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
-            }
-        }
-        for (idx, e) in self.standalone_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.standalone_elements.remove(idx);
                 return Some((NONDIAGRAM_STANDALONE_BUCKET, idx.try_into().unwrap()));
             }
         }
@@ -1329,6 +1365,35 @@ impl UmlSequenceCombinedFragment {
             self.sections.insert(target_pos.try_into().unwrap(), e);
         }
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlSequenceElement,
+    ) -> Result<PositionNoT, UmlSequenceElement> {
+        if bucket != 0 && bucket != HORIZONTALS_BUCKET {
+            return Err(element);
+        }
+        let UmlSequenceElement::CombinedFragmentSection(section) = element else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.sections.len());
+        self.sections.insert(pos, section);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.sections.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                self.sections.remove(idx);
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for UmlSequenceCombinedFragment {
@@ -1360,34 +1425,6 @@ impl ContainerModel for UmlSequenceCombinedFragment {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.sections.iter().enumerate() {
             if *e.read().uuid() == *uuid {
-                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: UmlSequenceElement,
-    ) -> Result<PositionNoT, UmlSequenceElement> {
-        if bucket != 0 && bucket != HORIZONTALS_BUCKET {
-            return Err(element);
-        }
-        let UmlSequenceElement::CombinedFragmentSection(section) = element else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.sections.len());
-        self.sections.insert(pos, section);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.sections.iter().enumerate() {
-            if *e.read().uuid() == *uuid {
-                self.sections.remove(idx);
                 return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
@@ -1470,6 +1507,35 @@ impl UmlSequenceCombinedFragmentSection {
                 .insert(target_pos.try_into().unwrap(), e);
         }
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlSequenceElement,
+    ) -> Result<PositionNoT, UmlSequenceElement> {
+        if bucket != 0 && bucket != HORIZONTALS_BUCKET {
+            return Err(element);
+        }
+        let Some(element) = element.as_horizontal() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.horizontal_elements.len());
+        self.horizontal_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.horizontal_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.horizontal_elements.remove(idx);
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for UmlSequenceCombinedFragmentSection {
@@ -1501,34 +1567,6 @@ impl ContainerModel for UmlSequenceCombinedFragmentSection {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.horizontal_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: UmlSequenceElement,
-    ) -> Result<PositionNoT, UmlSequenceElement> {
-        if bucket != 0 && bucket != HORIZONTALS_BUCKET {
-            return Err(element);
-        }
-        let Some(element) = element.as_horizontal() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.horizontal_elements.len());
-        self.horizontal_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.horizontal_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.horizontal_elements.remove(idx);
                 return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }

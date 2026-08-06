@@ -9,8 +9,8 @@ use crate::{
         entity::{Entity, EntityUuid},
         eref::ERef,
         model::{
-            BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-            VisitableDiagram, VisitableElement,
+            BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+            PositionNoT, VisitableDiagram, VisitableElement,
         },
         search::FullTextSearchable,
         ufoption::UFOption,
@@ -317,6 +317,31 @@ impl DemoPsdDiagram {
                 .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
+    fn insert_element_unsafe(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoPsdElement,
+    ) -> Result<PositionNoT, DemoPsdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_unsafe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for DemoPsdDiagram {
@@ -363,30 +388,53 @@ impl ContainerModel for DemoPsdDiagram {
         }
         None
     }
-    fn insert_element(
+}
+
+impl DiagramModel for DemoPsdDiagram {
+    fn insert_element_into(
         &mut self,
+        target: ModelUuid,
         bucket: BucketNoT,
         position: Option<PositionNoT>,
         element: DemoPsdElement,
     ) -> Result<PositionNoT, DemoPsdElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        if *self.uuid == target {
+            self.insert_element_unsafe(bucket, position, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                DemoPsdElement::Package(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                DemoPsdElement::Transaction(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                DemoPsdElement::Fact(_)
+                | DemoPsdElement::Act(_)
+                | DemoPsdElement::Link(_)
+                | DemoPsdElement::Note(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_unsafe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                DemoPsdElement::Package(inner) => inner.write().remove_element(uuid),
+                DemoPsdElement::Transaction(inner) => inner.write().remove_element(uuid),
+                DemoPsdElement::Fact(_)
+                | DemoPsdElement::Act(_)
+                | DemoPsdElement::Link(_)
+                | DemoPsdElement::Note(_) => None,
+            }
+        }
     }
 }
 
@@ -450,6 +498,32 @@ impl DemoPsdPackage {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoPsdElement,
+    ) -> Result<PositionNoT, DemoPsdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for DemoPsdPackage {
@@ -481,31 +555,6 @@ impl ContainerModel for DemoPsdPackage {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: DemoPsdElement,
-    ) -> Result<PositionNoT, DemoPsdElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -637,80 +686,7 @@ impl DemoPsdTransaction {
             self.after.insert(pos.try_into().unwrap(), e);
         }
     }
-}
 
-impl Entity for DemoPsdTransaction {
-    fn tagged_uuid(&self) -> EntityUuid {
-        (*self.uuid).into()
-    }
-}
-
-impl Model for DemoPsdTransaction {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        self.uuid.clone()
-    }
-}
-
-impl ContainerModel for DemoPsdTransaction {
-    type ElementT = DemoPsdElement;
-
-    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoPsdElement, ModelUuid)> {
-        for e in &self.before {
-            if *e.state.uuid() == *uuid {
-                return Some((e.state.clone().to_element(), *self.uuid));
-            }
-            if let Some(e) = e.state.find_element(uuid) {
-                return Some(e);
-            }
-        }
-        if let UFOption::Some(e) = &self.p_act {
-            let r = e.read();
-            if *r.uuid() == *uuid {
-                return Some((e.clone().into(), *self.uuid));
-            }
-        }
-        for e in &self.after {
-            if *e.state.uuid() == *uuid {
-                return Some((e.state.clone().to_element(), *self.uuid));
-            }
-            if let Some(e) = e.state.find_element(uuid) {
-                return Some(e);
-            }
-        }
-        None
-    }
-    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.before.iter().enumerate() {
-            if *e.state.uuid() == *uuid {
-                return Some((
-                    if !e.executor {
-                        Self::BEFORE_INITIATOR_BUCKET
-                    } else {
-                        Self::BEFORE_EXECUTOR_BUCKET
-                    },
-                    idx.try_into().unwrap(),
-                ));
-            }
-        }
-        if let UFOption::Some(e) = &self.p_act
-            && *e.read().uuid == *uuid
-        {
-            return Some((Self::CENTER_BUCKET, 0));
-        }
-        for (idx, e) in self.after.iter().enumerate() {
-            if *e.state.uuid() == *uuid {
-                return Some((
-                    if !e.executor {
-                        Self::AFTER_INITIATOR_BUCKET
-                    } else {
-                        Self::AFTER_EXECUTOR_BUCKET
-                    },
-                    idx.try_into().unwrap(),
-                ));
-            }
-        }
-        None
-    }
     fn insert_element(
         &mut self,
         bucket: BucketNoT,
@@ -782,6 +758,80 @@ impl ContainerModel for DemoPsdTransaction {
                 self.after.remove(idx);
                 return Some((
                     if !is_executor {
+                        Self::AFTER_INITIATOR_BUCKET
+                    } else {
+                        Self::AFTER_EXECUTOR_BUCKET
+                    },
+                    idx.try_into().unwrap(),
+                ));
+            }
+        }
+        None
+    }
+}
+
+impl Entity for DemoPsdTransaction {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoPsdTransaction {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl ContainerModel for DemoPsdTransaction {
+    type ElementT = DemoPsdElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoPsdElement, ModelUuid)> {
+        for e in &self.before {
+            if *e.state.uuid() == *uuid {
+                return Some((e.state.clone().to_element(), *self.uuid));
+            }
+            if let Some(e) = e.state.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        if let UFOption::Some(e) = &self.p_act {
+            let r = e.read();
+            if *r.uuid() == *uuid {
+                return Some((e.clone().into(), *self.uuid));
+            }
+        }
+        for e in &self.after {
+            if *e.state.uuid() == *uuid {
+                return Some((e.state.clone().to_element(), *self.uuid));
+            }
+            if let Some(e) = e.state.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        None
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.before.iter().enumerate() {
+            if *e.state.uuid() == *uuid {
+                return Some((
+                    if !e.executor {
+                        Self::BEFORE_INITIATOR_BUCKET
+                    } else {
+                        Self::BEFORE_EXECUTOR_BUCKET
+                    },
+                    idx.try_into().unwrap(),
+                ));
+            }
+        }
+        if let UFOption::Some(e) = &self.p_act
+            && *e.read().uuid == *uuid
+        {
+            return Some((Self::CENTER_BUCKET, 0));
+        }
+        for (idx, e) in self.after.iter().enumerate() {
+            if *e.state.uuid() == *uuid {
+                return Some((
+                    if !e.executor {
                         Self::AFTER_INITIATOR_BUCKET
                     } else {
                         Self::AFTER_EXECUTOR_BUCKET

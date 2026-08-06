@@ -2,7 +2,7 @@ use crate::common::canvas;
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
     VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
@@ -241,6 +241,32 @@ impl DemoCsdDiagram {
                 .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
+
+    fn insert_element_unsafe(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoCsdElement,
+    ) -> Result<PositionNoT, DemoCsdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_unsafe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for DemoCsdDiagram {
@@ -287,30 +313,51 @@ impl ContainerModel for DemoCsdDiagram {
         }
         None
     }
-    fn insert_element(
+}
+
+impl DiagramModel for DemoCsdDiagram {
+    fn insert_element_into(
         &mut self,
+        target: ModelUuid,
         bucket: BucketNoT,
         position: Option<PositionNoT>,
         element: DemoCsdElement,
     ) -> Result<PositionNoT, DemoCsdElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        if *self.uuid == target {
+            self.insert_element_unsafe(bucket, position, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                DemoCsdElement::Package(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                DemoCsdElement::Transactor(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                DemoCsdElement::Transaction(_)
+                | DemoCsdElement::Link(_)
+                | DemoCsdElement::Note(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_unsafe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                DemoCsdElement::Package(inner) => inner.write().remove_element(uuid),
+                DemoCsdElement::Transactor(inner) => inner.write().remove_element(uuid),
+                DemoCsdElement::Transaction(_)
+                | DemoCsdElement::Link(_)
+                | DemoCsdElement::Note(_) => None,
+            }
+        }
     }
 }
 
@@ -375,6 +422,32 @@ impl DemoCsdPackage {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoCsdElement,
+    ) -> Result<PositionNoT, DemoCsdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for DemoCsdPackage {
@@ -406,31 +479,6 @@ impl ContainerModel for DemoCsdPackage {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: DemoCsdElement,
-    ) -> Result<PositionNoT, DemoCsdElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -516,6 +564,32 @@ impl DemoCsdTransactor {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoCsdElement,
+    ) -> Result<PositionNoT, DemoCsdElement> {
+        if bucket != 0 || position.unwrap_or(0) != 0 || self.transaction.is_some() {
+            return Err(element);
+        }
+        let DemoCsdElement::Transaction(tx) = element else {
+            return Err(element);
+        };
+        self.transaction = UFOption::Some(tx);
+        Ok(0)
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if let UFOption::Some(tx) = &self.transaction
+            && *tx.read().uuid == *uuid
+        {
+            self.transaction = UFOption::None;
+            Some((0, 0))
+        } else {
+            None
+        }
+    }
 }
 
 impl Entity for DemoCsdTransactor {
@@ -546,31 +620,6 @@ impl ContainerModel for DemoCsdTransactor {
         if let UFOption::Some(e) = &self.transaction
             && *e.read().uuid == *uuid
         {
-            Some((0, 0))
-        } else {
-            None
-        }
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: DemoCsdElement,
-    ) -> Result<PositionNoT, DemoCsdElement> {
-        if bucket != 0 || position.unwrap_or(0) != 0 || self.transaction.is_some() {
-            return Err(element);
-        }
-        let DemoCsdElement::Transaction(tx) = element else {
-            return Err(element);
-        };
-        self.transaction = UFOption::Some(tx);
-        Ok(0)
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        if let UFOption::Some(tx) = &self.transaction
-            && *tx.read().uuid == *uuid
-        {
-            self.transaction = UFOption::None;
             Some((0, 0))
         } else {
             None

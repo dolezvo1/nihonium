@@ -35,17 +35,21 @@ pub trait ContainerModel: Model {
     fn get_element_pos(&self, _uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         None
     }
-    fn insert_element(
+}
+
+pub trait DiagramModel: ContainerModel {
+    fn insert_element_into(
         &mut self,
-        _bucket: BucketNoT,
-        _position: Option<PositionNoT>,
+        target: ModelUuid,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
         element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        Err(element)
-    }
-    fn remove_element(&mut self, _uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        None
-    }
+    ) -> Result<PositionNoT, Self::ElementT>;
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)>;
 }
 
 pub trait ElementVisitor<T: ?Sized> {

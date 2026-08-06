@@ -17,7 +17,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -345,18 +345,6 @@ impl ControllerAdapter<UmlClassDomain<UmlClassNullProfile>> for UmlClassControll
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
-    }
-
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: UmlClassElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
     }
 
     fn delete_elements(
@@ -1178,18 +1166,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
     gen_model.write().set_is_covering = true;
     gen_model.write().set_is_disjoint = true;
-    let gen_uuid = *gen_view.read().uuid();
-    gen_view.write().apply_command(
-        &InsensitiveCommand::AddDependency {
-            target: gen_uuid,
-            bucket: MULTICONNECTION_SOURCE_BUCKET,
-            position: None,
-            element: UmlClassElementOrVertex::Element(circle_view.clone().into()),
-            into_model: true,
-        },
-        &mut Vec::new(),
-        &mut HashSet::new(),
-    );
+
     let point_properties = {
         let x = new_umlclass_property(
             UFOption::Some(UmlClassVisibilityKind::Private),
@@ -1283,6 +1260,21 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             instance.into(),
         ],
     ));
+
+    let gen_uuid = *gen_view.read().uuid();
+    gen_view.write().apply_command(
+        &diagram2,
+        &InsensitiveCommand::AddDependency {
+            target: gen_uuid,
+            bucket: MULTICONNECTION_SOURCE_BUCKET,
+            position: None,
+            element: UmlClassElementOrVertex::Element(circle_view.clone().into()),
+            into_model: true,
+        },
+        &mut Vec::new(),
+        &mut HashSet::new(),
+    );
+
     new_controlller(
         diagram2,
         name.to_owned(),
@@ -3261,19 +3253,6 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        element: UmlClassElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, element)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
-    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors
@@ -4030,6 +4009,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlClassDiagram>,
         command: &InsensitiveCommand<
             UmlClassOrdinalMovement,
             UmlClassElementOrVertex<P>,
@@ -4748,6 +4728,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlClassDiagram>,
         command: &InsensitiveCommand<
             UmlClassOrdinalMovement,
             <UmlClassDomain<P> as Domain>::AddCommandElementT,
@@ -5539,6 +5520,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlClassDiagram>,
         command: &InsensitiveCommand<
             UmlClassOrdinalMovement,
             <UmlClassDomain<P> as Domain>::AddCommandElementT,
@@ -6805,6 +6787,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlClassDiagram>,
         command: &InsensitiveCommand<
             UmlClassOrdinalMovement,
             UmlClassElementOrVertex<P>,
@@ -6822,12 +6805,20 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         macro_rules! recurse {
             () => {
                 self.properties_views.iter().for_each(|e| {
-                    e.write()
-                        .apply_command(command, undo_accumulator, affected_models)
+                    e.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    )
                 });
                 self.operations_views.iter().for_each(|e| {
-                    e.write()
-                        .apply_command(command, undo_accumulator, affected_models)
+                    e.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    )
                 });
             };
         }
@@ -6915,16 +6906,18 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 if *target == *self.uuid
                     && let UmlClassElementOrVertex::Element(e) = element
                 {
-                    let mut w = self.model.write();
-                    if let Some(model_pos) =
-                        w.get_element_pos(&e.model_uuid()).map(|e| e.1).or_else(|| {
-                            if *into_model {
-                                w.insert_element(*bucket, *position, e.model()).ok()
-                            } else {
-                                None
-                            }
-                        })
-                    {
+                    let model_uuid = *self.model_uuid();
+                    let pos = self.model.read().get_element_pos(&e.model_uuid());
+                    if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                        if *into_model {
+                            diagram_model
+                                .write()
+                                .insert_element_into(model_uuid, *bucket, *position, e.model())
+                                .ok()
+                        } else {
+                            None
+                        }
+                    }) {
                         let mut model_transitives = HashMap::new();
                         e.clone().head_count(
                             &mut HashMap::new(),
@@ -6938,8 +6931,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                 let view_pos = |arr: &Vec<ERef<UmlClassPropertyView<_>>>| {
                                     let mut view_pos: PositionNoT = 0;
                                     for e in arr {
-                                        let Some((_b, pos)) =
-                                            w.get_element_pos(&e.read().model_uuid())
+                                        let Some((_b, pos)) = self
+                                            .model
+                                            .read()
+                                            .get_element_pos(&e.read().model_uuid())
                                         else {
                                             unreachable!()
                                         };
@@ -6958,8 +6953,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                 let view_pos = |arr: &Vec<ERef<UmlClassOperationView<_>>>| {
                                     let mut view_pos: PositionNoT = 0;
                                     for e in arr {
-                                        let Some((_b, pos)) =
-                                            w.get_element_pos(&e.read().model_uuid())
+                                        let Some((_b, pos)) = self
+                                            .model
+                                            .read()
+                                            .get_element_pos(&e.read().model_uuid())
                                         else {
                                             unreachable!()
                                         };
@@ -6984,7 +6981,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                             element: uuid,
                             including_model: *into_model,
                         });
-                        affected_models.insert(*w.uuid);
+                        affected_models.insert(model_uuid);
                     }
                 }
             }
@@ -6995,13 +6992,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 including_model,
             } => {
                 if *target == *self.uuid && *including_model {
+                    let model_uuid = *self.model_uuid();
                     let mut removed_any = false;
                     if *bucket == 0 || *bucket == UmlClass::PROPERTIES_BUCKET {
                         self.properties_views.retain(|e| {
                             let r = e.read();
                             if *r.uuid == *element
-                                && let Some((b, pos)) =
-                                    self.model.write().remove_element(&r.model_uuid())
+                                && let Some((b, pos)) = diagram_model
+                                    .write()
+                                    .remove_element_from(model_uuid, &r.model_uuid())
                             {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
@@ -7021,8 +7020,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         self.operations_views.retain(|e| {
                             let r = e.read();
                             if *r.uuid == *element
-                                && let Some((b, pos)) =
-                                    self.model.write().remove_element(&r.model_uuid())
+                                && let Some((b, pos)) = diagram_model
+                                    .write()
+                                    .remove_element_from(model_uuid, &r.model_uuid())
                             {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
@@ -7040,7 +7040,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
 
                     if removed_any {
-                        affected_models.insert(*self.model.read().uuid);
+                        affected_models.insert(model_uuid);
                     }
                 }
             }
@@ -7844,6 +7844,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlClassDiagram>,
         command: &InsensitiveCommand<
             UmlClassOrdinalMovement,
             UmlClassElementOrVertex<P>,
@@ -8146,52 +8147,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
         self.model.write().flip_multiconnection();
         Ok(())
-    }
-    fn insert_source(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: <UmlClassDomain<P> as Domain>::CommonElementT,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(MULTICONNECTION_SOURCE_BUCKET, position, e)
-            .map_err(|_| ())
-    }
-    fn remove_source(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        let mut w = self.model.write();
-        if w.sources.len() == 1 {
-            return None;
-        }
-        for (idx, e) in w.sources.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                w.sources.remove(idx);
-                return Some(idx.try_into().unwrap());
-            }
-        }
-        None
-    }
-    fn insert_target(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: <UmlClassDomain<P> as Domain>::CommonElementT,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(MULTICONNECTION_TARGET_BUCKET, position, e)
-            .map_err(|_| ())
-    }
-    fn remove_target(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        let mut w = self.model.write();
-        if w.targets.len() == 1 {
-            return None;
-        }
-        for (idx, e) in w.targets.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                w.targets.remove(idx);
-                return Some(idx.try_into().unwrap());
-            }
-        }
-        None
     }
 
     fn show_properties(
@@ -9509,52 +9464,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         self.model.write().flip_multiconnection();
         Ok(())
     }
-    fn insert_source(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: <UmlClassDomain<P> as Domain>::CommonElementT,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(MULTICONNECTION_SOURCE_BUCKET, position, e)
-            .map_err(|_| ())
-    }
-    fn remove_source(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        let mut w = self.model.write();
-        if w.sources.len() == 1 {
-            return None;
-        }
-        for (idx, e) in w.sources.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                w.sources.remove(idx);
-                return Some(idx.try_into().unwrap());
-            }
-        }
-        None
-    }
-    fn insert_target(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: <UmlClassDomain<P> as Domain>::CommonElementT,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(MULTICONNECTION_TARGET_BUCKET, position, e)
-            .map_err(|_| ())
-    }
-    fn remove_target(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        let mut w = self.model.write();
-        if w.targets.len() == 1 {
-            return None;
-        }
-        for (idx, e) in w.targets.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                w.targets.remove(idx);
-                return Some(idx.try_into().unwrap());
-            }
-        }
-        None
-    }
 
     fn show_properties(
         &mut self,
@@ -10278,6 +10187,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlClassDiagram>,
         command: &InsensitiveCommand<
             UmlClassOrdinalMovement,
             UmlClassElementOrVertex<P>,

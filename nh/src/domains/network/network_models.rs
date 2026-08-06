@@ -7,8 +7,8 @@ use crate::common::{
     entity::{Entity, EntityUuid},
     eref::ERef,
     model::{
-        BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-        VisitableDiagram, VisitableElement,
+        BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+        PositionNoT, VisitableDiagram, VisitableElement,
     },
     search::FullTextSearchable,
     uuid::ModelUuid,
@@ -236,26 +236,31 @@ impl NetworkDiagram {
         }
     }
 
-    pub fn insert_element_into(
+    fn insert_element_unsafe(
         &mut self,
-        parent: ModelUuid,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
         element: NetworkElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        if *self.uuid == parent {
-            self.insert_element(b, p, element)
-                .map(|_| ())
-                .map_err(|_| ())
-        } else {
-            self.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
+    ) -> Result<PositionNoT, NetworkElement> {
+        if bucket != 0 {
+            return Err(element);
         }
-    }
 
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_unsafe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
     pub fn delete_elements(
         &mut self,
         uuids: &HashSet<ModelUuid>,
@@ -343,30 +348,53 @@ impl ContainerModel for NetworkDiagram {
         }
         None
     }
-    fn insert_element(
+}
+
+impl DiagramModel for NetworkDiagram {
+    fn insert_element_into(
         &mut self,
+        target: ModelUuid,
         bucket: BucketNoT,
         position: Option<PositionNoT>,
         element: NetworkElement,
     ) -> Result<PositionNoT, NetworkElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        if *self.uuid == target {
+            self.insert_element_unsafe(bucket, position, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                NetworkElement::Container(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                NetworkElement::Node(_)
+                | NetworkElement::User(_)
+                | NetworkElement::File(_)
+                | NetworkElement::Location(_)
+                | NetworkElement::Association(_)
+                | NetworkElement::Note(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_unsafe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                NetworkElement::Container(inner) => inner.write().remove_element(uuid),
+                NetworkElement::Node(_)
+                | NetworkElement::User(_)
+                | NetworkElement::File(_)
+                | NetworkElement::Location(_)
+                | NetworkElement::Association(_)
+                | NetworkElement::Note(_) => None,
+            }
+        }
     }
 }
 
@@ -423,6 +451,31 @@ impl NetworkContainer {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: NetworkElement,
+    ) -> Result<PositionNoT, NetworkElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for NetworkContainer {
@@ -454,31 +507,6 @@ impl ContainerModel for NetworkContainer {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: NetworkElement,
-    ) -> Result<PositionNoT, NetworkElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }

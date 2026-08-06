@@ -17,7 +17,7 @@ use crate::{
         },
         entity::{Entity, EntityUuid},
         eref::ERef,
-        model::{BucketNoT, PositionNoT},
+        model::{BucketNoT, DiagramModel, PositionNoT},
         project_serde::{NHContextDeserialize, NHContextSerialize},
         uuid::{ModelUuid, ViewUuid},
         views::ordered_views::OrderedViews,
@@ -32,12 +32,6 @@ pub trait PackageAdapter<DomainT: Domain>:
     fn model_name(&self) -> Arc<String>;
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)>;
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        element: DomainT::CommonElementT,
-    ) -> Result<PositionNoT, ()>;
-    fn delete_element(&mut self, uuids: &ModelUuid) -> Option<PositionNoT>;
 
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::WHITE
@@ -674,6 +668,7 @@ where
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<DomainT::DiagramModelT>,
         command: &InsensitiveCommand<
             DomainT::OrdinalMovementT,
             DomainT::AddCommandElementT,
@@ -691,7 +686,7 @@ where
         macro_rules! recurse {
             () => {
                 self.owned_views.event_order_foreach_mut(|v| {
-                    v.apply_command(command, undo_accumulator, affected_models)
+                    v.apply_command(diagram_model, command, undo_accumulator, affected_models)
                 });
             };
         }
@@ -758,6 +753,7 @@ where
                 let mut void = vec![];
                 self.owned_views.event_order_foreach_mut(|v| {
                     v.apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -837,11 +833,15 @@ where
                 element,
                 into_model,
             } => {
+                let model_uuid = *self.adapter.model_uuid();
                 if *target == *self.uuid
                     && *bucket == 0
                     && let Ok(mut view) = element.clone().try_into()
                     && (!*into_model
-                        || self.adapter.insert_element(*position, view.model()).is_ok())
+                        || diagram_model
+                            .write()
+                            .insert_element_into(model_uuid, 0, *position, view.model())
+                            .is_ok())
                 {
                     let uuid = *view.uuid();
                     undo_accumulator.push(InsensitiveCommand::RemoveDependency {
@@ -852,7 +852,7 @@ where
                     });
 
                     if *into_model {
-                        affected_models.insert(*self.adapter.model_uuid());
+                        affected_models.insert(model_uuid);
                     }
                     let mut model_transitives = HashMap::new();
                     view.head_count(
@@ -873,10 +873,13 @@ where
                 element,
                 including_model,
             } => {
+                let model_uuid = *self.adapter.model_uuid();
                 if *target == *self.uuid
                     && *bucket == 0
                     && let Some(view) = self.owned_views.get(element)
-                    && let Some(pos) = self.adapter.delete_element(&view.model_uuid())
+                    && let Some((_, pos)) = diagram_model
+                        .write()
+                        .remove_element_from(model_uuid, &view.model_uuid())
                 {
                     undo_accumulator.push(InsensitiveCommand::AddDependency {
                         target: *self.uuid,
@@ -887,7 +890,7 @@ where
                     });
 
                     if *including_model {
-                        affected_models.insert(*self.adapter.model_uuid());
+                        affected_models.insert(model_uuid);
                     }
 
                     self.owned_views.retain(|k, _v| *k != *element);

@@ -180,18 +180,6 @@ impl ControllerAdapter<RdfDomain> for RdfControllerAdapter {
         super::rdf_models::transitive_closure(&self.model.read(), when_deleting)
     }
 
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: RdfElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
-    }
-
     fn delete_elements(
         &mut self,
         uuids: &HashSet<ModelUuid>,
@@ -274,7 +262,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         element: RdfElement,
     ) -> Result<RdfElementView, HashSet<ModelUuid>> {
         let v = match element {
-            RdfElement::RdfGraph(inner) => RdfElementView::from(new_rdf_graph_view(
+            RdfElement::Graph(inner) => RdfElementView::from(new_rdf_graph_view(
                 inner,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
@@ -282,17 +270,17 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                 },
                 MGlobalColor::None,
             )),
-            RdfElement::RdfLiteral(inner) => RdfElementView::from(new_rdf_literal_view(
+            RdfElement::Literal(inner) => RdfElementView::from(new_rdf_literal_view(
                 inner,
                 egui::Pos2::ZERO,
                 MGlobalColor::None,
             )),
-            RdfElement::RdfNode(inner) => RdfElementView::from(new_rdf_node_view(
+            RdfElement::Node(inner) => RdfElementView::from(new_rdf_node_view(
                 inner,
                 egui::Pos2::ZERO,
                 MGlobalColor::None,
             )),
-            RdfElement::RdfPredicate(inner) => {
+            RdfElement::Predicate(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
@@ -312,10 +300,10 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
     fn label_for(&self, e: &RdfElement) -> Arc<String> {
         match e {
-            RdfElement::RdfGraph(inner) => inner.read().iri.clone(),
-            RdfElement::RdfLiteral(inner) => inner.read().content.clone(),
-            RdfElement::RdfNode(inner) => inner.read().iri.clone(),
-            RdfElement::RdfPredicate(inner) => inner.read().iri.clone(),
+            RdfElement::Graph(inner) => inner.read().iri.clone(),
+            RdfElement::Literal(inner) => inner.read().content.clone(),
+            RdfElement::Node(inner) => inner.read().iri.clone(),
+            RdfElement::Predicate(inner) => inner.read().iri.clone(),
         }
     }
 
@@ -1049,14 +1037,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Ok(RdfElement::RdfGraph(..)) => match self.current_stage {
+            Ok(RdfElement::Graph(..)) => match self.current_stage {
                 RdfToolStage::Literal { .. } | RdfToolStage::Node { .. } => TARGETTABLE_COLOR,
                 RdfToolStage::PredicateStart { .. }
                 | RdfToolStage::PredicateEnd
                 | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Ok(RdfElement::RdfLiteral(..)) => match self.current_stage {
+            Ok(RdfElement::Literal(..)) => match self.current_stage {
                 RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal { .. }
                 | RdfToolStage::Node { .. }
@@ -1064,7 +1052,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Ok(RdfElement::RdfNode(..)) => match self.current_stage {
+            Ok(RdfElement::Node(..)) => match self.current_stage {
                 RdfToolStage::PredicateStart { .. } | RdfToolStage::PredicateEnd => {
                     TARGETTABLE_COLOR
                 }
@@ -1073,7 +1061,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Ok(RdfElement::RdfPredicate(..)) => unreachable!(),
+            Ok(RdfElement::Predicate(..)) => unreachable!(),
         }
     }
     fn draw_status_hint(
@@ -1173,8 +1161,8 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         }
 
         match controller {
-            RdfElement::RdfGraph(..) => {}
-            RdfElement::RdfLiteral(inner) => {
+            RdfElement::Graph(..) => {}
+            RdfElement::Literal(inner) => {
                 if let (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) =
                     (&self.current_stage, &mut self.result)
                 {
@@ -1182,7 +1170,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     self.event_lock = true;
                 }
             }
-            RdfElement::RdfNode(inner) => match (&self.current_stage, &mut self.result) {
+            RdfElement::Node(inner) => match (&self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateStart { .. }, PartialRdfElement::None) => {
                     self.result = PartialRdfElement::Predicate {
                         source: inner,
@@ -1196,7 +1184,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 }
                 _ => {}
             },
-            RdfElement::RdfPredicate(..) => {}
+            RdfElement::Predicate(..) => {}
         }
     }
 
@@ -1349,10 +1337,10 @@ struct RdfIriBasedSetupModal {
 impl From<RdfElement> for RdfIriBasedSetupModal {
     fn from(model: RdfElement) -> Self {
         let iri_buffer = match &model {
-            RdfElement::RdfGraph(eref) => (*eref.read().iri).clone(),
-            RdfElement::RdfNode(eref) => (*eref.read().iri).clone(),
-            RdfElement::RdfPredicate(eref) => (*eref.read().iri).clone(),
-            RdfElement::RdfLiteral(..) => unreachable!(),
+            RdfElement::Graph(eref) => (*eref.read().iri).clone(),
+            RdfElement::Node(eref) => (*eref.read().iri).clone(),
+            RdfElement::Predicate(eref) => (*eref.read().iri).clone(),
+            RdfElement::Literal(..) => unreachable!(),
         };
         Self {
             model,
@@ -1383,10 +1371,10 @@ impl CustomModal for RdfIriBasedSetupModal {
             if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let iri = Arc::new(self.iri_buffer.clone());
                 match &self.model {
-                    RdfElement::RdfGraph(inner) => inner.write().iri = iri,
-                    RdfElement::RdfNode(inner) => inner.write().iri = iri,
-                    RdfElement::RdfPredicate(inner) => inner.write().iri = iri,
-                    RdfElement::RdfLiteral(_inner) => unreachable!(),
+                    RdfElement::Graph(inner) => inner.write().iri = iri,
+                    RdfElement::Node(inner) => inner.write().iri = iri,
+                    RdfElement::Predicate(inner) => inner.write().iri = iri,
+                    RdfElement::Literal(_inner) => unreachable!(),
                 }
                 result = CustomModalResult::CloseModified(*self.model.uuid());
             }
@@ -1459,19 +1447,6 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
-    }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        element: RdfElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, element)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
@@ -1568,7 +1543,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     {
         let old_model = self.model.read();
 
-        let model = if let Some(RdfElement::RdfGraph(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(RdfElement::Graph(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             old_model.deep_copy_clone_inner(new_uuid, m)
@@ -1790,7 +1765,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             &self.model.read().iri,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
-        self.bounds_radius = text_bounds.size() / 1.5;
+        self.bounds_radius = text_bounds.expand(2.0).size() / 1.5;
 
         canvas.draw_ellipse(
             self.position,
@@ -2009,6 +1984,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<RdfDiagram>,
         command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<
             InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
@@ -2111,7 +2087,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(RdfElement::RdfNode(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(RdfElement::Node(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             old_model.deep_copy_clone_inner(model_uuid, m)
@@ -2491,6 +2467,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<RdfDiagram>,
         command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<
             InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
@@ -2609,7 +2586,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(RdfElement::RdfLiteral(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(RdfElement::Literal(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             old_model.deep_copy_clone_inner(model_uuid, m)
@@ -2730,7 +2707,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
 
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
         let mut w = self.model.write();
-        if let RdfTargettableElement::RdfNode(t) = &w.target {
+        if let RdfTargettableElement::Node(t) = &w.target {
             let tmp = w.source.clone();
             w.source = t.clone();
             w.target = tmp.into();
@@ -2769,7 +2746,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         }
 
         if ui.button("Switch source and destination").clicked()
-            && let RdfTargettableElement::RdfNode(_) = &self.model.read().target
+            && let RdfTargettableElement::Node(_) = &self.model.read().target
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
@@ -2838,7 +2815,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     {
         let old_model = self.model.read();
 
-        let model = if let Some(RdfElement::RdfPredicate(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(RdfElement::Predicate(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             old_model.deep_copy_clone_inner(new_uuid, m)

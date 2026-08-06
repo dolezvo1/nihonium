@@ -12,7 +12,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
@@ -212,18 +212,6 @@ impl ControllerAdapter<UmlStateMachineDomain> for UmlStateMachineControllerAdapt
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::umlstatemachine_models::transitive_closure(&self.model.read(), when_deleting)
-    }
-
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: UmlStateMachineElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
     }
 
     fn delete_elements(
@@ -699,7 +687,7 @@ pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     // From https://en.wikipedia.org/wiki/File:UML_state_machine_Fig2b.png
 
-    let (initial, initial_view) =
+    let (initial1, initial1_view) =
         new_umlstatemachine_initialpseudostate(egui::Pos2::new(300.0, 275.0));
 
     let (operand1, operand1_view) = new_umlstatemachine_simplestate(
@@ -734,7 +722,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (_e1, e1_view) = new_umlstatemachine_edge(
         "",
         None,
-        (initial.clone().into(), initial_view.clone().into()),
+        (initial1.clone().into(), initial1_view.clone().into()),
         (operand1.clone().into(), operand1_view.clone().into()),
     );
     let (_e2, e2_view) = new_umlstatemachine_edge(
@@ -771,52 +759,22 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (composite_region, composite_region_view) = new_umlstatemachine_compositestateregion(
         egui::Rect::from_x_y_ranges(200.0..=700.0, 200.0..=600.0),
     );
-    {
-        let mut w = composite_region_view.write();
-        let region = *w.uuid();
-        let (mut u, mut a) = Default::default();
-        for e in [
-            initial_view.into(),
-            operand1_view.into(),
-            opentered_view.into(),
-            operand2_view.into(),
-            result_view.into(),
-            e1_view.into(),
-            e2_view.into(),
-            e3_view.into(),
-            e4_view.into(),
-            e5_view.into(),
-            e6_view.into(),
-        ] {
-            w.apply_command(
-                &InsensitiveCommand::AddDependency {
-                    target: region,
-                    bucket: 0,
-                    position: None,
-                    element: UmlStateMachineElementOrVertex::Element(e),
-                    into_model: true,
-                },
-                &mut u,
-                &mut a,
-            );
-        }
-    }
     let (composite, composite_view) = new_umlstatemachine_compositestate(
         "on",
         "",
         Vec::new(),
-        vec![(composite_region, composite_region_view)],
+        vec![(composite_region, composite_region_view.clone())],
         MGlobalColor::None,
     );
 
-    let (initial, initial_view) =
+    let (initial2, initial2_view) =
         new_umlstatemachine_initialpseudostate(egui::Pos2::new(800.0, 150.0));
     let (r#final, final_view) = new_umlstatemachine_finalstate(egui::Pos2::new(800.0, 700.0));
 
     let (_e21, e21_view) = new_umlstatemachine_edge(
         "",
         None,
-        (initial.clone().into(), initial_view.clone().into()),
+        (initial2.clone().into(), initial2_view.clone().into()),
         (composite.clone().into(), composite_view.clone().into()),
     );
     let (_e22, e22_view) = new_umlstatemachine_edge(
@@ -832,18 +790,26 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         false,
         egui::Rect::from_x_y_ranges(100.0..=900.0, 100.0..=800.0),
     );
+
+    let diagram = ERef::new(UmlStateMachineDiagram::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        vec![activity.into()],
+    ));
+
     {
         let mut w = activity_view.write();
         let activity_uuid = *w.uuid();
         let (mut u, mut a) = Default::default();
         for e in [
             composite_view.into(),
-            initial_view.into(),
+            initial2_view.clone().into(),
             final_view.into(),
             e21_view.into(),
             e22_view.into(),
         ] {
             w.apply_command(
+                &diagram,
                 &InsensitiveCommand::AddDependency {
                     target: activity_uuid,
                     bucket: 0,
@@ -856,12 +822,38 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             );
         }
     }
+    {
+        let mut w = composite_region_view.write();
+        let region = *w.uuid();
+        let (mut u, mut a) = Default::default();
+        for e in [
+            initial1_view.into(),
+            operand1_view.into(),
+            opentered_view.into(),
+            operand2_view.into(),
+            result_view.into(),
+            e1_view.into(),
+            e2_view.into(),
+            e3_view.into(),
+            e4_view.into(),
+            e5_view.into(),
+            e6_view.into(),
+        ] {
+            w.apply_command(
+                &diagram,
+                &InsensitiveCommand::AddDependency {
+                    target: region,
+                    bucket: 0,
+                    position: None,
+                    element: UmlStateMachineElementOrVertex::Element(e),
+                    into_model: true,
+                },
+                &mut u,
+                &mut a,
+            );
+        }
+    }
 
-    let diagram = ERef::new(UmlStateMachineDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![activity.into()],
-    ));
     new_controlller(diagram, name.to_owned(), vec![activity_view.into()])
 }
 
@@ -2366,19 +2358,6 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        element: UmlStateMachineElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, element)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
-    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors
@@ -3326,6 +3305,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             <UmlStateMachineDomain as Domain>::OrdinalMovementT,
             <UmlStateMachineDomain as Domain>::AddCommandElementT,
@@ -3343,12 +3323,20 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         macro_rules! recurse {
             () => {
                 self.internal_transition_views.iter().for_each(|t| {
-                    t.write()
-                        .apply_command(command, undo_accumulator, affected_models);
+                    t.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    );
                 });
                 self.region_views.iter().for_each(|s| {
-                    s.write()
-                        .apply_command(command, undo_accumulator, affected_models)
+                    s.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    )
                 });
             };
         }
@@ -3418,6 +3406,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 let mut void = vec![];
                 self.region_views.iter_mut().for_each(|v| {
                     v.write().apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -3461,6 +3450,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     for e in sections_iter {
                         let mut w = e.write();
                         w.apply_command(
+                            diagram_model,
                             &InsensitiveCommand::MovePositionalAll(delta_x),
                             &mut u,
                             &mut v,
@@ -3534,6 +3524,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     macro_rules! adjust {
                         ($w:expr, $dx:expr) => {
                             $w.apply_command(
+                                diagram_model,
                                 &InsensitiveCommand::MovePositionalAll(egui::Vec2::new($dx, 0.0)),
                                 &mut u,
                                 &mut v,
@@ -3623,6 +3614,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             delta.y += w.bounds_rect.height();
                         } else {
                             w.apply_command(
+                                diagram_model,
                                 &InsensitiveCommand::MovePositionalAll(-delta),
                                 &mut u,
                                 &mut m,
@@ -3643,24 +3635,24 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0
                         || *bucket == UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET)
                         && let Ok(UmlStateMachineElementView::InternalTransition(view)) =
                             element.clone().try_into()
                     {
                         let mut vw = view.write();
-                        if let Some(model_pos) = w
-                            .get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, vw.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                        {
+                        let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, vw.model())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) {
                             let uuid = *vw.uuid;
 
                             let mut model_transitives = HashMap::new();
@@ -3677,12 +3669,13 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                                 element: uuid,
                                 including_model: *into_model,
                             });
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
 
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
                                 for e in &self.internal_transition_views {
-                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.read().model_uuid())
                                     else {
                                         unreachable!()
                                     };
@@ -3704,17 +3697,17 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             element.clone().try_into()
                     {
                         let mut vw = view.write();
-                        if let Some(model_pos) = w
-                            .get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, vw.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                        {
+                        let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, vw.model())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) {
                             let uuid = *vw.uuid;
 
                             let (old_uuid, old_rect) = self
@@ -3754,7 +3747,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             ]);
 
                             if *into_model {
-                                affected_models.insert(*w.uuid);
+                                affected_models.insert(model_uuid);
                             }
                             let mut model_transitives = HashMap::new();
                             vw.head_count(
@@ -3767,7 +3760,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
                                 for e in &self.region_views {
-                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.read().model_uuid())
                                     else {
                                         unreachable!()
                                     };
@@ -3796,6 +3790,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             let (mut u, mut m) = Default::default();
                             for e in self.region_views.iter().skip(view_pos) {
                                 e.write().apply_command(
+                                    diagram_model,
                                     &InsensitiveCommand::MovePositionalAll(delta),
                                     &mut u,
                                     &mut m,
@@ -3803,6 +3798,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             }
                             let delta = old_position - vw.bounds_rect.min;
                             vw.apply_command(
+                                diagram_model,
                                 &InsensitiveCommand::MovePositionalAll(delta),
                                 &mut u,
                                 &mut m,
@@ -3830,8 +3826,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                         self.internal_transition_views.retain(|e| {
                             let r = e.read();
                             if *r.uuid == *element
-                                && let Some((b, pos)) =
-                                    self.model.write().remove_element(&r.model_uuid())
+                                && let Some((b, pos)) = diagram_model
+                                    .write()
+                                    .remove_element_from(model_uuid, &r.model_uuid())
                             {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
@@ -3859,10 +3856,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                             .find(|v| *v.read().uuid == *element)
                             .cloned()
                     {
-                        let model_uuid = *view.read().model_uuid();
-                        let mut w = self.model.write();
+                        let child_model_uuid = *view.read().model_uuid();
 
-                        if let Some((_b, pos)) = w.remove_element(&model_uuid) {
+                        if let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &child_model_uuid)
+                        {
                             undo_accumulator.push(InsensitiveCommand::AddDependency {
                                 target: *self.uuid,
                                 bucket: *bucket,
@@ -3884,6 +3883,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                                     delta.y += w.bounds_rect.height();
                                 } else {
                                     w.apply_command(
+                                        diagram_model,
                                         &InsensitiveCommand::MovePositionalAll(-delta),
                                         &mut u,
                                         &mut m,
@@ -3940,11 +3940,13 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                                     };
                                     let (mut u, mut m) = Default::default();
                                     srcw.apply_command(
+                                        diagram_model,
                                         &InsensitiveCommand::MovePositionalAll(src_d),
                                         &mut u,
                                         &mut m,
                                     );
                                     destw.apply_command(
+                                        diagram_model,
                                         &InsensitiveCommand::MovePositionalAll(dest_d),
                                         &mut u,
                                         &mut m,
@@ -4589,6 +4591,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
             UmlStateMachineElementOrVertex,
@@ -4606,7 +4609,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         macro_rules! recurse {
             () => {
                 self.contained_elements.event_order_foreach_mut(|v| {
-                    v.apply_command(command, undo_accumulator, affected_models)
+                    v.apply_command(diagram_model, command, undo_accumulator, affected_models)
                 });
             };
         }
@@ -4664,6 +4667,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 let mut void = vec![];
                 self.contained_elements.event_order_foreach_mut(|v| {
                     v.apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -4709,11 +4713,14 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Ok(mut view) = UmlStateMachineElementView::try_from(element.clone())
                         && (!*into_model
-                            || w.insert_element(*bucket, *position, view.model()).is_ok())
+                            || diagram_model
+                                .write()
+                                .insert_element_into(model_uuid, *bucket, *position, view.model())
+                                .is_ok())
                     {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency {
@@ -4724,7 +4731,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                         });
 
                         if *into_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
                         let mut model_transitives = HashMap::new();
                         view.head_count(
@@ -4747,10 +4754,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Some(view) = self.contained_elements.get(element)
-                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
+                        && let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &view.model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -4761,7 +4770,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.contained_elements.retain(|k, _v| *k != *element);
@@ -5414,6 +5423,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
             UmlStateMachineElementOrVertex,
@@ -5431,8 +5441,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
         macro_rules! recurse {
             () => {
                 self.internal_transition_views.iter().for_each(|t| {
-                    t.write()
-                        .apply_command(command, undo_accumulator, affected_models);
+                    t.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    );
                 });
             };
         }
@@ -5531,24 +5545,24 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0
                         || *bucket == UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET)
                         && let Ok(UmlStateMachineElementView::InternalTransition(view)) =
                             element.clone().try_into()
                     {
                         let mut vw = view.write();
-                        if let Some(model_pos) = w
-                            .get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, vw.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                        {
+                        let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, vw.model())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) {
                             let uuid = *vw.uuid;
 
                             let mut model_transitives = HashMap::new();
@@ -5565,12 +5579,13 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                                 element: uuid,
                                 including_model: *into_model,
                             });
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
 
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
                                 for e in &self.internal_transition_views {
-                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.read().model_uuid())
                                     else {
                                         unreachable!()
                                     };
@@ -5605,8 +5620,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineSimpleState
                         self.internal_transition_views.retain(|e| {
                             let r = e.read();
                             if *r.uuid == *element
-                                && let Some((b, pos)) =
-                                    self.model.write().remove_element(&r.model_uuid())
+                                && let Some((b, pos)) = diagram_model
+                                    .write()
+                                    .remove_element_from(model_uuid, &r.model_uuid())
                             {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
@@ -6090,6 +6106,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTra
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
             <UmlStateMachineDomain as Domain>::AddCommandElementT,
@@ -6511,6 +6528,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInitialPseu
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
             <UmlStateMachineDomain as Domain>::AddCommandElementT,
@@ -6859,6 +6877,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineTerminatePs
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
             UmlStateMachineElementOrVertex,
@@ -7203,6 +7222,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineFinalStateV
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
             UmlStateMachineElementOrVertex,
@@ -8000,6 +8020,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlStateMachineDiagram>,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
             UmlStateMachineElementOrVertex,

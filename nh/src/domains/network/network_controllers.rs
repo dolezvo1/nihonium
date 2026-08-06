@@ -183,18 +183,6 @@ impl ControllerAdapter<NetworkDomain> for NetworkControllerAdapter {
         super::network_models::transitive_closure(&self.model.read(), when_deleting)
     }
 
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: NetworkElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
-    }
-
     fn delete_elements(
         &mut self,
         uuids: &HashSet<ModelUuid>,
@@ -1931,19 +1919,6 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        element: NetworkElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, element)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
-    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors
@@ -3023,6 +2998,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<NetworkDiagram>,
         command: &InsensitiveCommand<
             NetworkOrdinalMovement,
             NetworkElementOrVertex,
@@ -3650,6 +3626,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<NetworkDiagram>,
         command: &InsensitiveCommand<
             NetworkOrdinalMovement,
             NetworkElementOrVertex,
@@ -4180,6 +4157,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<NetworkDiagram>,
         command: &InsensitiveCommand<
             NetworkOrdinalMovement,
             NetworkElementOrVertex,
@@ -4780,6 +4758,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<NetworkDiagram>,
         command: &InsensitiveCommand<
             NetworkOrdinalMovement,
             NetworkElementOrVertex,
@@ -5823,6 +5802,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<NetworkDiagram>,
         command: &InsensitiveCommand<
             NetworkOrdinalMovement,
             NetworkElementOrVertex,

@@ -1,7 +1,7 @@
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
     VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
@@ -42,26 +42,26 @@ impl<'a> RdfCollector<'a> {
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum RdfElement {
     #[container_model(passthrough = "eref")]
-    RdfGraph(ERef<RdfGraph>),
-    RdfLiteral(ERef<RdfLiteral>),
-    RdfNode(ERef<RdfNode>),
-    RdfPredicate(ERef<RdfPredicate>),
+    Graph(ERef<RdfGraph>),
+    Literal(ERef<RdfLiteral>),
+    Node(ERef<RdfNode>),
+    Predicate(ERef<RdfPredicate>),
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum RdfTargettableElement {
-    RdfLiteral(ERef<RdfLiteral>),
-    RdfNode(ERef<RdfNode>),
+    Literal(ERef<RdfLiteral>),
+    Node(ERef<RdfNode>),
 }
 
 impl RdfElement {
     pub fn as_targettable_element(&self) -> Option<RdfTargettableElement> {
         match self {
-            RdfElement::RdfLiteral(inner) => Some(inner.clone().into()),
-            RdfElement::RdfNode(inner) => Some(inner.clone().into()),
-            RdfElement::RdfGraph(_) | RdfElement::RdfPredicate(_) => None,
+            RdfElement::Literal(inner) => Some(inner.clone().into()),
+            RdfElement::Node(inner) => Some(inner.clone().into()),
+            RdfElement::Graph(_) | RdfElement::Predicate(_) => None,
         }
     }
 
@@ -71,23 +71,23 @@ impl RdfElement {
         into: &mut HashMap<ModelUuid, RdfElement>,
     ) -> Self {
         match self {
-            Self::RdfGraph(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::RdfLiteral(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::RdfNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::RdfPredicate(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Graph(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Literal(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Node(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
+            Self::Predicate(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
         }
     }
     pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, RdfElement>) {
         match self {
-            Self::RdfGraph(_) | Self::RdfLiteral(_) | Self::RdfNode(_) => {}
-            Self::RdfPredicate(inner) => inner.write().deep_copy_relink(all_models),
+            Self::Graph(_) | Self::Literal(_) | Self::Node(_) => {}
+            Self::Predicate(inner) => inner.write().deep_copy_relink(all_models),
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn accept_collector(&self, collector: &mut RdfCollector<'static>) {
         match self {
-            RdfElement::RdfGraph(inner) => {
+            RdfElement::Graph(inner) => {
                 let model = inner.read();
                 let old_graph = collector.current_graph.replace(SimpleTerm::Iri(
                     IriRef::new(MownStr::from((*model.iri).clone())).unwrap(),
@@ -99,8 +99,8 @@ impl RdfElement {
 
                 collector.current_graph = old_graph;
             }
-            RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {}
-            RdfElement::RdfPredicate(inner) => {
+            RdfElement::Literal(_) | RdfElement::Node(_) => {}
+            RdfElement::Predicate(inner) => {
                 let model = inner.read();
                 let subject = model.source.read().term_repr();
                 let object = model.target.term_repr();
@@ -119,8 +119,8 @@ impl RdfTargettableElement {
     #[cfg(not(target_arch = "wasm32"))]
     fn term_repr(&self) -> SimpleTerm<'static> {
         match self {
-            RdfTargettableElement::RdfLiteral(inner) => inner.read().term_repr(),
-            RdfTargettableElement::RdfNode(inner) => inner.read().term_repr(),
+            RdfTargettableElement::Literal(inner) => inner.read().term_repr(),
+            RdfTargettableElement::Node(inner) => inner.read().term_repr(),
         }
     }
 }
@@ -131,7 +131,7 @@ impl VisitableElement for RdfElement {
         Self: Sized,
     {
         match self {
-            RdfElement::RdfGraph(inner) => {
+            RdfElement::Graph(inner) => {
                 v.open_complex(self);
                 for e in &inner.read().contained_elements {
                     e.accept(v);
@@ -177,12 +177,12 @@ pub fn enumerate_diagram(d: &RdfDiagram) -> HashMap<ModelUuid, RdfElement> {
 fn enumerate_elements(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) {
     into.insert(*e.uuid(), e.clone());
     match e {
-        RdfElement::RdfGraph(inner) => {
+        RdfElement::Graph(inner) => {
             for e in &inner.read().contained_elements {
                 enumerate_elements(e, into);
             }
         }
-        RdfElement::RdfLiteral(..) | RdfElement::RdfNode(..) | RdfElement::RdfPredicate(..) => {}
+        RdfElement::Literal(..) | RdfElement::Node(..) | RdfElement::Predicate(..) => {}
     }
 }
 
@@ -193,7 +193,7 @@ pub fn transitive_closure(
     for e in &d.contained_elements {
         fn walk(e: &RdfElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
-                RdfElement::RdfGraph(inner) => {
+                RdfElement::Graph(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         let mut c = Default::default();
@@ -205,9 +205,7 @@ pub fn transitive_closure(
                         }
                     }
                 }
-                RdfElement::RdfLiteral(..)
-                | RdfElement::RdfNode(..)
-                | RdfElement::RdfPredicate(..) => {}
+                RdfElement::Literal(..) | RdfElement::Node(..) | RdfElement::Predicate(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -221,13 +219,13 @@ pub fn transitive_closure(
             also_delete: &mut HashSet<ModelUuid>,
         ) {
             match e {
-                RdfElement::RdfGraph(inner) => {
+                RdfElement::Graph(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
                 }
-                RdfElement::RdfLiteral(..) | RdfElement::RdfNode(..) => {}
-                RdfElement::RdfPredicate(inner) => {
+                RdfElement::Literal(..) | RdfElement::Node(..) => {}
+                RdfElement::Predicate(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
@@ -310,26 +308,6 @@ impl RdfDiagram {
         }
     }
 
-    pub fn insert_element_into(
-        &mut self,
-        parent: ModelUuid,
-        element: RdfElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        if *self.uuid == parent {
-            self.insert_element(b, p, element)
-                .map(|_| ())
-                .map_err(|_| ())
-        } else {
-            self.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
-        }
-    }
-
     pub fn delete_elements(
         &mut self,
         uuids: &HashSet<ModelUuid>,
@@ -341,7 +319,7 @@ impl RdfDiagram {
             undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>,
         ) {
             match e {
-                RdfElement::RdfGraph(inner) => {
+                RdfElement::Graph(inner) => {
                     let mut w = inner.write();
                     for (idx, e) in w.contained_elements.iter().enumerate() {
                         if uuids.contains(&e.uuid()) {
@@ -352,9 +330,7 @@ impl RdfDiagram {
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
                 }
-                RdfElement::RdfLiteral(_)
-                | RdfElement::RdfNode(_)
-                | RdfElement::RdfPredicate(_) => {}
+                RdfElement::Literal(_) | RdfElement::Node(_) | RdfElement::Predicate(_) => {}
             }
         }
 
@@ -367,6 +343,32 @@ impl RdfDiagram {
         }
         self.contained_elements
             .retain(|e| !uuids.contains(&e.uuid()));
+    }
+
+    fn insert_element_unsafe(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: RdfElement,
+    ) -> Result<PositionNoT, RdfElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_unsafe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -414,30 +416,47 @@ impl ContainerModel for RdfDiagram {
         }
         None
     }
-    fn insert_element(
+}
+
+impl DiagramModel for RdfDiagram {
+    fn insert_element_into(
         &mut self,
+        target: ModelUuid,
         bucket: BucketNoT,
         position: Option<PositionNoT>,
         element: RdfElement,
     ) -> Result<PositionNoT, RdfElement> {
-        if bucket != 0 {
-            return Err(element);
+        if let RdfElement::Predicate(p) = &element {
+            // TODO: Check that predicate source and target are both directly inside the desired parent
         }
 
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        if *self.uuid == target {
+            self.insert_element_unsafe(bucket, position, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                RdfElement::Graph(inner) => inner.write().insert_element(bucket, position, element),
+                RdfElement::Literal(_) | RdfElement::Node(_) => Err(element),
+                RdfElement::Predicate(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_unsafe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                RdfElement::Graph(inner) => inner.write().remove_element(uuid),
+                RdfElement::Literal(_) | RdfElement::Node(_) => None,
+                RdfElement::Predicate(_) => None,
+            }
+        }
     }
 }
 
@@ -493,6 +512,32 @@ impl RdfGraph {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: RdfElement,
+    ) -> Result<PositionNoT, RdfElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for RdfGraph {
@@ -524,31 +569,6 @@ impl ContainerModel for RdfGraph {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: RdfElement,
-    ) -> Result<PositionNoT, RdfElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -749,7 +769,7 @@ impl RdfPredicate {
     }
     pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, RdfElement>) {
         let source_uuid = *self.source.read().uuid();
-        if let Some(RdfElement::RdfNode(n)) = all_models.get(&source_uuid) {
+        if let Some(RdfElement::Node(n)) = all_models.get(&source_uuid) {
             self.source = n.clone();
         }
         let target_uuid = *self.target.uuid();

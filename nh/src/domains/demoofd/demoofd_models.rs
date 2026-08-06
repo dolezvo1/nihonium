@@ -8,8 +8,8 @@ use crate::{
         entity::{Entity, EntityUuid},
         eref::ERef,
         model::{
-            BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-            VisitableDiagram, VisitableElement,
+            BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+            PositionNoT, VisitableDiagram, VisitableElement,
         },
         search::FullTextSearchable,
         ufoption::UFOption,
@@ -344,6 +344,31 @@ impl DemoOfdDiagram {
                 .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
+    fn insert_element_unsafe(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoOfdElement,
+    ) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_unsafe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for DemoOfdDiagram {
@@ -390,30 +415,61 @@ impl ContainerModel for DemoOfdDiagram {
         }
         None
     }
-    fn insert_element(
+}
+
+impl DiagramModel for DemoOfdDiagram {
+    fn insert_element_into(
         &mut self,
+        target: ModelUuid,
         bucket: BucketNoT,
         position: Option<PositionNoT>,
         element: DemoOfdElement,
     ) -> Result<PositionNoT, DemoOfdElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        if *self.uuid == target {
+            self.insert_element_unsafe(bucket, position, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                DemoOfdElement::Package(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                DemoOfdElement::EventType(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                DemoOfdElement::Aggregation(inner) => {
+                    inner.write().insert_element(bucket, position, element)
+                }
+                DemoOfdElement::EntityType(_)
+                | DemoOfdElement::PropertyType(_)
+                | DemoOfdElement::Specialization(_)
+                | DemoOfdElement::Precedence(_)
+                | DemoOfdElement::Exclusion(_)
+                | DemoOfdElement::Note(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_unsafe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                DemoOfdElement::Package(inner) => inner.write().remove_element(uuid),
+                DemoOfdElement::EventType(inner) => inner.write().remove_element(uuid),
+                DemoOfdElement::Aggregation(inner) => inner.write().remove_element(uuid),
+                DemoOfdElement::EntityType(_)
+                | DemoOfdElement::PropertyType(_)
+                | DemoOfdElement::Specialization(_)
+                | DemoOfdElement::Precedence(_)
+                | DemoOfdElement::Exclusion(_)
+                | DemoOfdElement::Note(_) => None,
+            }
+        }
     }
 }
 
@@ -477,6 +533,32 @@ impl DemoOfdPackage {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoOfdElement,
+    ) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Entity for DemoOfdPackage {
@@ -508,31 +590,6 @@ impl ContainerModel for DemoOfdPackage {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: DemoOfdElement,
-    ) -> Result<PositionNoT, DemoOfdElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -678,6 +735,36 @@ impl DemoOfdEventType {
             }
         }
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        _position: Option<PositionNoT>,
+        element: DemoOfdElement,
+    ) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        if !self.specialization_entity_type.is_some()
+            && let DemoOfdElement::EntityType(e) = element
+        {
+            self.specialization_entity_type = UFOption::Some(e);
+            Ok(0)
+        } else {
+            Err(element)
+        }
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if let UFOption::Some(e) = &self.specialization_entity_type
+            && *e.read().uuid == *uuid
+        {
+            self.specialization_entity_type = UFOption::None;
+            Some((0, 0))
+        } else {
+            None
+        }
+    }
 }
 
 impl Entity for DemoOfdEventType {
@@ -708,35 +795,6 @@ impl ContainerModel for DemoOfdEventType {
         if let UFOption::Some(e) = &self.specialization_entity_type
             && *uuid == *e.read().uuid
         {
-            Some((0, 0))
-        } else {
-            None
-        }
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        _position: Option<PositionNoT>,
-        element: DemoOfdElement,
-    ) -> Result<PositionNoT, DemoOfdElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-
-        if !self.specialization_entity_type.is_some()
-            && let DemoOfdElement::EntityType(e) = element
-        {
-            self.specialization_entity_type = UFOption::Some(e);
-            Ok(0)
-        } else {
-            Err(element)
-        }
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        if let UFOption::Some(e) = &self.specialization_entity_type
-            && *e.read().uuid == *uuid
-        {
-            self.specialization_entity_type = UFOption::None;
             Some((0, 0))
         } else {
             None
@@ -980,6 +1038,40 @@ impl DemoOfdAggregation {
             self.range_element = re.clone();
         }
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoOfdElement,
+    ) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != MULTICONNECTION_SOURCE_BUCKET {
+            return Err(element);
+        }
+
+        let DemoOfdElement::EntityType(entity) = element else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.domain_elements.len());
+        self.domain_elements.insert(pos, entity);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if self.domain_elements.len() == 1 {
+            return None;
+        }
+        for (idx, e) in self.domain_elements.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                self.domain_elements.remove(idx);
+                return Some((MULTICONNECTION_SOURCE_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
+
     pub fn flip_multiconnection(&mut self) -> Result<(), ()> {
         if self.domain_elements.len() == 1 {
             let tmp = self.range_element.clone();
@@ -1015,38 +1107,6 @@ impl ContainerModel for DemoOfdAggregation {
         }
         if *self.range_element.read().uuid == *uuid {
             return Some((self.range_element.clone().into(), *self.uuid));
-        }
-        None
-    }
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: DemoOfdElement,
-    ) -> Result<PositionNoT, DemoOfdElement> {
-        if bucket != MULTICONNECTION_SOURCE_BUCKET {
-            return Err(element);
-        }
-
-        let DemoOfdElement::EntityType(entity) = element else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.domain_elements.len());
-        self.domain_elements.insert(pos, entity);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        if self.domain_elements.len() == 1 {
-            return None;
-        }
-        for (idx, e) in self.domain_elements.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                self.domain_elements.remove(idx);
-                return Some((MULTICONNECTION_SOURCE_BUCKET, idx.try_into().unwrap()));
-            }
         }
         None
     }

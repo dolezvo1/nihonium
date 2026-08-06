@@ -20,7 +20,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -216,25 +216,6 @@ impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::demoofd_models::transitive_closure(&self.model.read(), when_deleting)
-    }
-
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: DemoOfdElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        let mut w = self.model.write();
-        if *w.uuid == parent {
-            w.insert_element(b, p, element).map(|_| ()).map_err(|_| ())
-        } else {
-            w.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
-        }
     }
 
     fn delete_elements(
@@ -2103,19 +2084,6 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: DemoOfdElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, e)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
-    }
 
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         match self.kind_buffer {
@@ -2862,6 +2830,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<DemoOfdDiagram>,
         command: &InsensitiveCommand<
             DemoOfdOrdinalMovement,
             DemoOfdElementOrVertex,
@@ -3551,6 +3520,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<DemoOfdDiagram>,
         command: &InsensitiveCommand<
             DemoOfdOrdinalMovement,
             DemoOfdElementOrVertex,
@@ -3564,8 +3534,12 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         macro_rules! recurse {
             () => {
                 if let UFOption::Some(s) = &self.specialization_view {
-                    s.write()
-                        .apply_command(command, undo_accumulator, affected_models);
+                    s.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    );
                 }
             };
         }
@@ -3600,6 +3574,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 ));
                 if let UFOption::Some(s) = &self.specialization_view {
                     s.write().apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut vec![],
                         affected_models,
@@ -3614,15 +3589,20 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 element,
                 into_model,
             } => {
+                let model_uuid = *self.model_uuid();
                 if *target == *self.uuid
                     && self.specialization_view.as_ref().is_none()
                     && let DemoOfdElementOrVertex::Element(DemoOfdElementView::EntityType(e)) =
                         element
                     && (!*into_model
-                        || self
-                            .model
+                        || diagram_model
                             .write()
-                            .insert_element(*bucket, *position, e.read().model.clone().into())
+                            .insert_element_into(
+                                model_uuid,
+                                *bucket,
+                                *position,
+                                e.read().model.clone().into(),
+                            )
                             .is_ok())
                 {
                     undo_accumulator.push(InsensitiveCommand::RemoveDependency {
@@ -3633,7 +3613,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     });
 
                     if *into_model {
-                        affected_models.insert(*self.model_uuid());
+                        affected_models.insert(model_uuid);
                     }
                     affected_models.insert(*e.read().model_uuid());
 
@@ -3650,11 +3630,15 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 if *target == *self.uuid
                     && let Some(sv) = self.specialization_view.as_ref()
                 {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     let (sv_uuid, sm_uuid) = (*sv.read().uuid, *sv.read().model_uuid());
 
                     if *element == sv_uuid
-                        && (!*including_model || w.remove_element(&sm_uuid).is_some())
+                        && (!*including_model
+                            || diagram_model
+                                .write()
+                                .remove_element_from(model_uuid, &sm_uuid)
+                                .is_some())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -3665,7 +3649,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.specialization_view = UFOption::None;
@@ -4474,30 +4458,6 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
 
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
         self.model.write().flip_multiconnection()
-    }
-
-    fn insert_source(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: <DemoOfdDomain as Domain>::CommonElementT,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(MULTICONNECTION_SOURCE_BUCKET, position, e)
-            .map_err(|_| ())
-    }
-    fn remove_source(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        let mut w = self.model.write();
-        if w.domain_elements.len() == 1 {
-            return None;
-        }
-        for (idx, e) in w.domain_elements.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                w.domain_elements.remove(idx);
-                return Some(idx.try_into().unwrap());
-            }
-        }
-        None
     }
 
     fn show_properties(
@@ -5521,6 +5481,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<DemoOfdDiagram>,
         command: &InsensitiveCommand<
             DemoOfdOrdinalMovement,
             DemoOfdElementOrVertex,

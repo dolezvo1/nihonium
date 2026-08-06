@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
     VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
@@ -508,24 +508,33 @@ impl UmlActivityDiagram {
         }
     }
 
-    pub fn insert_element_into(
+    fn insert_element_unsafe(
         &mut self,
-        parent: ModelUuid,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
         element: UmlActivityElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        if *self.uuid == parent {
-            self.insert_element(b, p, element)
-                .map(|_| ())
-                .map_err(|_| ())
-        } else {
-            self.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
+    ) -> Result<PositionNoT, UmlActivityElement> {
+        if bucket != 0 {
+            return Err(element);
         }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_unsafe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 
     pub fn delete_elements(
@@ -663,33 +672,69 @@ impl ContainerModel for UmlActivityDiagram {
         }
         None
     }
-    fn insert_element(
+}
+
+impl DiagramModel for UmlActivityDiagram {
+    fn insert_element_into(
         &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
+        target: ModelUuid,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
         element: UmlActivityElement,
     ) -> Result<PositionNoT, UmlActivityElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        if *self.uuid == target {
+            self.insert_element_unsafe(b, p, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                UmlActivityElement::Activity(inner) => inner.write().insert_element(b, p, element),
+                UmlActivityElement::InterruptibleRegion(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlActivityElement::Partition(inner) => inner.write().insert_element(b, p, element),
+                UmlActivityElement::PartitionSection(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlActivityElement::ActionNode(_)
+                | UmlActivityElement::InitialNode(_)
+                | UmlActivityElement::FinalNode(_)
+                | UmlActivityElement::DecisionNode(_)
+                | UmlActivityElement::ForkNode(_)
+                | UmlActivityElement::ObjectNode(_)
+                | UmlActivityElement::Edge(_)
+                | UmlActivityElement::Note(_)
+                | UmlActivityElement::NoteLink(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_unsafe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                UmlActivityElement::Activity(inner) => inner.write().remove_element(uuid),
+                UmlActivityElement::InterruptibleRegion(inner) => {
+                    inner.write().remove_element(uuid)
+                }
+                UmlActivityElement::Partition(inner) => inner.write().remove_element(uuid),
+                UmlActivityElement::PartitionSection(inner) => inner.write().remove_element(uuid),
+                UmlActivityElement::ActionNode(_)
+                | UmlActivityElement::InitialNode(_)
+                | UmlActivityElement::FinalNode(_)
+                | UmlActivityElement::DecisionNode(_)
+                | UmlActivityElement::ForkNode(_)
+                | UmlActivityElement::ObjectNode(_)
+                | UmlActivityElement::Edge(_)
+                | UmlActivityElement::Note(_)
+                | UmlActivityElement::NoteLink(_) => None,
+            }
+        }
     }
 }
 
@@ -757,6 +802,35 @@ impl UmlActivity {
         into.insert(*self.uuid, new_model.clone().into());
         new_model.into()
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlActivityElement,
+    ) -> Result<PositionNoT, UmlActivityElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlActivity {
@@ -789,36 +863,6 @@ impl ContainerModel for UmlActivity {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -888,6 +932,35 @@ impl UmlActivityInterruptibleRegion {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlActivityElement,
+    ) -> Result<PositionNoT, UmlActivityElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlActivityInterruptibleRegion {
@@ -920,36 +993,6 @@ impl ContainerModel for UmlActivityInterruptibleRegion {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -1023,6 +1066,35 @@ impl UmlActivityPartition {
             self.sections.insert(target_pos.try_into().unwrap(), e);
         }
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlActivityElement,
+    ) -> Result<PositionNoT, UmlActivityElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let UmlActivityElement::PartitionSection(element) = element else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.sections.len());
+        self.sections.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.sections.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                self.sections.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlActivityPartition {
@@ -1055,36 +1127,6 @@ impl ContainerModel for UmlActivityPartition {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.sections.iter().enumerate() {
             if *e.read().uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let UmlActivityElement::PartitionSection(element) = element else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.sections.len());
-        self.sections.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.sections.iter().enumerate() {
-            if *e.read().uuid() == *uuid {
-                self.sections.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -1145,6 +1187,35 @@ impl UmlActivityPartitionSection {
         into.insert(*self.uuid, new_model.clone().into());
         new_model.into()
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlActivityElement,
+    ) -> Result<PositionNoT, UmlActivityElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlActivityPartitionSection {
@@ -1177,36 +1248,6 @@ impl ContainerModel for UmlActivityPartitionSection {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }

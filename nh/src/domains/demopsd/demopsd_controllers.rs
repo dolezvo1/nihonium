@@ -20,7 +20,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -280,25 +280,6 @@ impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::demopsd_models::transitive_closure(&self.model.read(), when_deleting)
-    }
-
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: DemoPsdElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        let mut w = self.model.write();
-        if *w.uuid == parent {
-            w.insert_element(b, p, element).map(|_| ()).map_err(|_| ())
-        } else {
-            w.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
-        }
     }
 
     fn delete_elements(
@@ -1737,19 +1718,6 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: DemoPsdElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, e)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuids: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuids).map(|e| e.1)
-    }
 
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         match self.kind_buffer {
@@ -2764,6 +2732,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<DemoPsdDiagram>,
         command: &InsensitiveCommand<
             DemoPsdOrdinalMovement,
             DemoPsdElementOrVertex,
@@ -2778,15 +2747,19 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             () => {
                 for e in &mut self.before_views {
                     e.view
-                        .apply_command(command, undo_accumulator, affected_models);
+                        .apply_command(diagram_model, command, undo_accumulator, affected_models);
                 }
                 if let UFOption::Some(e) = &self.p_act_view {
-                    e.write()
-                        .apply_command(command, undo_accumulator, affected_models);
+                    e.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    );
                 }
                 for e in &mut self.after_views {
                     e.view
-                        .apply_command(command, undo_accumulator, affected_models);
+                        .apply_command(diagram_model, command, undo_accumulator, affected_models);
                 }
             };
         }
@@ -2954,11 +2927,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == DemoPsdTransaction::CENTER_BUCKET {
-                        if self.p_act_view.as_ref().is_none()
-                            && let DemoPsdElementOrVertex::Element(DemoPsdElementView::Act(e)) =
-                                element
+                        if let DemoPsdElementOrVertex::Element(DemoPsdElementView::Act(e)) = element
+                            && diagram_model
+                                .write()
+                                .insert_element_into(model_uuid, *bucket, None, e.read().model())
+                                .is_ok()
                         {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *target,
@@ -2968,76 +2943,80 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             });
                             if *into_model {
                                 affected_models.insert(*e.read().model_uuid());
-                                w.p_act = UFOption::Some(e.read().model.clone());
                             }
                             self.p_act_view = UFOption::Some(e.clone());
                         }
                     } else if let DemoPsdElementOrVertex::Element(e) = element
                         && let Some(e) = e.clone().as_state_view()
-                        && let Some(model_pos) =
-                            w.get_element_pos(&e.model_uuid()).map(|e| e.1).or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, e.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
                     {
-                        let after = match *bucket {
-                            0
-                            | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
-                            | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET => false,
-                            DemoPsdTransaction::AFTER_EXECUTOR_BUCKET
-                            | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => true,
-                            _ => return,
-                        };
-                        let executor = match *bucket {
-                            0
-                            | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
-                            | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => false,
-                            DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET
-                            | DemoPsdTransaction::AFTER_EXECUTOR_BUCKET => true,
-                            _ => unreachable!(),
-                        };
-
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                            target: *target,
-                            bucket: *bucket,
-                            element: *e.uuid(),
-                            including_model: *into_model,
-                        });
-                        if *into_model {
-                            affected_models.insert(*e.model_uuid());
-                        }
-
-                        let view_pos = |arr: &Vec<DemoPsdStateViewInfo>| {
-                            let mut view_pos: PositionNoT = 0;
-                            for e in arr {
-                                let Some((_b, pos)) = w.get_element_pos(&e.view.model_uuid())
-                                else {
-                                    unreachable!()
-                                };
-                                if pos < model_pos {
-                                    view_pos += 1;
-                                } else {
-                                    break;
-                                }
+                        let pos = self.model.read().get_element_pos(&e.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, e.model())
+                                    .ok()
+                            } else {
+                                None
                             }
-                            view_pos
-                        };
+                        }) {
+                            let after = match *bucket {
+                                0
+                                | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
+                                | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET => false,
+                                DemoPsdTransaction::AFTER_EXECUTOR_BUCKET
+                                | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => true,
+                                _ => return,
+                            };
+                            let executor = match *bucket {
+                                0
+                                | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
+                                | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => false,
+                                DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET
+                                | DemoPsdTransaction::AFTER_EXECUTOR_BUCKET => true,
+                                _ => unreachable!(),
+                            };
 
-                        if !after {
-                            let view_pos = view_pos(&self.before_views);
-                            self.before_views.insert(
-                                view_pos.try_into().unwrap(),
-                                DemoPsdStateViewInfo { view: e, executor },
-                            );
-                        } else {
-                            let view_pos = view_pos(&self.after_views);
-                            self.after_views.insert(
-                                view_pos.try_into().unwrap(),
-                                DemoPsdStateViewInfo { view: e, executor },
-                            );
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *target,
+                                bucket: *bucket,
+                                element: *e.uuid(),
+                                including_model: *into_model,
+                            });
+                            if *into_model {
+                                affected_models.insert(*e.model_uuid());
+                            }
+
+                            let view_pos = |arr: &Vec<DemoPsdStateViewInfo>| {
+                                let mut view_pos: PositionNoT = 0;
+                                for e in arr {
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.view.model_uuid())
+                                    else {
+                                        unreachable!()
+                                    };
+                                    if pos < model_pos {
+                                        view_pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                view_pos
+                            };
+
+                            if !after {
+                                let view_pos = view_pos(&self.before_views);
+                                self.before_views.insert(
+                                    view_pos.try_into().unwrap(),
+                                    DemoPsdStateViewInfo { view: e, executor },
+                                );
+                            } else {
+                                let view_pos = view_pos(&self.after_views);
+                                self.after_views.insert(
+                                    view_pos.try_into().unwrap(),
+                                    DemoPsdStateViewInfo { view: e, executor },
+                                );
+                            }
                         }
                     }
                 }
@@ -3050,10 +3029,14 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if matches!(*bucket, 0 | DemoPsdTransaction::CENTER_BUCKET)
                         && let Some(e) = self.p_act_view.as_ref()
                         && *element == *e.read().uuid
+                        && diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &e.read().model_uuid())
+                            .is_some()
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *target,
@@ -3062,15 +3045,14 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             element: DemoPsdElementOrVertex::Element(e.clone().into()),
                             into_model: *including_model,
                         });
-                        if *including_model {
-                            w.p_act = UFOption::None;
-                        }
 
                         self.p_act_view = UFOption::None;
                     }
                     let mut closure = |e: &DemoPsdStateViewInfo| {
                         if *e.view.uuid() == *element
-                            && let Some((b, pos)) = w.remove_element(&e.view.model_uuid())
+                            && let Some((b, pos)) = diagram_model
+                                .write()
+                                .remove_element_from(model_uuid, &e.view.model_uuid())
                         {
                             undo_accumulator.push(InsensitiveCommand::AddDependency {
                                 target: *target,
@@ -3824,6 +3806,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<DemoPsdDiagram>,
         command: &InsensitiveCommand<
             DemoPsdOrdinalMovement,
             DemoPsdElementOrVertex,
@@ -4295,6 +4278,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<DemoPsdDiagram>,
         command: &InsensitiveCommand<
             DemoPsdOrdinalMovement,
             DemoPsdElementOrVertex,
@@ -5071,6 +5055,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<DemoPsdDiagram>,
         command: &InsensitiveCommand<
             DemoPsdOrdinalMovement,
             DemoPsdElementOrVertex,

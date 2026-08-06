@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
     VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
@@ -504,24 +504,33 @@ impl UmlStateMachineDiagram {
         }
     }
 
-    pub fn insert_element_into(
+    fn insert_element_unsafe(
         &mut self,
-        parent: ModelUuid,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
         element: UmlStateMachineElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        if *self.uuid == parent {
-            self.insert_element(b, p, element)
-                .map(|_| ())
-                .map_err(|_| ())
-        } else {
-            self.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
+    ) -> Result<PositionNoT, UmlStateMachineElement> {
+        if bucket != 0 {
+            return Err(element);
         }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element_unsafe(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 
     pub fn delete_elements(
@@ -669,33 +678,69 @@ impl ContainerModel for UmlStateMachineDiagram {
         }
         None
     }
-    fn insert_element(
+}
+
+impl DiagramModel for UmlStateMachineDiagram {
+    fn insert_element_into(
         &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
+        target: ModelUuid,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
         element: UmlStateMachineElement,
     ) -> Result<PositionNoT, UmlStateMachineElement> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+        if *self.uuid == target {
+            self.insert_element_unsafe(b, p, element)
+        } else {
+            let Some((e, _)) = self.find_element(&target) else {
+                return Err(element);
+            };
+            match e {
+                UmlStateMachineElement::StateMachine(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlStateMachineElement::CompositeState(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlStateMachineElement::CompositeStateRegion(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlStateMachineElement::SimpleState(inner) => {
+                    inner.write().insert_element(b, p, element)
+                }
+                UmlStateMachineElement::InternalTransition(_)
+                | UmlStateMachineElement::InitialPseudostate(_)
+                | UmlStateMachineElement::TerminatePseudostate(_)
+                | UmlStateMachineElement::FinalState(_)
+                | UmlStateMachineElement::Edge(_)
+                | UmlStateMachineElement::Note(_)
+                | UmlStateMachineElement::NoteLink(_) => Err(element),
             }
         }
-        None
+    }
+    fn remove_element_from(
+        &mut self,
+        target: ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
+        if *self.uuid == target {
+            self.remove_element_unsafe(uuid)
+        } else {
+            match self.find_element(&target)?.0 {
+                UmlStateMachineElement::StateMachine(inner) => inner.write().remove_element(uuid),
+                UmlStateMachineElement::CompositeState(inner) => inner.write().remove_element(uuid),
+                UmlStateMachineElement::CompositeStateRegion(inner) => {
+                    inner.write().remove_element(uuid)
+                }
+                UmlStateMachineElement::SimpleState(inner) => inner.write().remove_element(uuid),
+                UmlStateMachineElement::InternalTransition(_)
+                | UmlStateMachineElement::InitialPseudostate(_)
+                | UmlStateMachineElement::TerminatePseudostate(_)
+                | UmlStateMachineElement::FinalState(_)
+                | UmlStateMachineElement::Edge(_)
+                | UmlStateMachineElement::Note(_)
+                | UmlStateMachineElement::NoteLink(_) => None,
+            }
+        }
     }
 }
 
@@ -763,6 +808,35 @@ impl UmlStateMachine {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlStateMachineElement,
+    ) -> Result<PositionNoT, UmlStateMachineElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlStateMachine {
@@ -795,36 +869,6 @@ impl ContainerModel for UmlStateMachine {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -934,6 +978,50 @@ impl UmlStateMachineCompositeState {
             self.regions.insert(target_pos.try_into().unwrap(), e);
         }
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlStateMachineElement,
+    ) -> Result<PositionNoT, UmlStateMachineElement> {
+        match bucket {
+            0 | Self::INTERNAL_TRANSITIONS_BUCKET
+                if let UmlStateMachineElement::InternalTransition(element) = element =>
+            {
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.internal_transitions.len());
+                self.internal_transitions.insert(pos, element);
+                Ok(pos.try_into().unwrap())
+            }
+            0 | Self::REGIONS_BUCKET
+                if let UmlStateMachineElement::CompositeStateRegion(element) = element =>
+            {
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.regions.len());
+                self.regions.insert(pos, element);
+                Ok(pos.try_into().unwrap())
+            }
+            _ => Err(element),
+        }
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.internal_transitions.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                self.internal_transitions.remove(idx);
+                return Some((Self::INTERNAL_TRANSITIONS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.regions.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                self.regions.remove(idx);
+                return Some((Self::REGIONS_BUCKET, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlStateMachineCompositeState {
@@ -976,51 +1064,6 @@ impl ContainerModel for UmlStateMachineCompositeState {
         }
         for (idx, e) in self.regions.iter().enumerate() {
             if *e.read().uuid() == *uuid {
-                return Some((Self::REGIONS_BUCKET, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        match bucket {
-            0 | Self::INTERNAL_TRANSITIONS_BUCKET
-                if let UmlStateMachineElement::InternalTransition(element) = element =>
-            {
-                let pos = position
-                    .map(|e| e.try_into().unwrap())
-                    .unwrap_or(self.internal_transitions.len());
-                self.internal_transitions.insert(pos, element);
-                Ok(pos.try_into().unwrap())
-            }
-            0 | Self::REGIONS_BUCKET
-                if let UmlStateMachineElement::CompositeStateRegion(element) = element =>
-            {
-                let pos = position
-                    .map(|e| e.try_into().unwrap())
-                    .unwrap_or(self.regions.len());
-                self.regions.insert(pos, element);
-                Ok(pos.try_into().unwrap())
-            }
-            _ => Err(element),
-        }
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.internal_transitions.iter().enumerate() {
-            if *e.read().uuid() == *uuid {
-                self.internal_transitions.remove(idx);
-                return Some((Self::INTERNAL_TRANSITIONS_BUCKET, idx.try_into().unwrap()));
-            }
-        }
-        for (idx, e) in self.regions.iter().enumerate() {
-            if *e.read().uuid() == *uuid {
-                self.regions.remove(idx);
                 return Some((Self::REGIONS_BUCKET, idx.try_into().unwrap()));
             }
         }
@@ -1078,6 +1121,35 @@ impl UmlStateMachineCompositeStateRegion {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlStateMachineElement,
+    ) -> Result<PositionNoT, UmlStateMachineElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlStateMachineCompositeStateRegion {
@@ -1110,36 +1182,6 @@ impl ContainerModel for UmlStateMachineCompositeStateRegion {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        if bucket != 0 {
-            return Err(element);
-        }
-        let Some(element) = element.as_standalone() else {
-            return Err(element);
-        };
-
-        let pos = position
-            .map(|e| e.try_into().unwrap())
-            .unwrap_or(self.contained_elements.len());
-        self.contained_elements.insert(pos, element);
-        Ok(pos.try_into().unwrap())
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.contained_elements.iter().enumerate() {
-            if *e.uuid() == *uuid {
-                self.contained_elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -1200,6 +1242,38 @@ impl UmlStateMachineSimpleState {
         into.insert(*self.uuid, new_model.clone().into());
         new_model
     }
+
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlStateMachineElement,
+    ) -> Result<PositionNoT, UmlStateMachineElement> {
+        match bucket {
+            0 | UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET
+                if let UmlStateMachineElement::InternalTransition(element) = element =>
+            {
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.internal_transitions.len());
+                self.internal_transitions.insert(pos, element);
+                Ok(pos.try_into().unwrap())
+            }
+            _ => Err(element),
+        }
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.internal_transitions.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                self.internal_transitions.remove(idx);
+                return Some((
+                    UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET,
+                    idx.try_into().unwrap(),
+                ));
+            }
+        }
+        None
+    }
 }
 
 impl Model for UmlStateMachineSimpleState {
@@ -1229,39 +1303,6 @@ impl ContainerModel for UmlStateMachineSimpleState {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.internal_transitions.iter().enumerate() {
             if *e.read().uuid() == *uuid {
-                return Some((
-                    UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET,
-                    idx.try_into().unwrap(),
-                ));
-            }
-        }
-        None
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: Self::ElementT,
-    ) -> Result<PositionNoT, Self::ElementT> {
-        match bucket {
-            0 | UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET
-                if let UmlStateMachineElement::InternalTransition(element) = element =>
-            {
-                let pos = position
-                    .map(|e| e.try_into().unwrap())
-                    .unwrap_or(self.internal_transitions.len());
-                self.internal_transitions.insert(pos, element);
-                Ok(pos.try_into().unwrap())
-            }
-            _ => Err(element),
-        }
-    }
-
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.internal_transitions.iter().enumerate() {
-            if *e.read().uuid() == *uuid {
-                self.internal_transitions.remove(idx);
                 return Some((
                     UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET,
                     idx.try_into().unwrap(),

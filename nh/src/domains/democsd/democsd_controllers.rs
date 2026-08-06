@@ -20,7 +20,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -181,25 +181,6 @@ impl ControllerAdapter<DemoCsdDomain> for DemoCsdControllerAdapter {
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::democsd_models::transitive_closure(&self.model.read(), when_deleting)
-    }
-
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: DemoCsdElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        let mut w = self.model.write();
-        if *w.uuid == parent {
-            w.insert_element(b, p, element).map(|_| ()).map_err(|_| ())
-        } else {
-            w.find_element(&parent).ok_or(()).and_then(|mut e| {
-                e.0.insert_element(b, p, element)
-                    .map(|_| ())
-                    .map_err(|_| ())
-            })
-        }
     }
 
     fn delete_elements(
@@ -1702,19 +1683,6 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        e: DemoCsdElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, e)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
-    }
 
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         match self.kind_buffer {
@@ -2613,6 +2581,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<DemoCsdDiagram>,
         command: &InsensitiveCommand<
             DemoCsdOrdinalMovement,
             DemoCsdElementOrVertex,
@@ -2626,8 +2595,12 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         macro_rules! recurse {
             () => {
                 if let UFOption::Some(t) = &self.transaction_view {
-                    t.write()
-                        .apply_command(command, undo_accumulator, affected_models);
+                    t.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    );
                 }
             };
         }
@@ -2662,6 +2635,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 ));
                 if let UFOption::Some(t) = &self.transaction_view {
                     t.write().apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut vec![],
                         affected_models,
@@ -2683,13 +2657,21 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) =
                         element
                 {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     let mut vw = e.write();
-                    if w.get_element_pos(&vw.model_uuid())
+                    let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                    if pos
                         .map(|e| e.1)
                         .or_else(|| {
                             if *into_model {
-                                w.insert_element(*bucket, *position, vw.model.clone().into())
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(
+                                        model_uuid,
+                                        *bucket,
+                                        *position,
+                                        vw.model.clone().into(),
+                                    )
                                     .ok()
                             } else {
                                 None
@@ -2709,7 +2691,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             including_model: *into_model,
                         });
                         if *into_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
                         self.transaction_view = UFOption::Some(e.clone());
                     }
@@ -2726,8 +2708,12 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     && let Some(tx) = self.transaction_view.as_ref()
                     && *element == *tx.read().uuid
                 {
-                    let model_uuid = *tx.read().model_uuid();
-                    if let Some(_) = self.model.write().remove_element(&model_uuid) {
+                    let model_uuid = *self.model_uuid();
+                    let tx_model_uuid = *tx.read().model_uuid();
+                    if let Some(_) = diagram_model
+                        .write()
+                        .remove_element_from(model_uuid, &tx_model_uuid)
+                    {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
                             bucket: 0,
@@ -2736,7 +2722,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             into_model: *including_model,
                         });
                         if *including_model {
-                            affected_models.insert(model_uuid);
+                            affected_models.insert(tx_model_uuid);
                         }
                         self.transaction_view = UFOption::None;
                     }
@@ -3395,6 +3381,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<DemoCsdDiagram>,
         command: &InsensitiveCommand<
             DemoCsdOrdinalMovement,
             DemoCsdElementOrVertex,
@@ -4188,6 +4175,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<DemoCsdDiagram>,
         command: &InsensitiveCommand<
             DemoCsdOrdinalMovement,
             DemoCsdElementOrVertex,

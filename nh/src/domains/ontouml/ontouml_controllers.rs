@@ -100,18 +100,6 @@ impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdap
         )
     }
 
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: UmlClassElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
-    }
-
     fn delete_elements(
         &mut self,
         uuids: &HashSet<ModelUuid>,
@@ -221,18 +209,6 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
     gen_phase_model.write().set_is_covering = true;
     gen_phase_model.write().set_is_disjoint = true;
-    let gen_uuid = *gen_phase_view.read().uuid();
-    gen_phase_view.write().apply_command(
-        &InsensitiveCommand::AddDependency {
-            target: gen_uuid,
-            bucket: MULTICONNECTION_SOURCE_BUCKET,
-            position: None,
-            element: UmlClassElementOrVertex::Element(dead_view.clone().into()),
-            into_model: true,
-        },
-        &mut Vec::new(),
-        &mut HashSet::new(),
-    );
 
     let (gen_human_model, gen_human_view) = new_umlclass_generalization(
         "",
@@ -286,6 +262,21 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             mediation_model.into(),
         ],
     ));
+
+    let gen_uuid = *gen_phase_view.read().uuid();
+    gen_phase_view.write().apply_command(
+        &diagram,
+        &InsensitiveCommand::AddDependency {
+            target: gen_uuid,
+            bucket: MULTICONNECTION_SOURCE_BUCKET,
+            position: None,
+            element: UmlClassElementOrVertex::Element(dead_view.clone().into()),
+            into_model: true,
+        },
+        &mut Vec::new(),
+        &mut HashSet::new(),
+    );
+
     new_controlller(
         diagram,
         name.to_owned(),

@@ -16,7 +16,7 @@ use crate::{
         },
         entity::{Entity, EntityUuid},
         eref::ERef,
-        model::{BucketNoT, PositionNoT},
+        model::{BucketNoT, DiagramModel},
         project_serde::{NHContextDeserialize, NHContextSerialize},
         ufoption::UFOption,
         uuid::{ModelUuid, ViewUuid},
@@ -135,26 +135,6 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
     fn target_uuids(&self) -> &[ModelUuid];
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
         Err(())
-    }
-    fn insert_source(
-        &mut self,
-        _position: Option<PositionNoT>,
-        _e: DomainT::CommonElementT,
-    ) -> Result<PositionNoT, ()> {
-        Err(())
-    }
-    fn remove_source(&mut self, _uuid: &ModelUuid) -> Option<PositionNoT> {
-        None
-    }
-    fn insert_target(
-        &mut self,
-        _position: Option<PositionNoT>,
-        _e: DomainT::CommonElementT,
-    ) -> Result<PositionNoT, ()> {
-        Err(())
-    }
-    fn remove_target(&mut self, _uuid: &ModelUuid) -> Option<PositionNoT> {
-        None
     }
 
     fn show_properties(
@@ -1140,6 +1120,7 @@ where
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<DomainT::DiagramModelT>,
         command: &InsensitiveCommand<
             DomainT::OrdinalMovementT,
             DomainT::AddCommandElementT,
@@ -1342,12 +1323,16 @@ where
                 into_model,
             } => {
                 if *target == *self.uuid {
+                    let model_uuid = *self.adapter.model_uuid();
                     // source/target
                     if let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(element.clone())
                     {
                         if *bucket == MULTICONNECTION_SOURCE_BUCKET
                             && (!into_model
-                                || self.adapter.insert_source(*position, e.model()).is_ok())
+                                || diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, e.model())
+                                    .is_ok())
                         {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
@@ -1361,10 +1346,13 @@ where
                                 points: vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)],
                             });
 
-                            affected_models.insert(*self.adapter.model_uuid());
+                            affected_models.insert(model_uuid);
                         } else if *bucket == MULTICONNECTION_TARGET_BUCKET
                             && (!into_model
-                                || self.adapter.insert_target(*position, e.model()).is_ok())
+                                || diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, e.model())
+                                    .is_ok())
                         {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
@@ -1378,7 +1366,7 @@ where
                                 points: vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)],
                             });
 
-                            affected_models.insert(*self.adapter.model_uuid());
+                            affected_models.insert(model_uuid);
                         }
                         self.adapter.refresh_buffers();
                     }
@@ -1442,13 +1430,15 @@ where
                 including_model,
             } => {
                 if *target == *self.uuid {
+                    let model_uuid = *self.adapter.model_uuid();
                     if *bucket == MULTICONNECTION_SOURCE_BUCKET && self.sources.len() > 1 {
                         self.sources.retain(|e| {
                             if *element == *e.element.uuid() {
-                                let pos = if !including_model {
+                                let position = if !including_model {
                                     None
-                                } else if let Some(pos) =
-                                    self.adapter.remove_source(&e.element.model_uuid())
+                                } else if let Some((_, pos)) = diagram_model
+                                    .write()
+                                    .remove_element_from(model_uuid, &e.element.model_uuid())
                                 {
                                     Some(pos)
                                 } else {
@@ -1458,7 +1448,7 @@ where
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
                                     bucket: *bucket,
-                                    position: pos,
+                                    position,
                                     element: e.element.clone().into(),
                                     into_model: *including_model,
                                 });
@@ -1468,14 +1458,15 @@ where
                             }
                         });
 
-                        affected_models.insert(*self.adapter.model_uuid());
+                        affected_models.insert(model_uuid);
                     } else if *bucket == MULTICONNECTION_TARGET_BUCKET && self.targets.len() > 1 {
                         self.targets.retain(|e| {
                             if *element == *e.element.uuid() {
-                                let pos = if !including_model {
+                                let position = if !including_model {
                                     None
-                                } else if let Some(pos) =
-                                    self.adapter.remove_target(&e.element.model_uuid())
+                                } else if let Some((_, pos)) = diagram_model
+                                    .write()
+                                    .remove_element_from(model_uuid, &e.element.model_uuid())
                                 {
                                     Some(pos)
                                 } else {
@@ -1485,7 +1476,7 @@ where
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
                                     bucket: *bucket,
-                                    position: pos,
+                                    position,
                                     element: e.element.clone().into(),
                                     into_model: *including_model,
                                 });
@@ -1495,7 +1486,7 @@ where
                             }
                         });
 
-                        affected_models.insert(*self.adapter.model_uuid());
+                        affected_models.insert(model_uuid);
                     }
                 }
             }

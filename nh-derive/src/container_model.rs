@@ -62,17 +62,6 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
             }
         })
         .collect::<Vec<_>>();
-    let arms_mutable = arms2
-        .iter()
-        .map(|e| {
-            let arm_matcher = &e.0;
-            match e.1.as_str() {
-                "none" => Err(quote! { #arm_matcher }),
-                "eref" => Ok(quote! { #arm_matcher => inner.write() }),
-                "bare" | _ => Ok(quote! { #arm_matcher => inner }),
-            }
-        })
-        .collect::<Vec<_>>();
 
     let arms_find_element = arms_immutable
         .iter()
@@ -85,20 +74,6 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
         .iter()
         .map(|e| match e {
             Ok(e) => quote! { #e.get_element_pos(uuid) },
-            Err(e) => quote! { #e => None },
-        })
-        .collect::<Vec<_>>();
-    let arms_insert_element = arms_mutable
-        .iter()
-        .map(|e| match e {
-            Ok(e) => quote! { #e.insert_element(bucket, position, element) },
-            Err(e) => quote! { #e => Err(element) },
-        })
-        .collect::<Vec<_>>();
-    let arms_remove_element = arms_mutable
-        .iter()
-        .map(|e| match e {
-            Ok(e) => quote! { #e.remove_element(uuid) },
             Err(e) => quote! { #e => None },
         })
         .collect::<Vec<_>>();
@@ -119,23 +94,6 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
             fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(crate::common::model::BucketNoT, crate::common::model::PositionNoT)> {
                 match self {
                     #(#arms_get_element_pos),*
-                }
-            }
-
-            fn insert_element(
-                &mut self,
-                bucket: crate::common::model::BucketNoT,
-                position: Option<crate::common::model::PositionNoT>,
-                element: Self::ElementT,
-            ) -> Result<crate::common::model::PositionNoT, Self::ElementT> {
-                match self {
-                    #(#arms_insert_element),*
-                }
-            }
-
-            fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(crate::common::model::BucketNoT, crate::common::model::PositionNoT)> {
-                match self {
-                    #(#arms_remove_element),*
                 }
             }
         }

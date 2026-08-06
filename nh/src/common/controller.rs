@@ -6,7 +6,7 @@ use super::views::ordered_views::OrderedViews;
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
 use crate::common::diagram_settings::{DiagramSettings, DiagramSettings2};
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
     VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
@@ -1417,7 +1417,8 @@ impl From<(u8, MGlobalColor)> for ColorChangeData {
 pub trait Domain: Sized + 'static {
     type SettingsT: DiagramSettings2<Self>;
     type CommonElementT: Model + VisitableElement + Clone;
-    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT>
+    type DiagramModelT: DiagramModel
+        + ContainerModel<ElementT = Self::CommonElementT>
         + NHContextSerialize
         + NHContextDeserialize
         + VisitableDiagram
@@ -1698,6 +1699,7 @@ pub trait ElementControllerGen2<DomainT: Domain>:
     ) -> EventHandlingStatus;
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<DomainT::DiagramModelT>,
         command: &InsensitiveCommand<
             DomainT::OrdinalMovementT,
             DomainT::AddCommandElementT,
@@ -1764,13 +1766,6 @@ pub trait ControllerAdapter<DomainT: Domain>:
     /// Must return all ModelUuids that are to be deleted, including children of deleted containers
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid>;
 
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        e: DomainT::CommonElementT,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()>;
     fn delete_elements(
         &mut self,
         uuids: &HashSet<ModelUuid>,
@@ -2545,7 +2540,11 @@ where
             return;
         };
         for (parent, e, b, p) in removed_models {
-            let _ = self.adapter.insert_element(parent, e, b, Some(p));
+            let _ = self
+                .adapter
+                .model()
+                .write()
+                .insert_element_into(parent, b, Some(p), e);
         }
         let redo_stack = std::mem::take(&mut self.redo_stack);
         self.apply_commands(
@@ -2741,19 +2740,6 @@ pub trait DiagramAdapter<DomainT: Domain>:
         parent: &ModelUuid,
         model_uuid: &ModelUuid,
     ) -> Option<(BucketNoT, PositionNoT)>;
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: DomainT::CommonElementT,
-    ) -> Result<PositionNoT, DomainT::CommonElementT> {
-        self.model()
-            .write()
-            .insert_element(bucket, position, element)
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        self.model().write().remove_element(uuid)
-    }
 
     fn create_new_view_for(
         &self,
@@ -3169,6 +3155,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
 
     fn apply_command_inner(
         &mut self,
+        diagram_model: &ERef<DomainT::DiagramModelT>,
         command: &InsensitiveCommand<
             DomainT::OrdinalMovementT,
             DomainT::AddCommandElementT,
@@ -3199,13 +3186,16 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 element,
                 into_model,
             } => {
+                let model_uuid = *self.adapter.model_uuid();
                 if *target == *self.uuid
                     && *bucket == 0
                     && let Ok(mut view) = element.clone().try_into()
                     && (!*into_model
                         || self
                             .adapter
-                            .insert_element(*bucket, *position, view.model())
+                            .model()
+                            .write()
+                            .insert_element_into(model_uuid, *bucket, *position, view.model())
                             .is_ok())
                 {
                     let uuid = *view.uuid();
@@ -3217,7 +3207,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                     });
 
                     if *into_model {
-                        affected_models.insert(*self.adapter.model_uuid());
+                        affected_models.insert(model_uuid);
                     }
                     let mut model_transitives = HashMap::new();
                     view.head_count(
@@ -3236,6 +3226,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 element,
                 including_model,
             } => {
+                let model_uuid = *self.adapter.model_uuid();
                 if *target == *self.uuid && *bucket == 0 {
                     for (_uuid, element) in self
                         .owned_views
@@ -3244,8 +3235,10 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                     {
                         let pos = if !*including_model {
                             None
-                        } else if let Some((_b, pos)) =
-                            self.adapter.remove_element(&element.model_uuid())
+                        } else if let Some((_b, pos)) = self
+                            .model()
+                            .write()
+                            .remove_element_from(model_uuid, &element.model_uuid())
                         {
                             Some(pos)
                         } else {
@@ -3299,14 +3292,14 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
             }
             InsensitiveCommand::Macro(_, _, cmds) => {
                 for e in cmds.iter() {
-                    self.apply_command_inner(e, undo_accumulator, affected_models);
+                    self.apply_command_inner(diagram_model, e, undo_accumulator, affected_models);
                 }
             }
         }
 
         if !matches!(command, InsensitiveCommand::Macro(..)) {
             self.owned_views.event_order_foreach_mut(|v| {
-                v.apply_command(command, undo_accumulator, affected_models);
+                v.apply_command(diagram_model, command, undo_accumulator, affected_models);
             });
         }
 
@@ -4334,6 +4327,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                         let (mut a, mut b, mut frm) = Default::default();
                         for (_k, mut v) in elements.into_iter() {
                             v.apply_command(
+                                &self.model(),
                                 &InsensitiveCommand::MovePositionalAll(
                                     -new_elements_area.min.to_vec2() + new_position,
                                 ),
@@ -4560,7 +4554,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
-        self.apply_command_inner(command, undo_accumulator, affected_models);
+        self.apply_command_inner(&self.model(), command, undo_accumulator, affected_models);
     }
 
     fn draw_in(

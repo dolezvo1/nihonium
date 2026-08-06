@@ -12,7 +12,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
@@ -220,18 +220,6 @@ impl ControllerAdapter<UmlActivityDomain> for UmlActivityControllerAdapter {
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::umlactivity_models::transitive_closure(&self.model.read(), when_deleting)
-    }
-
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: UmlActivityElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
     }
 
     fn delete_elements(
@@ -838,6 +826,13 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         egui::Rect::from_x_y_ranges(100.0..=950.0, 100.0..=600.0),
     );
+
+    let diagram = ERef::new(UmlActivityDiagram::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        vec![activity.into()],
+    ));
+
     {
         let mut w = activity_view.write();
         let activity_uuid = *w.uuid();
@@ -864,6 +859,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             e9_view.into(),
         ] {
             w.apply_command(
+                &diagram,
                 &InsensitiveCommand::AddDependency {
                     target: activity_uuid,
                     bucket: 0,
@@ -877,11 +873,6 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         }
     }
 
-    let diagram = ERef::new(UmlActivityDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![activity.into()],
-    ));
     new_controlller(diagram, name.to_owned(), vec![activity_view.into()])
 }
 
@@ -2578,19 +2569,6 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        element: UmlActivityElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, element)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
-    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors
@@ -2885,19 +2863,6 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
-    }
-    fn insert_element(
-        &mut self,
-        position: Option<PositionNoT>,
-        element: UmlActivityElement,
-    ) -> Result<PositionNoT, ()> {
-        self.model
-            .write()
-            .insert_element(0, position, element)
-            .map_err(|_| ())
-    }
-    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
-        self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
@@ -3291,6 +3256,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             <UmlActivityDomain as Domain>::OrdinalMovementT,
             <UmlActivityDomain as Domain>::AddCommandElementT,
@@ -3308,8 +3274,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         macro_rules! recurse {
             () => {
                 self.section_views.iter().for_each(|s| {
-                    s.write()
-                        .apply_command(command, undo_accumulator, affected_models)
+                    s.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    )
                 });
             };
         }
@@ -3384,6 +3354,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 let mut void = vec![];
                 self.section_views.iter_mut().for_each(|v| {
                     v.write().apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -3411,6 +3382,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     for e in sections_iter {
                         let mut w = e.write();
                         w.apply_command(
+                            diagram_model,
                             &InsensitiveCommand::MovePositionalAll(delta_x),
                             &mut u,
                             &mut v,
@@ -3471,6 +3443,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     macro_rules! adjust {
                         ($w:expr, $dx:expr) => {
                             $w.apply_command(
+                                diagram_model,
                                 &InsensitiveCommand::MovePositionalAll(egui::Vec2::new($dx, 0.0)),
                                 &mut u,
                                 &mut v,
@@ -3527,6 +3500,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         delta.x += w.bounds_rect.width();
                     } else {
                         w.apply_command(
+                            &diagram_model,
                             &InsensitiveCommand::MovePositionalAll(-delta),
                             &mut u,
                             &mut m,
@@ -3546,23 +3520,23 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Ok(UmlActivityElementView::PartitionSection(view)) =
                             element.clone().try_into()
                     {
                         let mut vw = view.write();
-                        if let Some(model_pos) = w
-                            .get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, vw.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                        {
+                        let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, vw.model())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) {
                             let uuid = *vw.uuid;
 
                             let (old_uuid, old_rect) = self
@@ -3602,7 +3576,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                             ]);
 
                             if *into_model {
-                                affected_models.insert(*w.uuid);
+                                affected_models.insert(model_uuid);
                             }
                             let mut model_transitives = HashMap::new();
                             vw.head_count(
@@ -3615,7 +3589,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
                                 for e in &self.section_views {
-                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.read().model_uuid())
                                     else {
                                         unreachable!()
                                     };
@@ -3644,6 +3619,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                             let (mut u, mut m) = Default::default();
                             for e in self.section_views.iter().skip(view_pos) {
                                 e.write().apply_command(
+                                    diagram_model,
                                     &InsensitiveCommand::MovePositionalAll(delta),
                                     &mut u,
                                     &mut m,
@@ -3651,6 +3627,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                             }
                             let delta = old_position - vw.bounds_rect.min;
                             vw.apply_command(
+                                diagram_model,
                                 &InsensitiveCommand::MovePositionalAll(delta),
                                 &mut u,
                                 &mut m,
@@ -3670,7 +3647,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Some(view) = self
                             .section_views
@@ -3678,9 +3655,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                             .find(|v| *v.read().uuid == *element)
                             .cloned()
                     {
-                        let model_uuid = *view.read().model_uuid();
+                        let child_model_uuid = *view.read().model_uuid();
 
-                        if let Some((_b, pos)) = w.remove_element(&model_uuid) {
+                        if let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &child_model_uuid)
+                        {
                             undo_accumulator.push(InsensitiveCommand::AddDependency {
                                 target: *self.uuid,
                                 bucket: *bucket,
@@ -3690,7 +3670,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                             });
 
                             if *including_model {
-                                affected_models.insert(*w.uuid);
+                                affected_models.insert(model_uuid);
                             }
 
                             let mut delta = egui::Vec2::ZERO;
@@ -3702,6 +3682,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                                     delta.x += w.bounds_rect.width();
                                 } else {
                                     w.apply_command(
+                                        diagram_model,
                                         &InsensitiveCommand::MovePositionalAll(-delta),
                                         &mut u,
                                         &mut m,
@@ -3758,11 +3739,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                                     };
                                     let (mut u, mut m) = Default::default();
                                     srcw.apply_command(
+                                        diagram_model,
                                         &InsensitiveCommand::MovePositionalAll(src_d),
                                         &mut u,
                                         &mut m,
                                     );
                                     destw.apply_command(
+                                        diagram_model,
                                         &InsensitiveCommand::MovePositionalAll(dest_d),
                                         &mut u,
                                         &mut m,
@@ -4489,6 +4472,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             UmlActivityElementOrVertex,
@@ -4506,7 +4490,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         macro_rules! recurse {
             () => {
                 self.contained_elements.event_order_foreach_mut(|v| {
-                    v.apply_command(command, undo_accumulator, affected_models)
+                    v.apply_command(diagram_model, command, undo_accumulator, affected_models)
                 });
             };
         }
@@ -4564,6 +4548,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 let mut void = vec![];
                 self.contained_elements.event_order_foreach_mut(|v| {
                     v.apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -4609,11 +4594,14 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Ok(mut view) = UmlActivityElementView::try_from(element.clone())
                         && (!*into_model
-                            || w.insert_element(*bucket, *position, view.model()).is_ok())
+                            || diagram_model
+                                .write()
+                                .insert_element_into(model_uuid, *bucket, *position, view.model())
+                                .is_ok())
                     {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency {
@@ -4624,7 +4612,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                         });
 
                         if *into_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
                         let mut model_transitives = HashMap::new();
                         view.head_count(
@@ -4647,10 +4635,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Some(view) = self.contained_elements.get(element)
-                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
+                        && let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &view.model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -4661,7 +4651,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.contained_elements.retain(|k, _v| *k != *element);
@@ -5376,6 +5366,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             UmlActivityElementOrVertex,
@@ -5789,6 +5780,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             <UmlActivityDomain as Domain>::AddCommandElementT,
@@ -6183,6 +6175,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             UmlActivityElementOrVertex,
@@ -6604,6 +6597,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             UmlActivityElementOrVertex,
@@ -7008,6 +7002,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             UmlActivityElementOrVertex,
@@ -7469,6 +7464,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             UmlActivityElementOrVertex,
@@ -8347,6 +8343,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlActivityDiagram>,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
             UmlActivityElementOrVertex,

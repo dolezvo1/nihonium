@@ -71,18 +71,6 @@ impl ControllerAdapter<UmlClassDomain<UseCaseProfile>> for OntoUmlControllerAdap
         )
     }
 
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: UmlClassElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
-    }
-
     fn delete_elements(
         &mut self,
         uuids: &HashSet<ModelUuid>,
@@ -192,6 +180,19 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlClassPackageKind::Boundary,
         egui::Rect::from_x_y_ranges(400.0..=750.0, 100.0..=500.0),
     );
+
+    let diagram = ERef::new(UmlClassDiagram::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        vec![
+            customer_model.into(),
+            bank_model.into(),
+            gen_model.into(),
+            assoc_model.into(),
+            boundary.into(),
+        ],
+    ));
+
     {
         let mut w = boundary_view.write();
         let boundary_uuid = *w.uuid();
@@ -199,6 +200,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         {
             let e = usecase_view.into();
             w.apply_command(
+                &diagram,
                 &InsensitiveCommand::AddDependency {
                     target: boundary_uuid,
                     bucket: 0,
@@ -212,17 +214,6 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         }
     }
 
-    let diagram = ERef::new(UmlClassDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![
-            customer_model.into(),
-            bank_model.into(),
-            gen_model.into(),
-            assoc_model.into(),
-            boundary.into(),
-        ],
-    ));
     new_controlller(
         diagram,
         name.to_owned(),

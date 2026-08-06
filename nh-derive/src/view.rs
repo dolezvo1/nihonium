@@ -119,7 +119,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
     let arms_handle_event = arms_mutable.iter().map(|e| quote! { #e.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands) }).collect::<Vec<_>>();
     let arms_apply_command = arms_mutable
         .iter()
-        .map(|e| quote! { #e.apply_command(command, undo_accumulator, affected_models) })
+        .map(|e| quote! { #e.apply_command(diagram_model, command, undo_accumulator, affected_models) })
         .collect::<Vec<_>>();
     let arms_refresh_buffers = arms_mutable
         .iter()
@@ -246,6 +246,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             }
             fn apply_command(
                 &mut self,
+                diagram_model: &ERef<<#domain as crate::common::controller::Domain> :: DiagramModelT>,
                 command: &InsensitiveCommand<
                     <#domain as crate::common::controller::Domain> :: OrdinalMovementT,
                     <#domain as crate::common::controller::Domain> :: AddCommandElementT,

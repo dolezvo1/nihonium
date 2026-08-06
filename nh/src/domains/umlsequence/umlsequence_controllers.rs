@@ -17,7 +17,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
@@ -596,18 +596,6 @@ impl ControllerAdapter<UmlSequenceDomain> for UmlSequenceControllerAdapter {
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::umlsequence_models::transitive_closure(&self.model.read(), when_deleting)
-    }
-
-    fn insert_element(
-        &mut self,
-        parent: ModelUuid,
-        element: UmlSequenceElement,
-        b: BucketNoT,
-        p: Option<PositionNoT>,
-    ) -> Result<(), ()> {
-        self.model
-            .write()
-            .insert_element_into(parent, element, b, p)
     }
 
     fn delete_elements(
@@ -3399,6 +3387,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             UmlSequenceOrdinalMovement,
             UmlSequenceElementOrVertex,
@@ -3416,15 +3405,19 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         macro_rules! recurse {
             () => {
                 self.lifeline_views.iter_mut().for_each(|v| {
-                    v.write()
-                        .apply_command(command, undo_accumulator, affected_models)
+                    v.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    )
                 });
-                self.horizontal_element_views
-                    .iter_mut()
-                    .for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
-                self.standalone_views
-                    .iter_mut()
-                    .for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
+                self.horizontal_element_views.iter_mut().for_each(|v| {
+                    v.apply_command(diagram_model, command, undo_accumulator, affected_models)
+                });
+                self.standalone_views.iter_mut().for_each(|v| {
+                    v.apply_command(diagram_model, command, undo_accumulator, affected_models)
+                });
             };
         }
         macro_rules! resize_to {
@@ -3500,6 +3493,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 let mut void = vec![];
                 self.lifeline_views.iter_mut().for_each(|v| {
                     v.write().apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -3507,6 +3501,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 });
                 self.horizontal_element_views.iter_mut().for_each(|v| {
                     v.apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -3514,6 +3509,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 });
                 self.standalone_views.iter_mut().for_each(|v| {
                     v.apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -3644,23 +3640,23 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0 || *bucket == VERTICALS_BUCKET)
                         && let Ok(UmlSequenceElementView::Lifeline(view)) =
                             element.clone().try_into()
                     {
                         let mut vw = view.write();
-                        if let Some(model_pos) = w
-                            .get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, vw.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                        {
+                        let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, vw.model())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) {
                             let uuid = *vw.uuid();
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
@@ -3670,7 +3666,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             });
 
                             if *into_model {
-                                affected_models.insert(*w.uuid);
+                                affected_models.insert(model_uuid);
                             }
                             let mut model_transitives = HashMap::new();
                             vw.head_count(
@@ -3683,7 +3679,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
                                 for e in &self.lifeline_views {
-                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.read().model_uuid())
                                     else {
                                         unreachable!()
                                     };
@@ -3705,90 +3702,104 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         && view.lifeline_dependencies_met(
                             &self.lifeline_views.iter().map(|e| *e.read().uuid).collect(),
                         )
-                        && let Some(model_pos) = w
-                            .get_element_pos(&view.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, view.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
                     {
-                        let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            element: uuid,
-                            including_model: *into_model,
-                        });
-
-                        if *into_model {
-                            affected_models.insert(*w.uuid);
-                        }
-                        let mut model_transitives = HashMap::new();
-                        view.head_count(
-                            &mut HashMap::new(),
-                            &mut HashMap::new(),
-                            &mut model_transitives,
-                        );
-                        affected_models.extend(model_transitives.into_keys());
-
-                        let view_pos = {
-                            let mut view_pos: PositionNoT = 0;
-                            for e in &self.horizontal_element_views {
-                                let Some((_b, pos)) = w.get_element_pos(&e.model_uuid()) else {
-                                    unreachable!()
-                                };
-                                if pos < model_pos {
-                                    view_pos += 1;
-                                } else {
-                                    break;
-                                }
-                            }
-                            view_pos
-                        };
-                        self.horizontal_element_views
-                            .insert(view_pos.try_into().unwrap(), view);
-                    }
-                    if (*bucket == 0 || *bucket == NONDIAGRAM_STANDALONE_BUCKET)
-                        && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
-                        && let Some((b, _)) = w.get_element_pos(&view.model_uuid()).or_else(|| {
+                        let pos = self.model.read().get_element_pos(&view.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
                             if *into_model {
-                                w.insert_element(
-                                    NONDIAGRAM_STANDALONE_BUCKET,
-                                    *position,
-                                    view.model(),
-                                )
-                                .map(|e| (NONDIAGRAM_STANDALONE_BUCKET, e))
-                                .ok()
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(
+                                        model_uuid,
+                                        *bucket,
+                                        *position,
+                                        view.model(),
+                                    )
+                                    .ok()
                             } else {
                                 None
                             }
-                        })
-                        && (b == 0 || b == NONDIAGRAM_STANDALONE_BUCKET)
-                    {
-                        let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            element: uuid,
-                            including_model: *into_model,
-                        });
+                        }) {
+                            let uuid = *view.uuid();
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: uuid,
+                                including_model: *into_model,
+                            });
 
-                        if *into_model {
-                            affected_models.insert(*w.uuid);
+                            if *into_model {
+                                affected_models.insert(model_uuid);
+                            }
+                            let mut model_transitives = HashMap::new();
+                            view.head_count(
+                                &mut HashMap::new(),
+                                &mut HashMap::new(),
+                                &mut model_transitives,
+                            );
+                            affected_models.extend(model_transitives.into_keys());
+
+                            let view_pos = {
+                                let mut view_pos: PositionNoT = 0;
+                                for e in &self.horizontal_element_views {
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.model_uuid())
+                                    else {
+                                        unreachable!()
+                                    };
+                                    if pos < model_pos {
+                                        view_pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                view_pos
+                            };
+                            self.horizontal_element_views
+                                .insert(view_pos.try_into().unwrap(), view);
                         }
-                        let mut model_transitives = HashMap::new();
-                        view.head_count(
-                            &mut HashMap::new(),
-                            &mut HashMap::new(),
-                            &mut model_transitives,
-                        );
-                        affected_models.extend(model_transitives.into_keys());
+                    }
+                    if (*bucket == 0 || *bucket == NONDIAGRAM_STANDALONE_BUCKET)
+                        && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
+                    {
+                        let pos = self.model.read().get_element_pos(&view.model_uuid());
+                        if let Some((b, _)) = pos.or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(
+                                        model_uuid,
+                                        NONDIAGRAM_STANDALONE_BUCKET,
+                                        *position,
+                                        view.model(),
+                                    )
+                                    .map(|e| (NONDIAGRAM_STANDALONE_BUCKET, e))
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) && (b == 0 || b == NONDIAGRAM_STANDALONE_BUCKET)
+                        {
+                            let uuid = *view.uuid();
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: uuid,
+                                including_model: *into_model,
+                            });
 
-                        self.standalone_views.push(view);
+                            if *into_model {
+                                affected_models.insert(model_uuid);
+                            }
+                            let mut model_transitives = HashMap::new();
+                            view.head_count(
+                                &mut HashMap::new(),
+                                &mut HashMap::new(),
+                                &mut model_transitives,
+                            );
+                            affected_models.extend(model_transitives.into_keys());
+
+                            self.standalone_views.push(view);
+                        }
                     }
                 }
 
@@ -3801,14 +3812,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0 || *bucket == VERTICALS_BUCKET)
                         && let Some(view) = self
                             .lifeline_views
                             .iter()
                             .find(|v| *v.read().uuid == *element)
                             .cloned()
-                        && let Some((_b, pos)) = w.remove_element(&view.read().model_uuid())
+                        && let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &view.read().model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -3819,7 +3832,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.lifeline_views.retain(|v| *v.read().uuid != *element);
@@ -3830,7 +3843,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             .iter()
                             .find(|v| *v.uuid() == *element)
                             .cloned()
-                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
+                        && let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &view.model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -3841,7 +3856,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.horizontal_element_views
@@ -3853,7 +3868,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             .iter()
                             .find(|v| *v.uuid() == *element)
                             .cloned()
-                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
+                        && let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &view.model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -3864,7 +3881,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.standalone_views.retain(|v| *v.uuid() != *element);
@@ -4720,6 +4737,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             <UmlSequenceDomain as Domain>::OrdinalMovementT,
             <UmlSequenceDomain as Domain>::AddCommandElementT,
@@ -4738,6 +4756,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             () => {
                 self.sections.iter().for_each(|s| {
                     s.write().apply_command_inner(
+                        diagram_model,
                         &self.temporaries.spanned_lifelines,
                         command,
                         undo_accumulator,
@@ -4802,6 +4821,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                 let mut void = vec![];
                 self.sections.iter_mut().for_each(|v| {
                     v.write().apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -4855,7 +4875,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Ok(UmlSequenceElementView::CombinedFragmentSection(view)) =
                             element.clone().try_into()
@@ -4864,17 +4884,17 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                         })
                     {
                         let mut vw = view.write();
-                        if let Some(model_pos) = w
-                            .get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, vw.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
-                        {
+                        let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, vw.model())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) {
                             let uuid = *vw.uuid;
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
@@ -4884,7 +4904,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                             });
 
                             if *into_model {
-                                affected_models.insert(*w.uuid);
+                                affected_models.insert(model_uuid);
                             }
                             let mut model_transitives = HashMap::new();
                             vw.head_count(
@@ -4897,7 +4917,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
                                 for e in &self.sections {
-                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid())
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.read().model_uuid())
                                     else {
                                         unreachable!()
                                     };
@@ -4924,14 +4945,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Some(view) = self
                             .sections
                             .iter()
                             .find(|v| *v.read().uuid == *element)
                             .cloned()
-                        && let Some((_b, pos)) = w.remove_element(&view.read().model_uuid())
+                        && let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &view.read().model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -4942,7 +4965,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.sections.retain(|v| *v.read().uuid != *element);
@@ -5426,6 +5449,7 @@ impl UmlSequenceCombinedFragmentSectionView {
 
     fn apply_command_inner(
         &mut self,
+        diagram_model: &ERef<UmlSequenceDiagramBoard>,
         parent_spanned_lifelines: &HashSet<ViewUuid>,
         command: &InsensitiveCommand<
             UmlSequenceOrdinalMovement,
@@ -5443,9 +5467,9 @@ impl UmlSequenceCombinedFragmentSectionView {
     ) {
         macro_rules! recurse {
             () => {
-                self.horizontal_element_views
-                    .iter_mut()
-                    .for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
+                self.horizontal_element_views.iter_mut().for_each(|v| {
+                    v.apply_command(diagram_model, command, undo_accumulator, affected_models)
+                });
             };
         }
         match command {
@@ -5506,6 +5530,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                 let mut void = vec![];
                 self.horizontal_element_views.iter_mut().for_each(|v| {
                     v.apply_command(
+                        diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
                         &mut void,
                         affected_models,
@@ -5552,57 +5577,66 @@ impl UmlSequenceCombinedFragmentSectionView {
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone())
                             .and_then(|v| v.as_horizontal().ok_or(()))
                         && view.lifeline_dependencies_met(parent_spanned_lifelines)
-                        && let Some(model_pos) = w
-                            .get_element_pos(&view.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    w.insert_element(*bucket, *position, view.model()).ok()
-                                } else {
-                                    None
-                                }
-                            })
                     {
-                        let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                            target: *self.uuid,
-                            bucket: *bucket,
-                            element: uuid,
-                            including_model: *into_model,
-                        });
-
-                        if *into_model {
-                            affected_models.insert(*w.uuid);
-                        }
-                        let mut model_transitives = HashMap::new();
-                        view.head_count(
-                            &mut HashMap::new(),
-                            &mut HashMap::new(),
-                            &mut model_transitives,
-                        );
-                        affected_models.extend(model_transitives.into_keys());
-
-                        let view_pos = {
-                            let mut view_pos: PositionNoT = 0;
-                            for e in &self.horizontal_element_views {
-                                let Some((_b, pos)) = w.get_element_pos(&e.model_uuid()) else {
-                                    unreachable!()
-                                };
-                                if pos < model_pos {
-                                    view_pos += 1;
-                                } else {
-                                    break;
-                                }
+                        let pos = self.model.read().get_element_pos(&view.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(
+                                        model_uuid,
+                                        *bucket,
+                                        *position,
+                                        view.model(),
+                                    )
+                                    .ok()
+                            } else {
+                                None
                             }
-                            view_pos
-                        };
-                        self.horizontal_element_views
-                            .insert(view_pos.try_into().unwrap(), view.clone());
+                        }) {
+                            let uuid = *view.uuid();
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: uuid,
+                                including_model: *into_model,
+                            });
+
+                            if *into_model {
+                                affected_models.insert(model_uuid);
+                            }
+                            let mut model_transitives = HashMap::new();
+                            view.head_count(
+                                &mut HashMap::new(),
+                                &mut HashMap::new(),
+                                &mut model_transitives,
+                            );
+                            affected_models.extend(model_transitives.into_keys());
+
+                            let view_pos = {
+                                let mut view_pos: PositionNoT = 0;
+                                for e in &self.horizontal_element_views {
+                                    let Some((_b, pos)) =
+                                        self.model.read().get_element_pos(&e.model_uuid())
+                                    else {
+                                        unreachable!()
+                                    };
+                                    if pos < model_pos {
+                                        view_pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                view_pos
+                            };
+                            self.horizontal_element_views
+                                .insert(view_pos.try_into().unwrap(), view.clone());
+                        }
                     }
                 }
 
@@ -5615,14 +5649,16 @@ impl UmlSequenceCombinedFragmentSectionView {
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let mut w = self.model.write();
+                    let model_uuid = *self.model_uuid();
                     if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Some(view) = self
                             .horizontal_element_views
                             .iter()
                             .find(|v| *v.uuid() == *element)
                             .cloned()
-                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid())
+                        && let Some((_b, pos)) = diagram_model
+                            .write()
+                            .remove_element_from(model_uuid, &view.model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -5633,7 +5669,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.horizontal_element_views
@@ -5898,6 +5934,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
 
     fn apply_command(
         &mut self,
+        diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             UmlSequenceOrdinalMovement,
             UmlSequenceElementOrVertex,
@@ -5912,7 +5949,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
-        self.apply_command_inner(&HashSet::new(), command, undo_accumulator, affected_models);
+        self.apply_command_inner(
+            diagram_model,
+            &HashSet::new(),
+            command,
+            undo_accumulator,
+            affected_models,
+        );
     }
 
     fn refresh_buffers(&mut self) {
@@ -6731,6 +6774,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             UmlSequenceOrdinalMovement,
             UmlSequenceElementOrVertex,
@@ -7415,6 +7459,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             <UmlSequenceDomain as Domain>::OrdinalMovementT,
             <UmlSequenceDomain as Domain>::AddCommandElementT,
@@ -7993,6 +8038,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             <UmlSequenceDomain as Domain>::OrdinalMovementT,
             <UmlSequenceDomain as Domain>::AddCommandElementT,
@@ -8400,6 +8446,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             <UmlSequenceDomain as Domain>::OrdinalMovementT,
             <UmlSequenceDomain as Domain>::AddCommandElementT,
@@ -8944,6 +8991,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
 
     fn apply_command(
         &mut self,
+        _diagram_model: &ERef<UmlSequenceDiagramBoard>,
         command: &InsensitiveCommand<
             UmlSequenceOrdinalMovement,
             UmlSequenceElementOrVertex,
