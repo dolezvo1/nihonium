@@ -688,6 +688,33 @@ impl DiagramModel for UmlStateMachineDiagram {
         p: Option<PositionNoT>,
         element: UmlStateMachineElement,
     ) -> Result<PositionNoT, UmlStateMachineElement> {
+        if let UmlStateMachineElement::Edge(edge) = &element {
+            // Check that edge would not cross state machine boundary
+            let (source_uuid, target_uuid) = {
+                let r = edge.read();
+                (*r.source.uuid(), *r.target.uuid())
+            };
+            if self.find_element(&source_uuid).is_none()
+                || self.find_element(&target_uuid).is_none()
+            {
+                return Err(element);
+            }
+            let find_nearest_parent_stm = |element: &ModelUuid| -> Option<ModelUuid> {
+                let mut iter = self.find_element(element)?.1;
+                loop {
+                    let (e, p) = self.find_element(&iter)?;
+                    if matches!(e, UmlStateMachineElement::StateMachine(_)) {
+                        return Some(iter);
+                    } else {
+                        iter = p;
+                    }
+                }
+            };
+            if find_nearest_parent_stm(&source_uuid) != find_nearest_parent_stm(&target_uuid) {
+                return Err(element);
+            }
+        }
+
         if *self.uuid == target {
             self.insert_element_unsafe(b, p, element)
         } else {

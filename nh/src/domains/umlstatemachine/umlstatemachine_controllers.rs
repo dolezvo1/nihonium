@@ -1840,6 +1840,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 },
                 _,
             ) => {
+                // TODO: don't show when such edge would not be valid
                 if let Some(source_view) = q.get_view_for(source_uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -2088,18 +2089,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                                     && !matches!(e, UmlStateMachineElementView::CompositeState(_))
                             })
                             .map(|e| e.0)
-                            .unwrap_or_else(|| q.get_root())
-                        && let source_activity = q
-                            .find_container(&source.uuid(), |_, e| {
-                                matches!(e, UmlStateMachineElementView::StateMachine(_))
-                            })
-                            .map(|e| e.0)
-                        && let target_activity = q
-                            .find_container_inclusive(preferred_container, |_, e| {
-                                matches!(e, UmlStateMachineElementView::StateMachine(_))
-                            })
-                            .map(|e| e.0)
-                        && source_activity == target_activity =>
+                            .unwrap_or_else(|| q.get_root()) =>
                     {
                         let edge_view = new_umlstatemachine_edge(
                             "",
