@@ -709,10 +709,15 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DemoPsdElement>) {
         let models = super::demopsd_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<DemoPsdDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::demopsd_models::top_sort_info(m)
     }
 }
 
@@ -3385,6 +3390,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             (*self.uuid, *old_model.uuid)
         };
 
+        let modelish = if let Some(DemoPsdElement::Transaction(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            old_model.deep_copy_clone_inner(model_uuid, m)
+        };
+
         let new_before_views = self
             .before_views
             .iter()
@@ -3427,12 +3438,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
             })
             .collect();
-
-        let modelish = if let Some(DemoPsdElement::Transaction(m)) = m.get(&old_model.uuid) {
-            m.clone()
-        } else {
-            old_model.deep_copy_clone_inner(model_uuid, m)
-        };
 
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),

@@ -4,8 +4,8 @@ use std::sync::Arc;
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-    VisitableDiagram, VisitableElement,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+    ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
 use crate::common::uuid::ModelUuid;
@@ -194,6 +194,62 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &UmlActivityElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &UmlActivityElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            UmlActivityElement::Activity(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+            }
+            UmlActivityElement::InterruptibleRegion(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+            }
+            UmlActivityElement::Partition(inner) => {
+                for e in &inner.read().sections {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+            }
+            UmlActivityElement::PartitionSection(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+            }
+            UmlActivityElement::ActionNode(_)
+            | UmlActivityElement::InitialNode(_)
+            | UmlActivityElement::FinalNode(_)
+            | UmlActivityElement::DecisionNode(_)
+            | UmlActivityElement::ForkNode(_)
+            | UmlActivityElement::ObjectNode(_) => {}
+            UmlActivityElement::Edge(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.uuid());
+                required_models.insert(*r.target.uuid());
+            }
+            UmlActivityElement::Note(_) => {}
+            UmlActivityElement::NoteLink(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.uuid());
+            }
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 #[derive(

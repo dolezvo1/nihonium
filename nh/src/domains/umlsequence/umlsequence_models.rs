@@ -8,7 +8,7 @@ use crate::common::{
     eref::ERef,
     model::{
         BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
-        PositionNoT, VisitableDiagram, VisitableElement,
+        ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
     },
     search::FullTextSearchable,
     uuid::ModelUuid,
@@ -358,6 +358,65 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &UmlSequenceElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &UmlSequenceElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            UmlSequenceElement::Diagram(inner) => {
+                let r = inner.read();
+                for e in &r.vertical_elements {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+                for e in &r.horizontal_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+                for e in &r.standalone_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+            }
+            UmlSequenceElement::CombinedFragment(inner) => {
+                for e in &inner.read().sections {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+            }
+            UmlSequenceElement::CombinedFragmentSection(inner) => {
+                for e in &inner.read().horizontal_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+            }
+            UmlSequenceElement::Lifeline(_) => {}
+            UmlSequenceElement::Message(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.read().uuid);
+            }
+            UmlSequenceElement::Ref(_) => {}
+            UmlSequenceElement::DurationConstraint(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.element.uuid());
+                required_models.insert(*r.target.element.uuid());
+            }
+            UmlSequenceElement::Note(_) => {}
+            UmlSequenceElement::NoteLink(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.uuid());
+            }
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 pub const VERTICALS_BUCKET: BucketNoT = 1;

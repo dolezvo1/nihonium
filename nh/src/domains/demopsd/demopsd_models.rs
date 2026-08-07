@@ -10,7 +10,7 @@ use crate::{
         eref::ERef,
         model::{
             BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
-            PositionNoT, VisitableDiagram, VisitableElement,
+            ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
         },
         search::FullTextSearchable,
         ufoption::UFOption,
@@ -282,6 +282,57 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &DemoPsdElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &DemoPsdElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            DemoPsdElement::Package(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(e, required_models, provided_models);
+                }
+            }
+            DemoPsdElement::Transaction(inner) => {
+                let r = inner.read();
+                for e in &r.before {
+                    walk(
+                        &e.state.clone().to_element(),
+                        required_models,
+                        provided_models,
+                    );
+                }
+                if let Some(e) = r.p_act.as_ref() {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+                for e in &r.after {
+                    walk(
+                        &e.state.clone().to_element(),
+                        required_models,
+                        provided_models,
+                    );
+                }
+            }
+            DemoPsdElement::Fact(_) | DemoPsdElement::Act(_) => {}
+            DemoPsdElement::Link(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.read().uuid);
+            }
+            DemoPsdElement::Note(_) => {}
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]

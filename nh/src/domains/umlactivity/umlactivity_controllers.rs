@@ -665,10 +665,15 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, UmlActivityElement>) {
         let models = super::umlactivity_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<UmlActivityDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::umlactivity_models::top_sort_info(m)
     }
 }
 

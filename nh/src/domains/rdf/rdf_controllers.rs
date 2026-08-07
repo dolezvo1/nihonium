@@ -470,10 +470,15 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {
         let models = super::rdf_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<RdfDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::rdf_models::top_sort_info(m)
     }
 }
 

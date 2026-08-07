@@ -9,7 +9,7 @@ use crate::{
         eref::ERef,
         model::{
             BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
-            PositionNoT, VisitableDiagram, VisitableElement,
+            ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
         },
         search::FullTextSearchable,
         ufoption::UFOption,
@@ -307,6 +307,66 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &DemoOfdElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &DemoOfdElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            DemoOfdElement::Package(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(e, required_models, provided_models);
+                }
+            }
+            DemoOfdElement::EntityType(_) => {}
+            DemoOfdElement::EventType(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.base_entity_type.read().uuid);
+                if let Some(e) = r.specialization_entity_type.as_ref() {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+            }
+            DemoOfdElement::PropertyType(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.domain_element.read().uuid);
+                required_models.insert(*r.range_element.read().uuid);
+            }
+            DemoOfdElement::Specialization(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.domain_element.read().uuid);
+                required_models.insert(*r.range_element.read().uuid);
+            }
+            DemoOfdElement::Aggregation(inner) => {
+                let r = inner.read();
+                for e in &r.domain_elements {
+                    required_models.insert(*e.read().uuid);
+                }
+                required_models.insert(*r.range_element.read().uuid);
+            }
+            DemoOfdElement::Precedence(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.domain_element.read().uuid);
+                required_models.insert(*r.range_element.read().uuid);
+            }
+            DemoOfdElement::Exclusion(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.domain_element.uuid());
+                required_models.insert(*r.range_element.uuid());
+            }
+            DemoOfdElement::Note(_) => {}
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 // ---

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use crate::common::{entity::Entity, uuid::ModelUuid};
 
@@ -60,4 +60,9 @@ pub trait ElementVisitor<T: ?Sized> {
 pub trait DiagramVisitor<T: ContainerModel>: ElementVisitor<T::ElementT> {
     fn open_diagram(&mut self, e: &T);
     fn close_diagram(&mut self, e: &T);
+}
+
+pub struct ModelTopSortInfo {
+    pub required_models: HashSet<ModelUuid>,
+    pub provided_models: HashSet<ModelUuid>,
 }

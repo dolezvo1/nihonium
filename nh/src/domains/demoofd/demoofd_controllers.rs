@@ -632,10 +632,15 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DemoOfdElement>) {
         let models = super::demoofd_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<DemoOfdDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::demoofd_models::top_sort_info(m)
     }
 }
 

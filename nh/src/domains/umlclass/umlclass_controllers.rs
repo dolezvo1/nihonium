@@ -835,10 +835,12 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
         let models = super::umlclass_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(&self, m: &UmlClassElement) -> crate::common::model::ModelTopSortInfo {
+        super::umlclass_models::top_sort_info(m)
     }
 }
 

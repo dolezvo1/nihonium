@@ -1,8 +1,8 @@
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-    VisitableDiagram, VisitableElement,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+    ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
@@ -376,6 +376,77 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &UmlClassElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &UmlClassElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            UmlClassElement::Package(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(e, required_models, provided_models);
+                }
+            }
+            UmlClassElement::Instance(_) => {}
+            UmlClassElement::Class(inner) => {
+                let r = inner.read();
+                for e in &r.properties {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+                for e in &r.operations {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+            }
+            UmlClassElement::Property(_)
+            | UmlClassElement::Operation(_)
+            | UmlClassElement::UseCase(_) => {}
+            UmlClassElement::Generalization(inner) => {
+                let r = inner.read();
+                for e in &r.sources {
+                    required_models.insert(*e.read().uuid);
+                }
+                for e in &r.targets {
+                    required_models.insert(*e.read().uuid);
+                }
+            }
+            UmlClassElement::Dependency(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.uuid());
+                required_models.insert(*r.target.uuid());
+            }
+            UmlClassElement::Association(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.uuid());
+                required_models.insert(*r.target.uuid());
+            }
+            UmlClassElement::UseCaseGeneralization(inner) => {
+                let r = inner.read();
+                for e in &r.sources {
+                    required_models.insert(*e.read().uuid);
+                }
+                for e in &r.targets {
+                    required_models.insert(*e.read().uuid);
+                }
+            }
+            UmlClassElement::Note(_) => {}
+            UmlClassElement::NoteLink(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.uuid());
+            }
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]

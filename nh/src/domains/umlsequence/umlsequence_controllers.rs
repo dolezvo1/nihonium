@@ -1012,10 +1012,15 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, UmlSequenceElement>) {
         let models = super::umlsequence_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<UmlSequenceDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::umlsequence_models::top_sort_info(m)
     }
 }
 

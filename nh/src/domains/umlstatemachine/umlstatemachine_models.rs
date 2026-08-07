@@ -4,8 +4,8 @@ use std::sync::Arc;
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-    VisitableDiagram, VisitableElement,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+    ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
 use crate::common::uuid::ModelUuid;
@@ -206,6 +206,64 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &UmlStateMachineElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &UmlStateMachineElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            UmlStateMachineElement::StateMachine(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+            }
+            UmlStateMachineElement::CompositeState(inner) => {
+                let r = inner.read();
+                for e in &r.internal_transitions {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+                for e in &r.regions {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+            }
+            UmlStateMachineElement::CompositeStateRegion(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(&e.clone().to_element(), required_models, provided_models);
+                }
+            }
+            UmlStateMachineElement::SimpleState(inner) => {
+                for e in &inner.read().internal_transitions {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+            }
+            UmlStateMachineElement::InternalTransition(_)
+            | UmlStateMachineElement::InitialPseudostate(_)
+            | UmlStateMachineElement::TerminatePseudostate(_)
+            | UmlStateMachineElement::FinalState(_) => {}
+            UmlStateMachineElement::Edge(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.uuid());
+                required_models.insert(*r.target.uuid());
+            }
+            UmlStateMachineElement::Note(_) => {}
+            UmlStateMachineElement::NoteLink(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.uuid());
+            }
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 #[derive(

@@ -530,10 +530,15 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DemoCsdElement>) {
         let models = super::democsd_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<DemoCsdDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::democsd_models::top_sort_info(m)
     }
 }
 
@@ -2856,19 +2861,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         c: &mut HashMap<ViewUuid, DemoCsdElementView>,
         m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
-        let tx_clone = if let Some(t) = self.transaction_view.as_ref() {
-            t.read()
-                .deep_copy_clone(uuid_present, &mut HashMap::new(), c, m);
-            if let Some(DemoCsdElementView::Transaction(t)) = c.get(&t.read().uuid()) {
-                Some(t.clone())
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-        .into();
-
         let old_model = self.model.read();
         let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
@@ -2881,6 +2873,19 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         } else {
             old_model.deep_copy_clone_inner(model_uuid, m)
         };
+
+        let tx_clone = if let Some(t) = self.transaction_view.as_ref() {
+            t.read()
+                .deep_copy_clone(uuid_present, &mut HashMap::new(), c, m);
+            if let Some(DemoCsdElementView::Transaction(t)) = c.get(&t.read().uuid()) {
+                Some(t.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+        .into();
 
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),

@@ -1,8 +1,8 @@
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-    VisitableDiagram, VisitableElement,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+    ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
 use crate::common::uuid::ModelUuid;
@@ -246,6 +246,36 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &RdfElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &RdfElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            RdfElement::Graph(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(e, required_models, provided_models);
+                }
+            }
+            RdfElement::Literal(_) | RdfElement::Node(_) => {}
+            RdfElement::Predicate(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.uuid());
+            }
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]

@@ -8,7 +8,7 @@ use crate::common::{
     eref::ERef,
     model::{
         BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
-        PositionNoT, VisitableDiagram, VisitableElement,
+        ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
     },
     search::FullTextSearchable,
     uuid::ModelUuid,
@@ -128,6 +128,40 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &NetworkElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &NetworkElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            NetworkElement::Container(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(e, required_models, provided_models);
+                }
+            }
+            NetworkElement::Node(_)
+            | NetworkElement::User(_)
+            | NetworkElement::File(_)
+            | NetworkElement::Location(_) => {}
+            NetworkElement::Association(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.uuid());
+                required_models.insert(*r.target.uuid());
+            }
+            NetworkElement::Note(_) => {}
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 #[derive(

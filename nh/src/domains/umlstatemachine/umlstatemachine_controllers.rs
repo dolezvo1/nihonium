@@ -645,10 +645,15 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, UmlStateMachineElement>) {
         let models = super::umlstatemachine_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<UmlStateMachineDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::umlstatemachine_models::top_sort_info(m)
     }
 }
 

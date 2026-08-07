@@ -494,10 +494,15 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
             models,
         )
     }
-
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, NetworkElement>) {
         let models = super::network_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
+    }
+    fn top_sort_info(
+        &self,
+        m: &<NetworkDomain as Domain>::CommonElementT,
+    ) -> crate::common::model::ModelTopSortInfo {
+        super::network_models::top_sort_info(m)
     }
 }
 

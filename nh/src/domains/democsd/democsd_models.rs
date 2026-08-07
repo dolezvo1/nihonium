@@ -2,8 +2,8 @@ use crate::common::canvas;
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-    VisitableDiagram, VisitableElement,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+    ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
@@ -204,6 +204,42 @@ pub fn transitive_closure(
     }
 
     when_deleting
+}
+
+pub fn top_sort_info(m: &DemoCsdElement) -> ModelTopSortInfo {
+    fn walk(
+        e: &DemoCsdElement,
+        required_models: &mut HashSet<ModelUuid>,
+        provided_models: &mut HashSet<ModelUuid>,
+    ) {
+        provided_models.insert(*e.uuid());
+        match e {
+            DemoCsdElement::Package(inner) => {
+                for e in &inner.read().contained_elements {
+                    walk(e, required_models, provided_models);
+                }
+            }
+            DemoCsdElement::Transactor(inner) => {
+                if let Some(e) = inner.read().transaction.as_ref() {
+                    walk(&e.clone().into(), required_models, provided_models);
+                }
+            }
+            DemoCsdElement::Transaction(_) => {}
+            DemoCsdElement::Link(inner) => {
+                let r = inner.read();
+                required_models.insert(*r.source.read().uuid);
+                required_models.insert(*r.target.read().uuid);
+            }
+            DemoCsdElement::Note(_) => {}
+        }
+    }
+
+    let (mut required_models, mut provided_models) = Default::default();
+    walk(m, &mut required_models, &mut provided_models);
+    ModelTopSortInfo {
+        required_models,
+        provided_models,
+    }
 }
 
 // ---

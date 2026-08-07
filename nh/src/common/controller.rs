@@ -6,8 +6,8 @@ use super::views::ordered_views::OrderedViews;
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
 use crate::common::diagram_settings::{DiagramSettings, DiagramSettings2};
 use crate::common::model::{
-    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
-    VisitableDiagram, VisitableElement,
+    BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
+    ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
 };
 use crate::common::search::FullTextSearchable;
 use crate::common::ui_ext::UiExt;
@@ -2816,6 +2816,7 @@ pub trait DiagramAdapter<DomainT: Domain>:
         key: egui::Key,
     ) -> PropertiesStatus<DomainT>;
 
+    fn top_sort_info(&self, m: &DomainT::CommonElementT) -> ModelTopSortInfo;
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
     fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
 }
@@ -4294,8 +4295,8 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                             canvas::Highlight::SELECTED,
                         ));
 
-                        let mut add_commands = Vec::new();
-                        let elements = Self::elements_deep_copy(
+                        // Deep copy elements from the clipboard
+                        let unordered_elements = Self::elements_deep_copy(
                             None,
                             |_| true,
                             HashMap::new(),
@@ -4304,8 +4305,48 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                                     .map(|e| (*e.uuid(), e.clone()))
                             }),
                         );
+
+                        // Sort topologically based on models
+                        let elements = {
+                            let mut infos: Vec<_> = unordered_elements
+                                .iter()
+                                .map(|e| (*e.0, self.adapter.top_sort_info(&e.1.model())))
+                                .collect();
+                            {
+                                let mut all_provided_models = HashSet::new();
+                                for e in infos.iter().flat_map(|e| e.1.provided_models.iter()) {
+                                    all_provided_models.insert(*e);
+                                }
+                                for (_k, i) in infos.iter_mut() {
+                                    i.required_models.retain(|e| {
+                                        all_provided_models.contains(e)
+                                            && !i.provided_models.contains(e)
+                                    });
+                                }
+                            }
+
+                            let mut ordered_elements = Vec::new();
+                            while !infos.is_empty() {
+                                let drain_pos = infos
+                                    .iter()
+                                    .position(|e| e.1.required_models.is_empty())
+                                    .unwrap();
+                                let (drain_uuid, drain_info) = infos.remove(drain_pos);
+                                ordered_elements.push((
+                                    drain_uuid,
+                                    unordered_elements.get(&drain_uuid).cloned().unwrap(),
+                                ));
+                                for e in infos.iter_mut() {
+                                    e.1.required_models
+                                        .retain(|e| !drain_info.provided_models.contains(e));
+                                }
+                            }
+                            ordered_elements
+                        };
+
+                        // Move elements to desired position
                         let mut new_elements_area = egui::Rect::NOTHING;
-                        for v in elements.values() {
+                        for (_k, v) in &elements {
                             new_elements_area = new_elements_area.union(v.bounding_box());
                         }
                         let new_position = match pos {
@@ -4325,6 +4366,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                         };
                         let (mut u, mut m) = Default::default();
                         let (mut a, mut b, mut frm) = Default::default();
+                        let mut add_commands = Vec::new();
                         for (_k, mut v) in elements.into_iter() {
                             v.apply_command(
                                 &self.model(),
@@ -4343,6 +4385,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                                 into_model: true,
                             });
                         }
+
                         cmds.push(InsensitiveCommand::Macro(
                             "nh-viewcommand-pasteelements".to_owned().into(),
                             frm.len(),
