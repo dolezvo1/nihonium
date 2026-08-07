@@ -392,6 +392,18 @@ impl DiagramModel for NetworkDiagram {
         position: Option<PositionNoT>,
         element: NetworkElement,
     ) -> Result<PositionNoT, NetworkElement> {
+        if let NetworkElement::Association(e) = &element {
+            let (source_uuid, target_uuid) = {
+                let r = e.read();
+                (*r.source.uuid(), *r.target.uuid())
+            };
+            if self.find_element(&source_uuid).is_none()
+                || self.find_element(&target_uuid).is_none()
+            {
+                return Err(element);
+            }
+        }
+
         if *self.uuid == target {
             self.insert_element_unsafe(bucket, position, element)
         } else {

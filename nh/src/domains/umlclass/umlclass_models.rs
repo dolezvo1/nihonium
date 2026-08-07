@@ -649,6 +649,73 @@ impl DiagramModel for UmlClassDiagram {
         p: Option<PositionNoT>,
         element: UmlClassElement,
     ) -> Result<PositionNoT, UmlClassElement> {
+        match &element {
+            UmlClassElement::Generalization(inner) => {
+                if inner
+                    .read()
+                    .sources
+                    .iter()
+                    .any(|e| self.find_element(&e.read().uuid).is_none())
+                    || inner
+                        .read()
+                        .targets
+                        .iter()
+                        .any(|e| self.find_element(&e.read().uuid).is_none())
+                {
+                    return Err(element);
+                }
+            }
+            UmlClassElement::Dependency(inner) => {
+                let (source_uuid, target_uuid) = {
+                    let r = inner.read();
+                    (*r.source.uuid(), *r.target.uuid())
+                };
+                if self.find_element(&source_uuid).is_none()
+                    || self.find_element(&target_uuid).is_none()
+                {
+                    return Err(element);
+                }
+            }
+            UmlClassElement::Association(inner) => {
+                let (source_uuid, target_uuid) = {
+                    let r = inner.read();
+                    (*r.source.uuid(), *r.target.uuid())
+                };
+                if self.find_element(&source_uuid).is_none()
+                    || self.find_element(&target_uuid).is_none()
+                {
+                    return Err(element);
+                }
+            }
+            UmlClassElement::UseCaseGeneralization(inner) => {
+                if inner
+                    .read()
+                    .sources
+                    .iter()
+                    .any(|e| self.find_element(&e.read().uuid).is_none())
+                    || inner
+                        .read()
+                        .targets
+                        .iter()
+                        .any(|e| self.find_element(&e.read().uuid).is_none())
+                {
+                    return Err(element);
+                }
+            }
+            UmlClassElement::NoteLink(inner) => {
+                let (source_uuid, target_uuid) = {
+                    let r = inner.read();
+                    (*r.source.read().uuid, *r.target.uuid())
+                };
+                if self.find_element(&source_uuid).is_none()
+                    || self.find_element(&target_uuid).is_none()
+                {
+                    return Err(element);
+                }
+            }
+            _ => {}
+        }
+
         if *self.uuid == target {
             self.insert_element_unsafe(b, p, element)
         } else {

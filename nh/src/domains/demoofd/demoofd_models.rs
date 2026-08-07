@@ -485,6 +485,73 @@ impl DiagramModel for DemoOfdDiagram {
         position: Option<PositionNoT>,
         element: DemoOfdElement,
     ) -> Result<PositionNoT, DemoOfdElement> {
+        match &element {
+            DemoOfdElement::EventType(inner) => {
+                let base_entity_uuid = *inner.read().base_entity_type.read().uuid;
+                if self.find_element(&base_entity_uuid).is_none() {
+                    return Err(element);
+                }
+            }
+            DemoOfdElement::PropertyType(inner) => {
+                let (source_uuid, target_uuid) = {
+                    let r = inner.read();
+                    (*r.domain_element.read().uuid, *r.range_element.read().uuid)
+                };
+                if self.find_element(&source_uuid).is_none()
+                    || self.find_element(&target_uuid).is_none()
+                {
+                    return Err(element);
+                }
+            }
+            DemoOfdElement::Specialization(inner) => {
+                let (source_uuid, target_uuid) = {
+                    let r = inner.read();
+                    (*r.domain_element.read().uuid, *r.range_element.read().uuid)
+                };
+                if self.find_element(&source_uuid).is_none()
+                    || self.find_element(&target_uuid).is_none()
+                {
+                    return Err(element);
+                }
+            }
+            DemoOfdElement::Aggregation(inner) => {
+                if inner
+                    .read()
+                    .domain_elements
+                    .iter()
+                    .any(|e| self.find_element(&e.read().uuid).is_none())
+                    || self
+                        .find_element(&inner.read().range_element.read().uuid)
+                        .is_none()
+                {
+                    return Err(element);
+                }
+            }
+            DemoOfdElement::Precedence(inner) => {
+                let (source_uuid, target_uuid) = {
+                    let r = inner.read();
+                    (*r.domain_element.read().uuid, *r.range_element.read().uuid)
+                };
+                if self.find_element(&source_uuid).is_none()
+                    || self.find_element(&target_uuid).is_none()
+                {
+                    return Err(element);
+                }
+            }
+            DemoOfdElement::Exclusion(inner) => {
+                let (source_uuid, target_uuid) = {
+                    let r = inner.read();
+                    (*r.domain_element.uuid(), *r.range_element.uuid())
+                };
+                if self.find_element(&source_uuid).is_none()
+                    || self.find_element(&target_uuid).is_none()
+                {
+                    return Err(element);
+                }
+            }
+            _ => {}
+        }
+
         if *self.uuid == target {
             self.insert_element_unsafe(bucket, position, element)
         } else {
