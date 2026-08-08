@@ -9271,7 +9271,11 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceNoteLinkAdapter {
         >,
     ) {
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlSequenceElementView>>,
+        _target_views: &Vec<Ending<UmlSequenceElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();

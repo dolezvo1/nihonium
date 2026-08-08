@@ -7488,7 +7488,11 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlStateMachineElementView>>,
+        _target_views: &Vec<Ending<UmlStateMachineElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
@@ -8296,7 +8300,11 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAd
         >,
     ) {
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlStateMachineElementView>>,
+        _target_views: &Vec<Ending<UmlStateMachineElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();

@@ -5288,7 +5288,11 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<NetworkElementView>>,
+        _target_views: &Vec<Ending<NetworkElementView>>,
+    ) {
         let model = self.model.read();
 
         fn ah(

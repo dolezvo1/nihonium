@@ -2787,7 +2787,11 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<RdfElementView>>,
+        _target_views: &Vec<Ending<RdfElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();

@@ -4079,7 +4079,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<DemoOfdElementView>>,
+        _target_views: &Vec<Ending<DemoOfdElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
@@ -4305,7 +4309,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<DemoOfdElementView>>,
+        _target_views: &Vec<Ending<DemoOfdElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
@@ -4575,7 +4583,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<DemoOfdElementView>>,
+        _target_views: &Vec<Ending<DemoOfdElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
@@ -4788,7 +4800,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<DemoOfdElementView>>,
+        _target_views: &Vec<Ending<DemoOfdElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
@@ -5029,7 +5045,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<DemoOfdElementView>>,
+        _target_views: &Vec<Ending<DemoOfdElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();

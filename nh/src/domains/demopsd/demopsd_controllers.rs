@@ -4603,7 +4603,11 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<DemoPsdElementView>>,
+        _target_views: &Vec<Ending<DemoPsdElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();

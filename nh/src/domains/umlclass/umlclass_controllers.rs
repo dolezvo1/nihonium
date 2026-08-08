@@ -8311,13 +8311,20 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        source_views: &Vec<Ending<UmlClassElementView<P>>>,
+        target_views: &Vec<Ending<UmlClassElementView<P>>>,
+    ) {
         let model = self.model.read();
 
         let set_props_label = if model.sources.len() > 1 || model.targets.len() > 1 {
             Some(format!(
                 "{{{}, {}}}",
-                if model.set_is_covering {
+                if model.set_is_covering
+                    && model.sources.len() == source_views.len()
+                    && model.targets.len() == target_views.len()
+                {
                     "complete"
                 } else {
                     "incomplete"
@@ -8655,7 +8662,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
@@ -9229,7 +9240,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+    ) {
         let model = self.model.read();
 
         fn ah(
@@ -9627,7 +9642,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+    ) {
         let model = self.model.read();
 
         let set_props_label = if model.sources.len() > 1 || model.targets.len() > 1 {
@@ -10470,7 +10489,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassN
         >,
     ) {
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();

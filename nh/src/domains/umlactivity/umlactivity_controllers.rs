@@ -7802,7 +7802,11 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
             }
         }
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlActivityElementView>>,
+        _target_views: &Vec<Ending<UmlActivityElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
@@ -8614,7 +8618,11 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityNoteLinkAdapter {
         >,
     ) {
     }
-    fn refresh_buffers(&mut self) {
+    fn refresh_buffers(
+        &mut self,
+        _source_views: &Vec<Ending<UmlActivityElementView>>,
+        _target_views: &Vec<Ending<UmlActivityElementView>>,
+    ) {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();

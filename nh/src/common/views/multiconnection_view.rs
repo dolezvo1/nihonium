@@ -168,7 +168,11 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
             >,
         >,
     );
-    fn refresh_buffers(&mut self);
+    fn refresh_buffers(
+        &mut self,
+        source_views: &Vec<Ending<DomainT::CommonElementViewT>>,
+        target_views: &Vec<Ending<DomainT::CommonElementViewT>>,
+    );
 
     fn deep_copy_init(
         &self,
@@ -268,7 +272,7 @@ where
                 point_to_origin.insert(p.0, (true, idx));
             }
         }
-        adapter.refresh_buffers();
+        adapter.refresh_buffers(&sources, &targets);
 
         ERef::new(Self {
             uuid,
@@ -1368,7 +1372,7 @@ where
 
                             affected_models.insert(model_uuid);
                         }
-                        self.adapter.refresh_buffers();
+                        self.adapter.refresh_buffers(&self.sources, &self.targets);
                     }
                     // vertex
                     if let Ok(VertexInformation {
@@ -1500,7 +1504,7 @@ where
                             property.clone(),
                         ));
                         std::mem::swap(&mut self.sources, &mut self.targets);
-                        self.adapter.refresh_buffers();
+                        self.adapter.refresh_buffers(&self.sources, &self.targets);
                     }
                     self.adapter
                         .apply_change(&self.uuid, command, undo_accumulator);
@@ -1511,7 +1515,7 @@ where
         }
     }
     fn refresh_buffers(&mut self) {
-        self.adapter.refresh_buffers();
+        self.adapter.refresh_buffers(&self.sources, &self.targets);
     }
 
     fn head_count(
