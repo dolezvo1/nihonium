@@ -538,7 +538,11 @@ where
                     .find(|e| *e.element.model_uuid() == *model_uuid);
 
                 ui.horizontal(|ui| {
-                    let l = ui.label(&*lp.get(model_uuid));
+                    let l = ui.label(format!(
+                        "{} {}",
+                        if e.is_some() { "[x]" } else { "[ ]" },
+                        &*lp.get(model_uuid)
+                    ));
 
                     l.context_menu(|ui| {
                         if let Some(e) = e {
