@@ -1809,12 +1809,12 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
 
 inventory::submit! {DiagramInfo {
     type_indentifier: "umlsequence",
-    pretty_name: "UML Sequence diagram",
+    pretty_name: "UML Sequence diagram (unstable)",
     default_settings: &(default_settings as DefaultSettingsF),
     settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Unified Modeling Language",
-        description: "UML Sequence diagram (lifelines, messages, etc.)",
+        description: "UML Sequence diagram (lifelines, messages, etc.)\n\nNote: this implementation has several known issues and will need to be reworked in the near future.",
         constructors: &[
             ("empty", &((|no| format!("New UML Sequence diagram {}", no)) as DefaultNameF), &(new as DiagramConstructorF)),
             ("demo", &((|no| format!("Demo UML Sequence diagram {}", no)) as DefaultNameF), &(demo as DiagramConstructorF)),
