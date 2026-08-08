@@ -7689,10 +7689,19 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 
     fn deep_copy_relink(
         &mut self,
-        _c: &HashMap<ViewUuid, UmlSequenceElementView>,
+        c: &HashMap<ViewUuid, UmlSequenceElementView>,
         m: &HashMap<ModelUuid, UmlSequenceElement>,
     ) {
         self.model.write().deep_copy_relink(m);
+
+        let source_uuid = *self.source.uuid();
+        if let Some(s) = c.get(&source_uuid) {
+            self.source = s.clone();
+        }
+        let target_uuid = *self.target.uuid();
+        if let Some(s) = c.get(&target_uuid) {
+            self.target = s.clone();
+        }
     }
 }
 
@@ -8571,10 +8580,19 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
 
     fn deep_copy_relink(
         &mut self,
-        _c: &HashMap<ViewUuid, UmlSequenceElementView>,
+        c: &HashMap<ViewUuid, UmlSequenceElementView>,
         m: &HashMap<ModelUuid, UmlSequenceElement>,
     ) {
         self.model.write().deep_copy_relink(m);
+
+        let source_uuid = *self.source.view.uuid();
+        if let Some(s) = c.get(&source_uuid) {
+            self.source.view = s.clone();
+        }
+        let target_uuid = *self.target.view.uuid();
+        if let Some(s) = c.get(&target_uuid) {
+            self.target.view = s.clone();
+        }
     }
 }
 
