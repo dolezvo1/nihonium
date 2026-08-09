@@ -7,7 +7,7 @@ use crate::common::controller::{
     DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
     EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand,
     MGlobalColor, MultiDiagramController, ProjectCommand, PropertiesStatus, Queryable,
-    SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View,
+    SelectionStatus, TargettingStatus, Tool, TryMerge, View,
 };
 use crate::common::diagram_settings::{
     DiagramSettings, DiagramSettings2, GroupDisplayStyle, PaletteEditBuffer, ShortCutStatus,

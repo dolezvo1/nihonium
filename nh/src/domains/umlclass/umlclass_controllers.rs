@@ -9,7 +9,7 @@ use crate::common::controller::{
     DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
     EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand,
     LabelProvider, MGlobalColor, MultiDiagramController, ProjectCommand, PropertiesStatus,
-    Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View,
+    Queryable, SelectionStatus, TargettingStatus, Tool, TryMerge, View,
 };
 use crate::common::diagram_settings::{
     DiagramSettings, DiagramSettings2, GroupDisplayStyle, PaletteEditBuffer, ShortCutStatus,
@@ -2448,7 +2448,6 @@ pub enum PartialUmlClassElement<P: UmlClassProfile> {
         dest: Option<UmlClassAssociable>,
     },
     LinkEnding {
-        source: bool,
         gen_model: UmlGeneralization,
         new_model: Option<ModelUuid>,
     },
@@ -2877,7 +2876,6 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     &mut PartialUmlClassElement::LinkEnding {
                         ref gen_model,
                         ref mut new_model,
-                        ..
                     },
                 ) => {
                     let inner_uuid = *inner.read().uuid;
@@ -2923,7 +2921,6 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     &mut PartialUmlClassElement::LinkEnding {
                         ref gen_model,
                         ref mut new_model,
-                        ..
                     },
                 ) => {
                     let inner_uuid = *inner.read().uuid;
@@ -2980,10 +2977,10 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     ) -> Result<Option<Box<dyn CustomModal>>, ()> {
         match &mut self.result {
             PartialUmlClassElement::LinkEnding {
-                source,
                 gen_model,
                 new_model,
-            } if new_model.is_some()
+            } if let UmlClassToolStage::LinkAddEnding { source } = &self.initial_stage
+                && new_model.is_some()
                 && let Some(target) = q.get_viewuuid_for(&gen_model.uuid())
                 && let Some(element) = q.get_view_for(&new_model.unwrap()) =>
             {
@@ -8190,7 +8187,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 initial_stage: UmlClassToolStage::LinkAddEnding { source: true },
                 current_stage: UmlClassToolStage::LinkAddEnding { source: true },
                 result: PartialUmlClassElement::LinkEnding {
-                    source: true,
                     gen_model: self.model.clone().into(),
                     new_model: None,
                 },
@@ -8210,7 +8206,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 initial_stage: UmlClassToolStage::LinkAddEnding { source: false },
                 current_stage: UmlClassToolStage::LinkAddEnding { source: false },
                 result: PartialUmlClassElement::LinkEnding {
-                    source: false,
                     gen_model: self.model.clone().into(),
                     new_model: None,
                 },
@@ -9521,7 +9516,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 initial_stage: UmlClassToolStage::LinkAddEnding { source: true },
                 current_stage: UmlClassToolStage::LinkAddEnding { source: true },
                 result: PartialUmlClassElement::LinkEnding {
-                    source: true,
                     gen_model: self.model.clone().into(),
                     new_model: None,
                 },
@@ -9541,7 +9535,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 initial_stage: UmlClassToolStage::LinkAddEnding { source: false },
                 current_stage: UmlClassToolStage::LinkAddEnding { source: false },
                 result: PartialUmlClassElement::LinkEnding {
-                    source: false,
                     gen_model: self.model.clone().into(),
                     new_model: None,
                 },

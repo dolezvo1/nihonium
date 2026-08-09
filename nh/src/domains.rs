@@ -1,3 +1,4 @@
+pub mod archimate;
 pub mod demo;
 pub mod democsd;
 pub mod demoofd;

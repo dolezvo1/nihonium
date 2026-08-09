@@ -494,7 +494,7 @@ impl NHShape {
     }
 }
 
-// TODO: circle, embedded circle (ArchiMate)
+/// roughly speaking, "empty" means white, "full" means black
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub enum ArrowheadType {
     #[default]
@@ -505,6 +505,8 @@ pub enum ArrowheadType {
     FullTriangle,
     EmptyRhombus,
     FullRhombus,
+    FullCircleSmall,
+    FullTriangleSmall,
 }
 
 fn atan2(a: egui::Pos2, b: egui::Pos2) -> f32 {
@@ -513,10 +515,11 @@ fn atan2(a: egui::Pos2, b: egui::Pos2) -> f32 {
 
 const ARROWHEAD_SIDE_LENGTH: f32 = 15.0;
 const ARROWHEAD_INNER_ANGLE: f32 = 35.0;
+const ARROWHEAD_SMALL_SIDE_LENGTH: f32 = 10.0;
 
 impl ArrowheadType {
-    // Get intersection of line between focal_point and other point
-    // that is the furthest from the focal_point
+    /// Get intersection of the line between focal_point and other point
+    /// and the arrowhead directed from other point toward focal_point
     pub fn get_intersect(&self, focal_point: egui::Pos2, other: egui::Pos2) -> egui::Pos2 {
         match self {
             ArrowheadType::None | ArrowheadType::OpenTriangle => focal_point,
@@ -538,6 +541,23 @@ impl ArrowheadType {
                 } else {
                     (p3 + focal_point.to_vec2()) / 2.0
                 }
+            }
+            ArrowheadType::FullCircleSmall => {
+                let outward_angle = atan2(focal_point, other);
+                focal_point
+                    + egui::Vec2::new(outward_angle.cos(), outward_angle.sin())
+                        * ARROWHEAD_SMALL_SIDE_LENGTH
+            }
+            ArrowheadType::FullTriangleSmall => {
+                let outward_angle = atan2(focal_point, other);
+                let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
+                    .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
+                    .map(|a| {
+                        focal_point
+                            + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SMALL_SIDE_LENGTH
+                    });
+                let p3 = p2 + (p1 - focal_point);
+                (p3 + focal_point.to_vec2()) / 2.0
             }
         }
     }
@@ -606,6 +626,32 @@ impl ArrowheadType {
                     } else {
                         primary_color
                     },
+                    Stroke::new_solid(1.0, primary_color),
+                    highlight,
+                );
+            }
+            ArrowheadType::FullCircleSmall => {
+                let radius = ARROWHEAD_SMALL_SIDE_LENGTH / 2.0;
+                let center = focal_point
+                    + egui::Vec2::new(outward_angle.cos(), outward_angle.sin()) * radius;
+                canvas.draw_ellipse(
+                    center,
+                    egui::Vec2::splat(radius),
+                    primary_color,
+                    Stroke::new_solid(1.0, primary_color),
+                    highlight,
+                );
+            }
+            ArrowheadType::FullTriangleSmall => {
+                let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
+                    .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
+                    .map(|a| {
+                        focal_point
+                            + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SMALL_SIDE_LENGTH
+                    });
+                canvas.draw_polygon(
+                    vec![focal_point, p1, p2],
+                    primary_color,
                     Stroke::new_solid(1.0, primary_color),
                     highlight,
                 );

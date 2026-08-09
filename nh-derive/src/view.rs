@@ -221,7 +221,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                     #(#arms_draw_in),*
                 }
             }
-            fn collect_allignment(&mut self, am: &mut SnapManager) {
+            fn collect_allignment(&mut self, am: &mut crate::common::controller::SnapManager) {
                 match self {
                     #(#arms_collect_alignment),*
                 }
