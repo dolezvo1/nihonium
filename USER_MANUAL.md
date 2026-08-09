@@ -30,13 +30,15 @@ The Search tab provides a way to search all models. The search expression may co
 
 The Toolbar tab shows a list of tools separated into categories, as well as previews of the elements that will be created by the tools.
 
-![](img/screenshot_toolbar.png)
+![](img/screenshot_toolbar_list.png)
 
 Selecting a tool in the list with the primary mouse button engages the repeated mode (indicated by `∞`). Selecting a tool in the list with a secondary mouse button engages the one-shot mode (indicated by `1`).
 
 Scrolling with the scroll wheel while holding `Ctrl` key changes the size of toolbar items.
 
 The toolbar tools and categories for a given diagram type may usually be modified in `Settings` > `Diagram specific settings`.
+
+![](img/screenshot_toolbar_grid.png)
 
 
 ## Properties Tab
