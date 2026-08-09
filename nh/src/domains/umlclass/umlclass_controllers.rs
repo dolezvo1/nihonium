@@ -12,8 +12,8 @@ use crate::common::controller::{
     Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View,
 };
 use crate::common::diagram_settings::{
-    DiagramSettings, DiagramSettings2, PaletteEditBuffer, ShortCutStatus, ShowSettingsResult,
-    ToolPalette,
+    DiagramSettings, DiagramSettings2, GroupDisplayStyle, PaletteEditBuffer, ShortCutStatus,
+    ShowSettingsResult, ToolPalette,
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
@@ -1369,11 +1369,24 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
             }
             match &mut *buffer {
                 PaletteEditBuffer::None => {}
-                PaletteEditBuffer::Group(_uuid, name) => {
-                    if columns[1]
+                PaletteEditBuffer::Group(_uuid, name, display_style) => {
+                    let mut modified = false;
+
+                    modified |= columns[1]
                         .labeled_text_edit_singleline("Label", name)
-                        .changed()
-                    {
+                        .changed();
+
+                    columns[1].label("Display style");
+                    egui::ComboBox::from_id_salt("group display style")
+                        .selected_text(display_style.as_str())
+                        .show_ui(&mut columns[1], |ui| {
+                            for e in GroupDisplayStyle::VARIANTS {
+                                modified |=
+                                    ui.selectable_value(display_style, e, e.as_str()).clicked();
+                            }
+                        });
+
+                    if modified {
                         w.set_from_buffer(buffer.clone());
                     }
                 }
@@ -1713,6 +1726,7 @@ impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSetting
             &mut (
                 uuid::Uuid,
                 String,
+                GroupDisplayStyle,
                 Vec<(
                     uuid::Uuid,
                     UmlClassToolStage,
@@ -1768,6 +1782,7 @@ pub fn default_settings_helper<P: UmlClassProfile>(
         .map(|e| {
             (
                 e.0,
+                GroupDisplayStyle::List,
                 e.1.into_iter()
                     .map(|e| {
                         let v = view_for_stage(&e.0);

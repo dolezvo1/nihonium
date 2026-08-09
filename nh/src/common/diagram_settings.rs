@@ -24,10 +24,27 @@ impl PaletteEditingSelection {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum GroupDisplayStyle {
+    List,
+    Grid,
+}
+
+impl GroupDisplayStyle {
+    pub const VARIANTS: [Self; 2] = [Self::List, Self::Grid];
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            GroupDisplayStyle::List => "List",
+            GroupDisplayStyle::Grid => "Grid",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum PaletteEditBuffer<T: Clone, V: Clone> {
     None,
-    Group(uuid::Uuid, String),
+    Group(uuid::Uuid, String, GroupDisplayStyle),
     Tool(uuid::Uuid, String, T, V, Option<egui::KeyboardShortcut>),
 }
 
@@ -45,6 +62,7 @@ pub struct ToolPalette<S: Clone, DomainT: Domain> {
     elements: Vec<(
         uuid::Uuid,
         String,
+        GroupDisplayStyle,
         Vec<(
             uuid::Uuid,
             S,
@@ -58,7 +76,12 @@ pub struct ToolPalette<S: Clone, DomainT: Domain> {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ToolPaletteHelper<S: Clone> {
-    elements: Vec<(uuid::Uuid, String, Vec<ToolPaletteItemHelper<S>>)>,
+    elements: Vec<(
+        uuid::Uuid,
+        String,
+        GroupDisplayStyle,
+        Vec<ToolPaletteItemHelper<S>>,
+    )>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ToolPaletteItemHelper<S: Clone> {
@@ -72,6 +95,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     pub fn new(
         elements: Vec<(
             &str,
+            GroupDisplayStyle,
             Vec<(
                 S,
                 &str,
@@ -86,7 +110,8 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                 (
                     uuid::Uuid::now_v7(),
                     e.0.to_owned(),
-                    e.1.into_iter()
+                    e.1,
+                    e.2.into_iter()
                         .map(|e| (uuid::Uuid::now_v7(), e.0, e.1.to_owned(), e.2, e.3))
                         .collect(),
                 )
@@ -104,6 +129,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
             &mut (
                 uuid::Uuid,
                 String,
+                GroupDisplayStyle,
                 Vec<(
                     uuid::Uuid,
                     S,
@@ -141,7 +167,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                     .allow_multi_selection(false)
                     .show(ui, |b| {
                         b.dir(TreeElement::Root, "Toolbar root");
-                        for (group_id, group_label, elements) in &self.elements {
+                        for (group_id, group_label, _group_style, elements) in &self.elements {
                             let add_options = |ui: &mut egui::Ui| {
                                 if ui.button("Add group").clicked() {
                                     return Some(TreeCommand::AddGroup(group_label.to_owned()));
@@ -246,7 +272,12 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         match command {
             None => {}
             Some(TreeCommand::AddGroup(name)) => {
-                self.elements.push((uuid::Uuid::now_v7(), name, Vec::new()));
+                self.elements.push((
+                    uuid::Uuid::now_v7(),
+                    name,
+                    GroupDisplayStyle::List,
+                    Vec::new(),
+                ));
             }
             Some(TreeCommand::Duplicate(id)) => self.duplicate_tool(id),
             Some(TreeCommand::Delete(id)) => self.delete_node(id),
@@ -264,13 +295,13 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         };
 
         if let Some(e) = self.elements.iter().find(|e| e.0 == id) {
-            return PaletteEditBuffer::Group(id, e.1.clone());
+            return PaletteEditBuffer::Group(id, e.1.clone(), e.2);
         }
 
         if let Some(e) = self
             .elements
             .iter()
-            .find_map(|e| e.2.iter().find(|e| e.0 == id))
+            .find_map(|e| e.3.iter().find(|e| e.0 == id))
         {
             return PaletteEditBuffer::Tool(id, e.2.clone(), e.1.clone(), e.3.clone(), e.4);
         }
@@ -280,16 +311,17 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     pub fn set_from_buffer(&mut self, b: PaletteEditBuffer<S, DomainT::CommonElementViewT>) {
         match b {
             PaletteEditBuffer::None => {}
-            PaletteEditBuffer::Group(uuid, name) => {
+            PaletteEditBuffer::Group(uuid, name, display_style) => {
                 for e in self.elements.iter_mut() {
                     if e.0 == uuid {
                         e.1 = name;
+                        e.2 = display_style;
                         return;
                     }
                 }
             }
             PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
-                for e in self.elements.iter_mut().flat_map(|e| e.2.iter_mut()) {
+                for e in self.elements.iter_mut().flat_map(|e| e.3.iter_mut()) {
                     if e.0 == uuid {
                         e.2 = name;
                         e.1 = tool;
@@ -323,7 +355,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
 
                 self.elements
                     .iter()
-                    .position(|e| e.0 == g2 || e.2.iter().find(|e| e.0 == g2).is_some())
+                    .position(|e| e.0 == g2 || e.3.iter().find(|e| e.0 == g2).is_some())
                     .unwrap()
                     + idx_bonus
             }
@@ -332,7 +364,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     }
     fn move_tool(&mut self, src: uuid::Uuid, target: uuid::Uuid, pos: DirPosition<uuid::Uuid>) {
         let mut t = None;
-        for (_, _, elements) in self.elements.iter_mut() {
+        for (.., elements) in self.elements.iter_mut() {
             if let Some(pos) = elements.iter().position(|e| e.0 == src) {
                 t = Some(elements.remove(pos));
                 break;
@@ -342,7 +374,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
             return;
         };
 
-        let (_, _, elements) = self.elements.iter_mut().find(|e| e.0 == target).unwrap();
+        let (.., elements) = self.elements.iter_mut().find(|e| e.0 == target).unwrap();
         let pos = match pos {
             DirPosition::First => 0,
             DirPosition::Last => elements.len(),
@@ -359,7 +391,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         elements.insert(pos, t);
     }
     fn duplicate_tool(&mut self, target: uuid::Uuid) {
-        for (_, _, elements) in self.elements.iter_mut() {
+        for (.., elements) in self.elements.iter_mut() {
             if let Some(e) = elements.iter().find(|e| e.0 == target) {
                 let new_view = {
                     let (mut tlc, mut c, mut m) = Default::default();
@@ -385,7 +417,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         self.elements.retain(|e| e.0 != target);
         self.elements
             .iter_mut()
-            .for_each(|e| e.2.retain(|e| e.0 != target));
+            .for_each(|e| e.3.retain(|e| e.0 != target));
     }
 
     pub fn find_matching_tool_stage(
@@ -394,7 +426,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         key: egui::Key,
     ) -> Option<(uuid::Uuid, S)> {
         for e in self.elements.iter() {
-            for e in e.2.iter() {
+            for e in e.3.iter() {
                 if e.4.is_some_and(|e| {
                     modifiers.matches_logically(e.modifiers) && e.logical_key == key
                 }) {
@@ -406,7 +438,7 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
     }
     pub fn set_shortcut(&mut self, tool: uuid::Uuid, shortcut: Option<egui::KeyboardShortcut>) {
         for e in self.elements.iter_mut() {
-            for e in e.2.iter_mut() {
+            for e in e.3.iter_mut() {
                 if e.0 == tool {
                     e.4 = shortcut;
                 }
@@ -426,7 +458,8 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                     (
                         e.0,
                         e.1.clone(),
-                        e.2.iter()
+                        e.2,
+                        e.3.iter()
                             .map(|e| ToolPaletteItemHelper {
                                 uuid: e.0,
                                 stage: e.1.clone(),
@@ -455,7 +488,8 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                     (
                         e.0,
                         e.1,
-                        e.2.into_iter()
+                        e.2,
+                        e.3.into_iter()
                             .map(|e| {
                                 let v = view_for_stage(&e.stage);
                                 (e.uuid, e.stage, e.name, v, e.keyboard_shortcut)
@@ -531,6 +565,7 @@ pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
             &mut (
                 uuid::Uuid,
                 String,
+                GroupDisplayStyle,
                 Vec<(
                     uuid::Uuid,
                     <<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage,

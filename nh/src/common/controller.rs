@@ -4,7 +4,7 @@ use super::project_serde::{NHContextDeserialize, NHContextSerialize};
 use super::uuid::{ModelUuid, ViewUuid};
 use super::views::ordered_views::OrderedViews;
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
-use crate::common::diagram_settings::{DiagramSettings, DiagramSettings2};
+use crate::common::diagram_settings::{DiagramSettings, DiagramSettings2, GroupDisplayStyle};
 use crate::common::model::{
     BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
     ModelTopSortInfo, PositionNoT, VisitableDiagram, VisitableElement,
@@ -3917,86 +3917,129 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
         let empty_q = DomainT::QueryableT::new(ViewUuid::nil(), &empty_a, &empty_b, &empty_c);
 
-        settings.palette_for_each_mut(|(gid, label, items)| {
+        settings.palette_for_each_mut(|(gid, label, display_style, items)| {
             egui::CollapsingHeader::new(&*label)
                 .id_salt(gid)
                 .default_open(true)
                 .show(ui, |ui| {
-                    let width = ui.available_width();
-                    for (tid, stage, name, view, ksc) in items.iter_mut() {
-                        let response = ui.add_sized(
-                            [width, button_height],
-                            egui::Button::new(&*name).fill(c(tid)),
-                        );
-                        if let Some(t) = &self.temporaries.current_tool
-                            && *t.initial_stage_uuid() == *tid
-                        {
-                            ui.painter().text(
-                                response.rect.right_top(),
-                                egui::Align2::RIGHT_TOP,
-                                if t.repeats() { " ∞ " } else { " 1 " },
-                                egui::FontId::proportional(20.0),
-                                ui.style().visuals.text_color(),
-                            );
-                        }
-                        if let Some(t) = ksc.as_ref().map(|e| ui.format_shortcut(e)) {
-                            ui.painter().text(
-                                response.rect.right_bottom(),
-                                egui::Align2::RIGHT_BOTTOM,
-                                t,
-                                egui::FontId::proportional(12.0),
-                                ui.style().visuals.text_color(),
-                            );
-                        }
+                    ui.horizontal_wrapped(|ui| {
+                        for (tid, stage, name, view, ksc) in items.iter_mut() {
+                            let response = match display_style {
+                                GroupDisplayStyle::List => {
+                                    let r = ui.add_sized(
+                                        [ui.available_width(), button_height],
+                                        egui::Button::new(&*name).fill(c(tid)),
+                                    );
 
-                        if response.clicked() {
-                            if let Some(t) = &self.temporaries.current_tool
+                                    if let Some(t) = &self.temporaries.current_tool
+                                        && *t.initial_stage_uuid() == *tid
+                                    {
+                                        ui.painter().text(
+                                            r.rect.right_top(),
+                                            egui::Align2::RIGHT_TOP,
+                                            if t.repeats() { " ∞ " } else { " 1 " },
+                                            egui::FontId::proportional(20.0),
+                                            ui.style().visuals.text_color(),
+                                        );
+                                    }
+                                    if let Some(t) = ksc.as_ref().map(|e| ui.format_shortcut(e)) {
+                                        ui.painter().text(
+                                            r.rect.right_bottom(),
+                                            egui::Align2::RIGHT_BOTTOM,
+                                            t,
+                                            egui::FontId::proportional(12.0),
+                                            ui.style().visuals.text_color(),
+                                        );
+                                    }
+
+                                    r
+                                }
+                                GroupDisplayStyle::Grid => ui
+                                    .allocate_painter(
+                                        (button_height, button_height).into(),
+                                        egui::Sense::all(),
+                                    )
+                                    .0
+                                    .on_hover_ui(|ui| {
+                                        ui.label(&*name);
+
+                                        if let Some(t) = ksc
+                                            .as_ref()
+                                            .map(|e| format!("({})", ui.format_shortcut(e)))
+                                        {
+                                            ui.label(t);
+                                        }
+
+                                        if let Some(t) = &self.temporaries.current_tool
+                                            && *t.initial_stage_uuid() == *tid
+                                        {
+                                            ui.label(if t.repeats() { "(∞)" } else { "(1)" });
+                                        }
+                                    }),
+                            };
+
+                            if response.clicked() {
+                                if let Some(t) = &self.temporaries.current_tool
+                                    && *t.initial_stage_uuid() == *tid
+                                    && t.repeats()
+                                {
+                                    self.temporaries.current_tool = None;
+                                } else {
+                                    self.temporaries.current_tool =
+                                        Some(DomainT::ToolT::new(*tid, stage.clone(), true));
+                                }
+                            }
+                            if response.secondary_clicked() {
+                                if let Some(t) = &self.temporaries.current_tool
+                                    && *t.initial_stage_uuid() == *tid
+                                    && !t.repeats()
+                                {
+                                    self.temporaries.current_tool = None;
+                                } else {
+                                    self.temporaries.current_tool =
+                                        Some(DomainT::ToolT::new(*tid, stage.clone(), false));
+                                }
+                            }
+
+                            let icon_rect = egui::Rect::from_min_size(
+                                response.rect.min,
+                                egui::Vec2::splat(button_height),
+                            );
+                            let painter = ui.painter().with_clip_rect(icon_rect);
+                            let mut mc = canvas::MeasuringCanvas::new(&painter);
+                            view.draw_in(&empty_q, gdc, settings, &mut mc, &None);
+                            let (scale, offset) =
+                                mc.scale_offset_to_fit(egui::Vec2::splat(button_height));
+                            let mut c = canvas::UiCanvas::new(
+                                painter,
+                                icon_rect,
+                                offset,
+                                scale,
+                                None,
+                                None,
+                                Highlight::NONE,
+                                (
+                                    canvas::HeaderMode::Expanding(0),
+                                    canvas::HeaderMode::Expanding(0),
+                                ),
+                            );
+                            c.clear(egui::Color32::GRAY);
+                            view.draw_in(&empty_q, gdc, settings, &mut c, &None);
+
+                            if *display_style == GroupDisplayStyle::Grid
+                                && let Some(t) = &self.temporaries.current_tool
                                 && *t.initial_stage_uuid() == *tid
-                                && t.repeats()
                             {
-                                self.temporaries.current_tool = None;
-                            } else {
-                                self.temporaries.current_tool =
-                                    Some(DomainT::ToolT::new(*tid, stage.clone(), true));
+                                ui.painter().rect(
+                                    icon_rect.shrink(1.0),
+                                    egui::CornerRadius::ZERO,
+                                    egui::Color32::TRANSPARENT,
+                                    egui::Stroke::new(2.0, selected_background_color),
+                                    egui::StrokeKind::Inside,
+                                );
                             }
                         }
-                        if response.secondary_clicked() {
-                            if let Some(t) = &self.temporaries.current_tool
-                                && *t.initial_stage_uuid() == *tid
-                                && !t.repeats()
-                            {
-                                self.temporaries.current_tool = None;
-                            } else {
-                                self.temporaries.current_tool =
-                                    Some(DomainT::ToolT::new(*tid, stage.clone(), false));
-                            }
-                        }
-
-                        let icon_rect = egui::Rect::from_min_size(
-                            response.rect.min,
-                            egui::Vec2::splat(button_height),
-                        );
-                        let painter = ui.painter().with_clip_rect(icon_rect);
-                        let mut mc = canvas::MeasuringCanvas::new(&painter);
-                        view.draw_in(&empty_q, gdc, settings, &mut mc, &None);
-                        let (scale, offset) =
-                            mc.scale_offset_to_fit(egui::Vec2::splat(button_height));
-                        let mut c = canvas::UiCanvas::new(
-                            painter,
-                            icon_rect,
-                            offset,
-                            scale,
-                            None,
-                            None,
-                            Highlight::NONE,
-                            (
-                                canvas::HeaderMode::Expanding(0),
-                                canvas::HeaderMode::Expanding(0),
-                            ),
-                        );
-                        c.clear(egui::Color32::GRAY);
-                        view.draw_in(&empty_q, gdc, settings, &mut c, &None);
-                    }
+                    });
                 });
         });
     }
