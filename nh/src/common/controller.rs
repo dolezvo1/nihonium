@@ -3969,12 +3969,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                                         {
                                             ui.label(t);
                                         }
-
-                                        if let Some(t) = &self.temporaries.current_tool
-                                            && *t.initial_stage_uuid() == *tid
-                                        {
-                                            ui.label(if t.repeats() { "(∞)" } else { "(1)" });
-                                        }
                                     }),
                             };
 
@@ -4036,6 +4030,13 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                                     egui::Color32::TRANSPARENT,
                                     egui::Stroke::new(2.0, selected_background_color),
                                     egui::StrokeKind::Inside,
+                                );
+                                ui.painter().text(
+                                    response.rect.right_top(),
+                                    egui::Align2::RIGHT_TOP,
+                                    if t.repeats() { " ∞ " } else { " 1 " },
+                                    egui::FontId::proportional(20.0),
+                                    selected_background_color,
                                 );
                             }
                         }
