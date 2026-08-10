@@ -573,8 +573,17 @@ impl TabViewer for NHContext {
         }
     }
 
-    fn context_menu(&mut self, ui: &mut egui::Ui, _tab: &mut Self::Tab, _node: NodePath) {
-        ui.label("This is a tab context menu");
+    fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab, _node: NodePath) {
+        match tab {
+            NHTab::Toolbar => {
+                if ui.button("Edit").clicked() {
+                    self.unprocessed_commands
+                        .push(ProjectCommand::OpenAndFocusTab(NHTab::Settings, None));
+                    // TODO: open relevant collapsible headers
+                }
+            }
+            _ => {}
+        }
     }
 
     fn on_close(&mut self, tab: &mut Self::Tab) -> OnCloseResponse {
