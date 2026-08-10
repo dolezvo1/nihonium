@@ -660,6 +660,120 @@ impl ArrowheadType {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum NHIcon {
+    ArrowUpLeft,
+    ArrowUp,
+    ArrowUpRight,
+    ArrowLeft,
+    ArrowRight,
+    ArrowDownLeft,
+    ArrowDown,
+    ArrowDownRight,
+    Move,
+}
+
+impl NHIcon {
+    pub fn draw(
+        &self,
+        canvas: &mut dyn NHCanvas,
+        position: egui::Pos2,
+        size: f32,
+        color: egui::Color32,
+    ) {
+        match self {
+            NHIcon::ArrowUpLeft
+            | NHIcon::ArrowUp
+            | NHIcon::ArrowUpRight
+            | NHIcon::ArrowLeft
+            | NHIcon::ArrowRight
+            | NHIcon::ArrowDownLeft
+            | NHIcon::ArrowDown
+            | NHIcon::ArrowDownRight => {
+                let (source, target) = match self {
+                    NHIcon::ArrowUp => (
+                        position + egui::Vec2::new(0.0, size / 2.0),
+                        position + egui::Vec2::new(0.0, -size / 2.0),
+                    ),
+                    NHIcon::ArrowDown => (
+                        position + egui::Vec2::new(0.0, -size / 2.0),
+                        position + egui::Vec2::new(0.0, size / 2.0),
+                    ),
+                    NHIcon::ArrowLeft => (
+                        position + egui::Vec2::new(size / 2.0, 0.0),
+                        position + egui::Vec2::new(-size / 2.0, 0.0),
+                    ),
+                    NHIcon::ArrowRight => (
+                        position + egui::Vec2::new(-size / 2.0, 0.0),
+                        position + egui::Vec2::new(size / 2.0, 0.0),
+                    ),
+                    NHIcon::ArrowUpLeft => (
+                        position + egui::Vec2::new(size / 2.0, size / 2.0),
+                        position + egui::Vec2::new(-size / 2.0, -size / 2.0),
+                    ),
+                    NHIcon::ArrowDownRight => (
+                        position + egui::Vec2::new(-size / 2.0, -size / 2.0),
+                        position + egui::Vec2::new(size / 2.0, size / 2.0),
+                    ),
+                    NHIcon::ArrowUpRight => (
+                        position + egui::Vec2::new(-size / 2.0, size / 2.0),
+                        position + egui::Vec2::new(size / 2.0, -size / 2.0),
+                    ),
+                    NHIcon::ArrowDownLeft => (
+                        position + egui::Vec2::new(size / 2.0, -size / 2.0),
+                        position + egui::Vec2::new(-size / 2.0, size / 2.0),
+                    ),
+                    _ => unreachable!(),
+                };
+
+                canvas.draw_line(
+                    [source, target],
+                    Stroke::new_solid(1.0, color),
+                    Highlight::NONE,
+                );
+                let outward_angle = atan2(target, source);
+                let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
+                    .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
+                    .map(|a| target + egui::Vec2::new(a.cos(), a.sin()) * size / 2.0);
+                canvas.draw_line([target, p1], Stroke::new_solid(1.0, color), Highlight::NONE);
+                canvas.draw_line([target, p2], Stroke::new_solid(1.0, color), Highlight::NONE);
+            }
+
+            NHIcon::Move => {
+                canvas.draw_line(
+                    [
+                        position - egui::Vec2::new(0.0, size / 2.0),
+                        position + egui::Vec2::new(0.0, size / 2.0),
+                    ],
+                    Stroke::new_solid(1.0, color),
+                    Highlight::NONE,
+                );
+                canvas.draw_line(
+                    [
+                        position - egui::Vec2::new(size / 2.0, 0.0),
+                        position + egui::Vec2::new(size / 2.0, 0.0),
+                    ],
+                    Stroke::new_solid(1.0, color),
+                    Highlight::NONE,
+                );
+
+                for (target, deg_angle) in [
+                    (position - egui::Vec2::new(0.0, size / 2.0), 90.0),
+                    (position + egui::Vec2::new(0.0, size / 2.0), 270.0),
+                    (position - egui::Vec2::new(size / 2.0, 0.0), 0.0),
+                    (position + egui::Vec2::new(size / 2.0, 0.0), 180.0),
+                ] {
+                    let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
+                        .map(|e| (deg_angle + e) * std::f32::consts::PI / 180.0)
+                        .map(|a| target + egui::Vec2::new(a.cos(), a.sin()) * size / 6.0);
+                    canvas.draw_line([target, p1], Stroke::new_solid(1.0, color), Highlight::NONE);
+                    canvas.draw_line([target, p2], Stroke::new_solid(1.0, color), Highlight::NONE);
+                }
+            }
+        }
+    }
+}
+
 // TODO: double, squiggly
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum LineType {

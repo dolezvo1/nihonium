@@ -1,4 +1,4 @@
-use crate::common::canvas::{self, NHCanvas, NHShape};
+use crate::common::canvas::{self, NHCanvas, NHIcon, NHShape};
 use crate::common::controller::{
     ColorBundle, ColorChangeData, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController,
     DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
@@ -2857,10 +2857,10 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             .filter(|_| self.temporaries.highlight.selected)
         {
             let handle_size = self.handle_size(ui_scale);
-            let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
+            let handles_rect = self.bounds_rect.shrink(handle_size / 2.0 / ui_scale);
             for (h, c) in [
-                (handles_rect.left_center(), "<"),
-                (handles_rect.right_center(), ">"),
+                (handles_rect.left_center(), NHIcon::ArrowLeft),
+                (handles_rect.right_center(), NHIcon::ArrowRight),
             ] {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
@@ -2869,13 +2869,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                canvas.draw_text(
-                    h,
-                    egui::Align2::CENTER_CENTER,
-                    c,
-                    10.0 / ui_scale,
-                    egui::Color32::BLACK,
-                );
+                c.draw(canvas, h, 8.0 / ui_scale, egui::Color32::BLACK);
             }
 
             let dc = self.drag_handle_position(ui_scale);
@@ -2886,24 +2880,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
-
-            let da_radius = (handle_size / 2.0 - 1.0) / ui_scale;
-            canvas.draw_line(
-                [
-                    dc - egui::Vec2::new(0.0, da_radius),
-                    dc + egui::Vec2::new(0.0, da_radius),
-                ],
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_line(
-                [
-                    dc - egui::Vec2::new(da_radius, 0.0),
-                    dc + egui::Vec2::new(da_radius, 0.0),
-                ],
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
+            NHIcon::Move.draw(canvas, dc, 8.0 / ui_scale, egui::Color32::BLACK);
         }
 
         if child_targetting_drawn {
@@ -3097,9 +3074,11 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             InputEvent::MouseDown(pos) => {
                 let handle_size = self.handle_size(1.0);
                 if self.temporaries.highlight.selected {
+                    let handle_size = self.handle_size(1.0);
+                    let handles_rect = self.bounds_rect.shrink(handle_size / 2.0 / ehc.ui_scale);
                     for (a, h) in [
-                        (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
-                        (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
+                        (egui::Align2::RIGHT_CENTER, handles_rect.left_center()),
+                        (egui::Align2::LEFT_CENTER, handles_rect.right_center()),
                     ] {
                         if egui::Rect::from_center_size(
                             h,
@@ -4347,10 +4326,10 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             .filter(|_| self.temporaries.highlight.selected)
         {
             let handle_size = self.handle_size(ui_scale);
-            let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
+            let handles_rect = self.bounds_rect.shrink(handle_size / 2.0 / ui_scale);
             for (h, c) in [
-                (handles_rect.center_top(), "^"),
-                (handles_rect.center_bottom(), "v"),
+                (handles_rect.center_top(), NHIcon::ArrowUp),
+                (handles_rect.center_bottom(), NHIcon::ArrowDown),
             ] {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
@@ -4359,13 +4338,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                canvas.draw_text(
-                    h,
-                    egui::Align2::CENTER_CENTER,
-                    c,
-                    10.0 / ui_scale,
-                    egui::Color32::BLACK,
-                );
+                c.draw(canvas, h, 8.0 / ui_scale, egui::Color32::BLACK);
             }
         }
 
@@ -4436,7 +4409,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             }
             InputEvent::MouseDown(pos) => {
                 let handle_size = self.handle_size(1.0);
-                let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
+                let handles_rect = self.bounds_rect.shrink(handle_size / 2.0 / ehc.ui_scale);
                 if self.temporaries.highlight.selected {
                     for (a, h) in [
                         (egui::Align2::CENTER_BOTTOM, handles_rect.center_top()),

@@ -3,7 +3,7 @@ use super::umlsequence_models::{
     UmlSequenceHorizontalElement, UmlSequenceLifeline, UmlSequenceMessage, UmlSequenceNote,
     UmlSequenceNoteLink,
 };
-use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
+use crate::common::canvas::{self, NHCanvas, NHIcon, NHShape};
 use crate::common::controller::{
     ColorBundle, ColorChangeData, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController,
     DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
@@ -2970,8 +2970,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         {
             let handle_size = self.handle_size(ui_scale);
             for (h, c) in [
-                (self.bounds_rect.left_center(), "<"),
-                (self.bounds_rect.right_center(), ">"),
+                (self.bounds_rect.left_center(), NHIcon::ArrowLeft),
+                (self.bounds_rect.right_center(), NHIcon::ArrowRight),
             ] {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
@@ -2980,13 +2980,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                canvas.draw_text(
-                    h,
-                    egui::Align2::CENTER_CENTER,
-                    c,
-                    10.0 / ui_scale,
-                    egui::Color32::BLACK,
-                );
+                c.draw(canvas, h, 8.0 / ui_scale, egui::Color32::BLACK);
             }
 
             let dc = self.drag_handle_position(ui_scale);
@@ -2997,24 +2991,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
-
-            let da_radius = (handle_size / 2.0 - 1.0) / ui_scale;
-            canvas.draw_line(
-                [
-                    dc - egui::Vec2::new(0.0, da_radius),
-                    dc + egui::Vec2::new(0.0, da_radius),
-                ],
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_line(
-                [
-                    dc - egui::Vec2::new(da_radius, 0.0),
-                    dc + egui::Vec2::new(da_radius, 0.0),
-                ],
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
+            NHIcon::Move.draw(canvas, dc, 8.0 / ui_scale, egui::Color32::BLACK);
         }
 
         if canvas.ui_scale().is_some() {
@@ -3289,18 +3266,20 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands
-                                .push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
                                 true,
-                                Highlight::SELECTED,
+                                canvas::Highlight::SELECTED,
                             ));
                         } else {
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
                                 !self.temporaries.selected_direct_elements.contains(&k),
-                                Highlight::SELECTED,
+                                canvas::Highlight::SELECTED,
                             ));
                         }
                     }
@@ -4520,18 +4499,20 @@ impl UmlSequenceCombinedFragmentView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands
-                                .push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
                                 true,
-                                Highlight::SELECTED,
+                                canvas::Highlight::SELECTED,
                             ));
                         } else {
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
                                 !self.temporaries.selected_direct_elements.contains(&k),
-                                Highlight::SELECTED,
+                                canvas::Highlight::SELECTED,
                             ));
                         }
                     }
@@ -5243,7 +5224,7 @@ pub struct UmlSequenceCombinedFragmentSectionView {
 
 #[derive(Clone, Default)]
 struct UmlSequenceCombinedFragmentSectionViewTemporaries {
-    highlight: Highlight,
+    highlight: canvas::Highlight,
     selected_direct_elements: HashSet<ViewUuid>,
 
     display_text: String,
@@ -5443,18 +5424,20 @@ impl UmlSequenceCombinedFragmentSectionView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands
-                                .push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
                                 true,
-                                Highlight::SELECTED,
+                                canvas::Highlight::SELECTED,
                             ));
                         } else {
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
                                 !self.temporaries.selected_direct_elements.contains(&k),
-                                Highlight::SELECTED,
+                                canvas::Highlight::SELECTED,
                             ));
                         }
                     }
