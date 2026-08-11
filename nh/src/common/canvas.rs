@@ -499,6 +499,7 @@ impl NHShape {
 pub enum ArrowheadType {
     #[default]
     None,
+    HalfOpenTriangle,
     OpenTriangle,
     EmptyTriangle,
     EmptyTriangleWith(char),
@@ -522,7 +523,9 @@ impl ArrowheadType {
     /// and the arrowhead directed from other point toward focal_point
     pub fn get_intersect(&self, focal_point: egui::Pos2, other: egui::Pos2) -> egui::Pos2 {
         match self {
-            ArrowheadType::None | ArrowheadType::OpenTriangle => focal_point,
+            ArrowheadType::None | ArrowheadType::HalfOpenTriangle | ArrowheadType::OpenTriangle => {
+                focal_point
+            }
             ArrowheadType::EmptyTriangle
             | ArrowheadType::EmptyTriangleWith(..)
             | ArrowheadType::FullTriangle
@@ -572,16 +575,18 @@ impl ArrowheadType {
     ) {
         let outward_angle = atan2(focal_point, other);
         let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
-            .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
+            .map(|e| e.to_radians() + outward_angle)
             .map(|a| focal_point + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SIDE_LENGTH);
         match self {
             ArrowheadType::None => {}
-            ArrowheadType::OpenTriangle => {
-                canvas.draw_line(
-                    [focal_point, p1],
-                    Stroke::new_solid(1.0, primary_color),
-                    highlight,
-                );
+            ArrowheadType::HalfOpenTriangle | ArrowheadType::OpenTriangle => {
+                if *self == ArrowheadType::OpenTriangle {
+                    canvas.draw_line(
+                        [focal_point, p1],
+                        Stroke::new_solid(1.0, primary_color),
+                        highlight,
+                    );
+                }
                 canvas.draw_line(
                     [focal_point, p2],
                     Stroke::new_solid(1.0, primary_color),
@@ -644,7 +649,7 @@ impl ArrowheadType {
             }
             ArrowheadType::FullTriangleSmall => {
                 let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
-                    .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
+                    .map(|e| e.to_radians() + outward_angle)
                     .map(|a| {
                         focal_point
                             + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SMALL_SIDE_LENGTH

@@ -950,7 +950,8 @@ pub enum ArchiMateRelationshipKind {
     AccessUnidirectional,
     AccessBidirectional,
     Influence,
-    Association,
+    AssociationUndirected,
+    AssociationDirected,
     // Dynamic Relationships
     Triggering,
     Flow,
@@ -959,7 +960,7 @@ pub enum ArchiMateRelationshipKind {
 }
 
 impl ArchiMateRelationshipKind {
-    pub const VARIANTS: [Self; 13] = [
+    pub const VARIANTS: [Self; 14] = [
         // Structural Relationships
         Self::Composition,
         Self::Aggregation,
@@ -971,7 +972,8 @@ impl ArchiMateRelationshipKind {
         Self::AccessUnidirectional,
         Self::AccessBidirectional,
         Self::Influence,
-        Self::Association,
+        Self::AssociationUndirected,
+        Self::AssociationDirected,
         // Dynamic Relationships
         Self::Triggering,
         Self::Flow,
@@ -990,7 +992,8 @@ impl ArchiMateRelationshipKind {
             ArchiMateRelationshipKind::AccessUnidirectional => "Access (unidirectional)",
             ArchiMateRelationshipKind::AccessBidirectional => "Access (bidirectional)",
             ArchiMateRelationshipKind::Influence => "Influence",
-            ArchiMateRelationshipKind::Association => "Association",
+            ArchiMateRelationshipKind::AssociationUndirected => "Association (undirected)",
+            ArchiMateRelationshipKind::AssociationDirected => "Association (directed)",
             ArchiMateRelationshipKind::Triggering => "Triggering",
             ArchiMateRelationshipKind::Flow => "Flow",
             ArchiMateRelationshipKind::Specialization => "Specialization",

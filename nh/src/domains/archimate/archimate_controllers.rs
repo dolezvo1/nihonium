@@ -865,7 +865,7 @@ mod buttons {
     ) {
         (
             ArchiMateToolStage::RelationshipStart {
-                kind: ArchiMateRelationshipKind::Association,
+                kind: ArchiMateRelationshipKind::AssociationUndirected,
             },
             ArchiMateToolStage::RelationshipEnd,
             PartialArchiMateElement::Relationship {
@@ -1514,7 +1514,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                             .unwrap_or_else(|| q.get_root()) =>
                     {
                         let edge_view = new_archimate_relationship(
-                            ArchiMateRelationshipKind::Association,
+                            ArchiMateRelationshipKind::AssociationUndirected,
                             None,
                             (source_model, source.clone().into()),
                             (target_model, element.clone()),
@@ -2572,10 +2572,15 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 canvas::ArrowheadType::None,
                 canvas::ArrowheadType::OpenTriangle,
             ),
-            ArchiMateRelationshipKind::Association => (
+            ArchiMateRelationshipKind::AssociationUndirected => (
                 canvas::LineType::Solid,
                 canvas::ArrowheadType::None,
                 canvas::ArrowheadType::None,
+            ),
+            ArchiMateRelationshipKind::AssociationDirected => (
+                canvas::LineType::Solid,
+                canvas::ArrowheadType::None,
+                canvas::ArrowheadType::HalfOpenTriangle,
             ),
             ArchiMateRelationshipKind::Triggering => (
                 canvas::LineType::Solid,
