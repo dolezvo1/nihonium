@@ -431,8 +431,18 @@ impl FullTextSearchable for ArchiMateDiagram {
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ArchiMateConceptKind {
-    // Motivational concepts
+    // Common domain
     #[default]
+    Role,
+    Collaboration,
+    Path,
+    Process,
+    Function,
+    Service,
+    Event,
+    Grouping,
+    Location,
+    // Motivation domain
     Stakeholder,
     Driver,
     Assessment,
@@ -440,76 +450,47 @@ pub enum ArchiMateConceptKind {
     Outcome,
     Principle,
     Requirement,
-    Constraint,
     Meaning,
     Value,
-    // Strategy Layer concepts
+    // Strategy domain
     Resource,
     Capability,
     ValueStream,
     CourseOfAction,
-    // Business Layer concepts
+    // Business domain
     BusinessActor,
-    BusinessRole,
-    BusinessCollaboration,
     BusinessInterface,
-    BusinessProcess,
-    BusinessFunction,
-    BusinessInteraction,
-    BusinessEvent,
-    BusinessService,
     BusinessObject,
-    Contract,
-    Representation,
     Product,
-    // Application Layer concepts
+    // Application domain
     ApplicationComponent,
-    ApplicationCollaboration,
     ApplicationInterface,
-    ApplicationFunction,
-    ApplicationInteraction,
-    ApplicationProcess,
-    ApplicationEvent,
-    ApplicationService,
     DataObject,
-    // Technology Layer concepts
+    // Technology domain
     Node,
+    TechnologyInterface,
     Device,
     SystemSoftware,
-    TechnologyCollaboration,
-    TechnologyInterface,
-    Path,
-    CommunicationNetwork,
-    TechnologyFunction,
-    TechnologyProcess,
-    TechnologyInteraction,
-    TechnologyEvent,
-    TechnologyService,
-    Artifact,
     Equipment,
     Facility,
+    CommunicationNetwork,
     DistributionNetwork,
+    Artifact,
     Material,
-    // Implementation and Migration concepts
+    // Implementation and Migration domain
     WorkPackage,
     Deliverable,
-    ImplementationEvent,
     Plateau,
-    Gap,
-    // "Composite" concepts
-    Grouping,
-    Location,
 }
 
 pub enum ArchiMateConceptKindColorGroup {
-    Motivational,
-    StrategyLayer,
-    BusinessLayer,
-    ApplicationLayer,
-    TechnologyLayer,
+    Common,
+    Motivation,
+    Strategy,
+    Business,
+    Application,
+    Technology,
     ImplementationAndMigration,
-    Grouping,
-    Location,
 }
 
 pub enum ArchiMateConceptKindShapeGroup {
@@ -519,8 +500,18 @@ pub enum ArchiMateConceptKindShapeGroup {
 }
 
 impl ArchiMateConceptKind {
-    pub const VARIANTS: [Self; 60] = [
-        // Motivational concepts
+    pub const VARIANTS: [Self; 42] = [
+        // Common domain
+        Self::Role,
+        Self::Collaboration,
+        Self::Path,
+        Self::Process,
+        Self::Function,
+        Self::Service,
+        Self::Event,
+        Self::Grouping,
+        Self::Location,
+        // Motivation domain
         Self::Stakeholder,
         Self::Driver,
         Self::Assessment,
@@ -528,69 +519,52 @@ impl ArchiMateConceptKind {
         Self::Outcome,
         Self::Principle,
         Self::Requirement,
-        Self::Constraint,
         Self::Meaning,
         Self::Value,
-        // Strategy Layer concepts
+        // Strategy domain
         Self::Resource,
         Self::Capability,
         Self::ValueStream,
         Self::CourseOfAction,
-        // Business Layer concepts
+        // Business domain
         Self::BusinessActor,
-        Self::BusinessRole,
-        Self::BusinessCollaboration,
         Self::BusinessInterface,
-        Self::BusinessProcess,
-        Self::BusinessFunction,
-        Self::BusinessInteraction,
-        Self::BusinessEvent,
-        Self::BusinessService,
         Self::BusinessObject,
-        Self::Contract,
-        Self::Representation,
         Self::Product,
-        // Application Layer concepts
+        // Application domain
         Self::ApplicationComponent,
-        Self::ApplicationCollaboration,
         Self::ApplicationInterface,
-        Self::ApplicationFunction,
-        Self::ApplicationInteraction,
-        Self::ApplicationProcess,
-        Self::ApplicationEvent,
-        Self::ApplicationService,
         Self::DataObject,
-        // Technology Layer concepts
+        // Technology domain
         Self::Node,
+        Self::TechnologyInterface,
         Self::Device,
         Self::SystemSoftware,
-        Self::TechnologyCollaboration,
-        Self::TechnologyInterface,
-        Self::Path,
-        Self::CommunicationNetwork,
-        Self::TechnologyFunction,
-        Self::TechnologyProcess,
-        Self::TechnologyInteraction,
-        Self::TechnologyEvent,
-        Self::TechnologyService,
-        Self::Artifact,
         Self::Equipment,
         Self::Facility,
+        Self::CommunicationNetwork,
         Self::DistributionNetwork,
+        Self::Artifact,
         Self::Material,
-        // Implementation and Migration concepts
+        // Implementation and Migration domain
         Self::WorkPackage,
         Self::Deliverable,
-        Self::ImplementationEvent,
         Self::Plateau,
-        Self::Gap,
-        // "Composite" concepts
-        Self::Grouping,
-        Self::Location,
     ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
+            // Common domain
+            ArchiMateConceptKind::Role => "Role",
+            ArchiMateConceptKind::Collaboration => "Collaboration",
+            ArchiMateConceptKind::Path => "Path",
+            ArchiMateConceptKind::Process => "Process",
+            ArchiMateConceptKind::Function => "Function",
+            ArchiMateConceptKind::Service => "Service",
+            ArchiMateConceptKind::Event => "Event",
+            ArchiMateConceptKind::Grouping => "Grouping",
+            ArchiMateConceptKind::Location => "Location",
+            // Motivation domain
             ArchiMateConceptKind::Stakeholder => "Stakeholder",
             ArchiMateConceptKind::Driver => "Driver",
             ArchiMateConceptKind::Assessment => "Assessment",
@@ -598,64 +572,51 @@ impl ArchiMateConceptKind {
             ArchiMateConceptKind::Outcome => "Outcome",
             ArchiMateConceptKind::Principle => "Principle",
             ArchiMateConceptKind::Requirement => "Requirement",
-            ArchiMateConceptKind::Constraint => "Constraint",
             ArchiMateConceptKind::Meaning => "Meaning",
             ArchiMateConceptKind::Value => "Value",
+            // Strategy domain
             ArchiMateConceptKind::Resource => "Resource",
             ArchiMateConceptKind::Capability => "Capability",
             ArchiMateConceptKind::ValueStream => "Value Stream",
             ArchiMateConceptKind::CourseOfAction => "Course of Action",
+            // Business domain
             ArchiMateConceptKind::BusinessActor => "Business Actor",
-            ArchiMateConceptKind::BusinessRole => "Business Role",
-            ArchiMateConceptKind::BusinessCollaboration => "Business Collaboration",
             ArchiMateConceptKind::BusinessInterface => "Business Interface",
-            ArchiMateConceptKind::BusinessProcess => "Business Process",
-            ArchiMateConceptKind::BusinessFunction => "Business Function",
-            ArchiMateConceptKind::BusinessInteraction => "Business Interaction",
-            ArchiMateConceptKind::BusinessEvent => "Business Event",
-            ArchiMateConceptKind::BusinessService => "Business Service",
             ArchiMateConceptKind::BusinessObject => "Business Object",
-            ArchiMateConceptKind::Contract => "Contract",
-            ArchiMateConceptKind::Representation => "Representation",
             ArchiMateConceptKind::Product => "Product",
+            // Application domain
             ArchiMateConceptKind::ApplicationComponent => "Application Component",
-            ArchiMateConceptKind::ApplicationCollaboration => "Application Collaboration",
             ArchiMateConceptKind::ApplicationInterface => "Application Interface",
-            ArchiMateConceptKind::ApplicationFunction => "Application Function",
-            ArchiMateConceptKind::ApplicationInteraction => "Application Interaction",
-            ArchiMateConceptKind::ApplicationProcess => "Application Process",
-            ArchiMateConceptKind::ApplicationEvent => "Application Event",
-            ArchiMateConceptKind::ApplicationService => "Application Service",
             ArchiMateConceptKind::DataObject => "Data Object",
+            // Technology domain
             ArchiMateConceptKind::Node => "Node",
             ArchiMateConceptKind::Device => "Device",
             ArchiMateConceptKind::SystemSoftware => "System Software",
-            ArchiMateConceptKind::TechnologyCollaboration => "Technology Collaboration",
             ArchiMateConceptKind::TechnologyInterface => "Technology Interface",
-            ArchiMateConceptKind::Path => "Path",
             ArchiMateConceptKind::CommunicationNetwork => "Communication Network",
-            ArchiMateConceptKind::TechnologyFunction => "Technology Function",
-            ArchiMateConceptKind::TechnologyProcess => "Technology Process",
-            ArchiMateConceptKind::TechnologyInteraction => "Technology Interaction",
-            ArchiMateConceptKind::TechnologyEvent => "Technology Event",
-            ArchiMateConceptKind::TechnologyService => "Technology Service",
             ArchiMateConceptKind::Artifact => "Artifact",
             ArchiMateConceptKind::Equipment => "Equipment",
             ArchiMateConceptKind::Facility => "Facility",
             ArchiMateConceptKind::DistributionNetwork => "Distribution Network",
             ArchiMateConceptKind::Material => "Material",
+            // Implementation and Migration domain
             ArchiMateConceptKind::WorkPackage => "Work Package",
             ArchiMateConceptKind::Deliverable => "Deliverable",
-            ArchiMateConceptKind::ImplementationEvent => "Implementation Event",
             ArchiMateConceptKind::Plateau => "Plateau",
-            ArchiMateConceptKind::Gap => "Gap",
-            ArchiMateConceptKind::Grouping => "Grouping",
-            ArchiMateConceptKind::Location => "Location",
         }
     }
 
     pub fn color_group(&self) -> ArchiMateConceptKindColorGroup {
         match self {
+            ArchiMateConceptKind::Role
+            | ArchiMateConceptKind::Collaboration
+            | ArchiMateConceptKind::Path
+            | ArchiMateConceptKind::Process
+            | ArchiMateConceptKind::Function
+            | ArchiMateConceptKind::Service
+            | ArchiMateConceptKind::Event
+            | ArchiMateConceptKind::Grouping
+            | ArchiMateConceptKind::Location => ArchiMateConceptKindColorGroup::Common,
             ArchiMateConceptKind::Stakeholder
             | ArchiMateConceptKind::Driver
             | ArchiMateConceptKind::Assessment
@@ -663,66 +624,49 @@ impl ArchiMateConceptKind {
             | ArchiMateConceptKind::Outcome
             | ArchiMateConceptKind::Principle
             | ArchiMateConceptKind::Requirement
-            | ArchiMateConceptKind::Constraint
             | ArchiMateConceptKind::Meaning
-            | ArchiMateConceptKind::Value => ArchiMateConceptKindColorGroup::Motivational,
+            | ArchiMateConceptKind::Value => ArchiMateConceptKindColorGroup::Motivation,
             ArchiMateConceptKind::Resource
             | ArchiMateConceptKind::Capability
             | ArchiMateConceptKind::ValueStream
-            | ArchiMateConceptKind::CourseOfAction => ArchiMateConceptKindColorGroup::StrategyLayer,
+            | ArchiMateConceptKind::CourseOfAction => ArchiMateConceptKindColorGroup::Strategy,
             ArchiMateConceptKind::BusinessActor
-            | ArchiMateConceptKind::BusinessRole
-            | ArchiMateConceptKind::BusinessCollaboration
             | ArchiMateConceptKind::BusinessInterface
-            | ArchiMateConceptKind::BusinessProcess
-            | ArchiMateConceptKind::BusinessFunction
-            | ArchiMateConceptKind::BusinessInteraction
-            | ArchiMateConceptKind::BusinessEvent
-            | ArchiMateConceptKind::BusinessService
             | ArchiMateConceptKind::BusinessObject
-            | ArchiMateConceptKind::Contract
-            | ArchiMateConceptKind::Representation
-            | ArchiMateConceptKind::Product => ArchiMateConceptKindColorGroup::BusinessLayer,
+            | ArchiMateConceptKind::Product => ArchiMateConceptKindColorGroup::Business,
             ArchiMateConceptKind::ApplicationComponent
-            | ArchiMateConceptKind::ApplicationCollaboration
             | ArchiMateConceptKind::ApplicationInterface
-            | ArchiMateConceptKind::ApplicationFunction
-            | ArchiMateConceptKind::ApplicationInteraction
-            | ArchiMateConceptKind::ApplicationProcess
-            | ArchiMateConceptKind::ApplicationEvent
-            | ArchiMateConceptKind::ApplicationService
-            | ArchiMateConceptKind::DataObject => ArchiMateConceptKindColorGroup::ApplicationLayer,
+            | ArchiMateConceptKind::DataObject => ArchiMateConceptKindColorGroup::Application,
             ArchiMateConceptKind::Node
+            | ArchiMateConceptKind::TechnologyInterface
             | ArchiMateConceptKind::Device
             | ArchiMateConceptKind::SystemSoftware
-            | ArchiMateConceptKind::TechnologyCollaboration
-            | ArchiMateConceptKind::TechnologyInterface
-            | ArchiMateConceptKind::Path
-            | ArchiMateConceptKind::CommunicationNetwork
-            | ArchiMateConceptKind::TechnologyFunction
-            | ArchiMateConceptKind::TechnologyProcess
-            | ArchiMateConceptKind::TechnologyInteraction
-            | ArchiMateConceptKind::TechnologyEvent
-            | ArchiMateConceptKind::TechnologyService
-            | ArchiMateConceptKind::Artifact
             | ArchiMateConceptKind::Equipment
             | ArchiMateConceptKind::Facility
+            | ArchiMateConceptKind::CommunicationNetwork
             | ArchiMateConceptKind::DistributionNetwork
-            | ArchiMateConceptKind::Material => ArchiMateConceptKindColorGroup::TechnologyLayer,
+            | ArchiMateConceptKind::Artifact
+            | ArchiMateConceptKind::Material => ArchiMateConceptKindColorGroup::Technology,
             ArchiMateConceptKind::WorkPackage
-            | ArchiMateConceptKind::ImplementationEvent
             | ArchiMateConceptKind::Deliverable
-            | ArchiMateConceptKind::Plateau
-            | ArchiMateConceptKind::Gap => {
+            | ArchiMateConceptKind::Plateau => {
                 ArchiMateConceptKindColorGroup::ImplementationAndMigration
             }
-            ArchiMateConceptKind::Grouping => ArchiMateConceptKindColorGroup::Grouping,
-            ArchiMateConceptKind::Location => ArchiMateConceptKindColorGroup::Location,
         }
     }
     pub fn rectangle_shape_group(&self) -> ArchiMateConceptKindShapeGroup {
         match self {
-            // Motivational concepts
+            // Common domain
+            ArchiMateConceptKind::Role
+            | ArchiMateConceptKind::Collaboration
+            | ArchiMateConceptKind::Path => ArchiMateConceptKindShapeGroup::Structural,
+            ArchiMateConceptKind::Process
+            | ArchiMateConceptKind::Function
+            | ArchiMateConceptKind::Service
+            | ArchiMateConceptKind::Event => ArchiMateConceptKindShapeGroup::Behavioral,
+            ArchiMateConceptKind::Grouping
+            | ArchiMateConceptKind::Location => ArchiMateConceptKindShapeGroup::Structural,
+            // Motivation domain
             ArchiMateConceptKind::Stakeholder
             | ArchiMateConceptKind::Driver
             | ArchiMateConceptKind::Assessment
@@ -730,65 +674,37 @@ impl ArchiMateConceptKind {
             | ArchiMateConceptKind::Outcome
             | ArchiMateConceptKind::Principle
             | ArchiMateConceptKind::Requirement
-            | ArchiMateConceptKind::Constraint
             | ArchiMateConceptKind::Meaning
             | ArchiMateConceptKind::Value => ArchiMateConceptKindShapeGroup::Motivational,
-            // Strategy concepts
+            // Strategy domain
             ArchiMateConceptKind::Resource => ArchiMateConceptKindShapeGroup::Structural,
             ArchiMateConceptKind::Capability
             | ArchiMateConceptKind::ValueStream
             | ArchiMateConceptKind::CourseOfAction => ArchiMateConceptKindShapeGroup::Behavioral,
-            // Business Layer concepts
+            // Business domain
             ArchiMateConceptKind::BusinessActor
-            | ArchiMateConceptKind::BusinessRole
-            | ArchiMateConceptKind::BusinessCollaboration
-            | ArchiMateConceptKind::BusinessInterface => ArchiMateConceptKindShapeGroup::Structural,
-            ArchiMateConceptKind::BusinessProcess
-            | ArchiMateConceptKind::BusinessFunction
-            | ArchiMateConceptKind::BusinessInteraction
-            | ArchiMateConceptKind::BusinessEvent
-            | ArchiMateConceptKind::BusinessService => ArchiMateConceptKindShapeGroup::Behavioral,
-            ArchiMateConceptKind::BusinessObject
-            | ArchiMateConceptKind::Contract
-            | ArchiMateConceptKind::Representation
+            | ArchiMateConceptKind::BusinessInterface
+            | ArchiMateConceptKind::BusinessObject
             | ArchiMateConceptKind::Product
-            // Application Layer concepts
+            // Application domain
             | ArchiMateConceptKind::ApplicationComponent
-            | ArchiMateConceptKind::ApplicationCollaboration
             | ArchiMateConceptKind::ApplicationInterface => ArchiMateConceptKindShapeGroup::Structural,
-            ArchiMateConceptKind::ApplicationFunction
-            | ArchiMateConceptKind::ApplicationInteraction
-            | ArchiMateConceptKind::ApplicationProcess
-            | ArchiMateConceptKind::ApplicationEvent
-            | ArchiMateConceptKind::ApplicationService => ArchiMateConceptKindShapeGroup::Behavioral,
             ArchiMateConceptKind::DataObject
-            // Technology Layer concepts
+            // Technology domain
             | ArchiMateConceptKind::Node
             | ArchiMateConceptKind::Device
             | ArchiMateConceptKind::SystemSoftware
-            | ArchiMateConceptKind::TechnologyCollaboration
             | ArchiMateConceptKind::TechnologyInterface
-            | ArchiMateConceptKind::Path
-            | ArchiMateConceptKind::CommunicationNetwork => ArchiMateConceptKindShapeGroup::Structural,
-            ArchiMateConceptKind::TechnologyFunction
-            | ArchiMateConceptKind::TechnologyProcess
-            | ArchiMateConceptKind::TechnologyInteraction
-            | ArchiMateConceptKind::TechnologyEvent
-            | ArchiMateConceptKind::TechnologyService => ArchiMateConceptKindShapeGroup::Behavioral,
-            ArchiMateConceptKind::Artifact
+            | ArchiMateConceptKind::CommunicationNetwork
+            | ArchiMateConceptKind::Artifact
             | ArchiMateConceptKind::Equipment
             | ArchiMateConceptKind::Facility
             | ArchiMateConceptKind::DistributionNetwork
             | ArchiMateConceptKind::Material => ArchiMateConceptKindShapeGroup::Structural,
-            // Implementation and Migration concepts
-            ArchiMateConceptKind::WorkPackage
-            | ArchiMateConceptKind::ImplementationEvent => ArchiMateConceptKindShapeGroup::Behavioral,
+            // Implementation and Migration domain
+            ArchiMateConceptKind::WorkPackage => ArchiMateConceptKindShapeGroup::Behavioral,
             ArchiMateConceptKind::Deliverable
-            | ArchiMateConceptKind::Plateau
-            | ArchiMateConceptKind::Gap
-            // "Composite" concepts
-            | ArchiMateConceptKind::Grouping
-            | ArchiMateConceptKind::Location => ArchiMateConceptKindShapeGroup::Structural,
+            | ArchiMateConceptKind::Plateau => ArchiMateConceptKindShapeGroup::Structural,
         }
     }
 }
@@ -939,7 +855,6 @@ impl ArchiMateJunctionKind {
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ArchiMateRelationshipKind {
     // Structural Relationships
-    #[default]
     Composition,
     Aggregation,
     Assignment,
@@ -950,6 +865,7 @@ pub enum ArchiMateRelationshipKind {
     AccessUnidirectional,
     AccessBidirectional,
     Influence,
+    #[default]
     AssociationUndirected,
     AssociationDirected,
     // Dynamic Relationships

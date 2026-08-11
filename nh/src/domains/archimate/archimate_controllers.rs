@@ -528,7 +528,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (bookb, bookb_view) = new_archimate_concept(
         "Book",
-        ArchiMateConceptKind::BusinessService,
+        ArchiMateConceptKind::Service,
         egui::Pos2::new(400.0, 500.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
@@ -544,7 +544,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (booka, booka_view) = new_archimate_concept(
         "Book",
-        ArchiMateConceptKind::ApplicationService,
+        ArchiMateConceptKind::Service,
         egui::Pos2::new(400.0, 700.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
@@ -1058,7 +1058,24 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let palette_items = vec![
         ("Relationships", relationships),
         (
-            "Motivation Elements",
+            "Common Domain",
+            [
+                ArchiMateConceptKind::Role,
+                ArchiMateConceptKind::Collaboration,
+                ArchiMateConceptKind::Path,
+                ArchiMateConceptKind::Process,
+                ArchiMateConceptKind::Function,
+                ArchiMateConceptKind::Service,
+                ArchiMateConceptKind::Event,
+                ArchiMateConceptKind::Grouping,
+                ArchiMateConceptKind::Location,
+            ]
+            .into_iter()
+            .map(es)
+            .collect(),
+        ),
+        (
+            "Motivation Domain",
             [
                 ArchiMateConceptKind::Stakeholder,
                 ArchiMateConceptKind::Driver,
@@ -1067,7 +1084,6 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 ArchiMateConceptKind::Outcome,
                 ArchiMateConceptKind::Principle,
                 ArchiMateConceptKind::Requirement,
-                ArchiMateConceptKind::Constraint,
                 ArchiMateConceptKind::Meaning,
                 ArchiMateConceptKind::Value,
             ]
@@ -1076,7 +1092,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             .collect(),
         ),
         (
-            "Strategy Layer Elements",
+            "Strategy Domain",
             [
                 ArchiMateConceptKind::Resource,
                 ArchiMateConceptKind::Capability,
@@ -1088,20 +1104,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             .collect(),
         ),
         (
-            "Business Layer Elements",
+            "Business Domain",
             [
                 ArchiMateConceptKind::BusinessActor,
-                ArchiMateConceptKind::BusinessRole,
-                ArchiMateConceptKind::BusinessCollaboration,
                 ArchiMateConceptKind::BusinessInterface,
-                ArchiMateConceptKind::BusinessProcess,
-                ArchiMateConceptKind::BusinessFunction,
-                ArchiMateConceptKind::BusinessInteraction,
-                ArchiMateConceptKind::BusinessEvent,
-                ArchiMateConceptKind::BusinessService,
                 ArchiMateConceptKind::BusinessObject,
-                ArchiMateConceptKind::Contract,
-                ArchiMateConceptKind::Representation,
                 ArchiMateConceptKind::Product,
             ]
             .into_iter()
@@ -1109,16 +1116,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             .collect(),
         ),
         (
-            "Application Layer Elements",
+            "Application Domain",
             [
                 ArchiMateConceptKind::ApplicationComponent,
-                ArchiMateConceptKind::ApplicationCollaboration,
                 ArchiMateConceptKind::ApplicationInterface,
-                ArchiMateConceptKind::ApplicationFunction,
-                ArchiMateConceptKind::ApplicationInteraction,
-                ArchiMateConceptKind::ApplicationProcess,
-                ArchiMateConceptKind::ApplicationEvent,
-                ArchiMateConceptKind::ApplicationService,
                 ArchiMateConceptKind::DataObject,
             ]
             .into_iter()
@@ -1126,24 +1127,17 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             .collect(),
         ),
         (
-            "Technology Layer Elements",
+            "Technology Domain",
             [
                 ArchiMateConceptKind::Node,
+                ArchiMateConceptKind::TechnologyInterface,
                 ArchiMateConceptKind::Device,
                 ArchiMateConceptKind::SystemSoftware,
-                ArchiMateConceptKind::TechnologyCollaboration,
-                ArchiMateConceptKind::TechnologyInterface,
-                ArchiMateConceptKind::Path,
-                ArchiMateConceptKind::CommunicationNetwork,
-                ArchiMateConceptKind::TechnologyFunction,
-                ArchiMateConceptKind::TechnologyProcess,
-                ArchiMateConceptKind::TechnologyInteraction,
-                ArchiMateConceptKind::TechnologyEvent,
-                ArchiMateConceptKind::TechnologyService,
-                ArchiMateConceptKind::Artifact,
                 ArchiMateConceptKind::Equipment,
                 ArchiMateConceptKind::Facility,
+                ArchiMateConceptKind::CommunicationNetwork,
                 ArchiMateConceptKind::DistributionNetwork,
+                ArchiMateConceptKind::Artifact,
                 ArchiMateConceptKind::Material,
             ]
             .into_iter()
@@ -1151,23 +1145,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             .collect(),
         ),
         (
-            "Implementation and Migration Layer Elements",
+            "Implementation and Migration Domain",
             [
                 ArchiMateConceptKind::WorkPackage,
                 ArchiMateConceptKind::Deliverable,
-                ArchiMateConceptKind::ImplementationEvent,
                 ArchiMateConceptKind::Plateau,
-                ArchiMateConceptKind::Gap,
-            ]
-            .into_iter()
-            .map(es)
-            .collect(),
-        ),
-        (
-            "Composite Elements",
-            [
-                ArchiMateConceptKind::Grouping,
-                ArchiMateConceptKind::Location,
             ]
             .into_iter()
             .map(es)
@@ -1876,27 +1858,24 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             .global_colors
             .get(&self.background_color)
             .unwrap_or_else(|| match self.kind_buffer.color_group() {
-                ArchiMateConceptKindColorGroup::Motivational => {
+                ArchiMateConceptKindColorGroup::Common => egui::Color32::from_rgb(0xDF, 0xDA, 0xD0),
+                ArchiMateConceptKindColorGroup::Motivation => {
                     egui::Color32::from_rgb(0xCC, 0xCC, 0xFF)
                 }
-                ArchiMateConceptKindColorGroup::StrategyLayer => {
+                ArchiMateConceptKindColorGroup::Strategy => {
                     egui::Color32::from_rgb(0xF5, 0xDE, 0xAA)
                 }
-                ArchiMateConceptKindColorGroup::BusinessLayer => {
+                ArchiMateConceptKindColorGroup::Business => {
                     egui::Color32::from_rgb(0xFF, 0xFF, 0xAE)
                 }
-                ArchiMateConceptKindColorGroup::ApplicationLayer => {
+                ArchiMateConceptKindColorGroup::Application => {
                     egui::Color32::from_rgb(0xB2, 0xFF, 0xFF)
                 }
-                ArchiMateConceptKindColorGroup::TechnologyLayer => {
+                ArchiMateConceptKindColorGroup::Technology => {
                     egui::Color32::from_rgb(0xAF, 0xFF, 0xAF)
                 }
                 ArchiMateConceptKindColorGroup::ImplementationAndMigration => {
                     egui::Color32::from_rgb(0xFF, 0xDF, 0xDF)
-                }
-                ArchiMateConceptKindColorGroup::Grouping => egui::Color32::TRANSPARENT,
-                ArchiMateConceptKindColorGroup::Location => {
-                    egui::Color32::from_rgb(0xEE, 0xD1, 0xE3)
                 }
             });
         let stroke = match self.kind_buffer {
