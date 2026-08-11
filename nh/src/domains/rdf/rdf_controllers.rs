@@ -2699,6 +2699,8 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<RdfElementView>>,
+        _targets: &Vec<Ending<RdfElementView>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<RdfDomain as Domain>::QueryableT<'_>,
@@ -2804,8 +2806,8 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<RdfElementView>>,
-        _target_views: &Vec<Ending<RdfElementView>>,
+        _sources: &Vec<Ending<RdfElementView>>,
+        _targets: &Vec<Ending<RdfElementView>>,
     ) {
         let model = self.model.read();
 

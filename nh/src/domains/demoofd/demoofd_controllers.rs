@@ -3937,6 +3937,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<DemoOfdElementView>>,
+        _targets: &Vec<Ending<DemoOfdElementView>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
@@ -4096,8 +4098,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<DemoOfdElementView>>,
-        _target_views: &Vec<Ending<DemoOfdElementView>>,
+        _sources: &Vec<Ending<DemoOfdElementView>>,
+        _targets: &Vec<Ending<DemoOfdElementView>>,
     ) {
         let model = self.model.read();
 
@@ -4243,19 +4245,6 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn draw_center_or_get_label(
-        &self,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
-        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &<DemoOfdDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
-        Ok(())
-    }
-
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -4326,8 +4315,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<DemoOfdElementView>>,
-        _target_views: &Vec<Ending<DemoOfdElementView>>,
+        _sources: &Vec<Ending<DemoOfdElementView>>,
+        _targets: &Vec<Ending<DemoOfdElementView>>,
     ) {
         let model = self.model.read();
 
@@ -4459,19 +4448,6 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn draw_center_or_get_label(
-        &self,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
-        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &<DemoOfdDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
-        Ok(())
-    }
-
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -4600,8 +4576,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<DemoOfdElementView>>,
-        _target_views: &Vec<Ending<DemoOfdElementView>>,
+        _sources: &Vec<Ending<DemoOfdElementView>>,
+        _targets: &Vec<Ending<DemoOfdElementView>>,
     ) {
         let model = self.model.read();
 
@@ -4734,19 +4710,6 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn draw_center_or_get_label(
-        &self,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
-        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &<DemoOfdDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
-        Ok(())
-    }
-
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -4817,8 +4780,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<DemoOfdElementView>>,
-        _target_views: &Vec<Ending<DemoOfdElementView>>,
+        _sources: &Vec<Ending<DemoOfdElementView>>,
+        _targets: &Vec<Ending<DemoOfdElementView>>,
     ) {
         let model = self.model.read();
 
@@ -4948,6 +4911,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<DemoOfdElementView>>,
+        _targets: &Vec<Ending<DemoOfdElementView>>,
         center: egui::Pos2,
         highlight: canvas::Highlight,
         _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
@@ -5062,8 +5027,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<DemoOfdElementView>>,
-        _target_views: &Vec<Ending<DemoOfdElementView>>,
+        _sources: &Vec<Ending<DemoOfdElementView>>,
+        _targets: &Vec<Ending<DemoOfdElementView>>,
     ) {
         let model = self.model.read();
 

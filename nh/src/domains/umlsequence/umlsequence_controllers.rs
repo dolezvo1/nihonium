@@ -9213,19 +9213,6 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceNoteLinkAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn draw_center_or_get_label(
-        &self,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
-        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &<UmlSequenceDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
-        Ok(())
-    }
-
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -9271,8 +9258,8 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceNoteLinkAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlSequenceElementView>>,
-        _target_views: &Vec<Ending<UmlSequenceElementView>>,
+        _sources: &Vec<Ending<UmlSequenceElementView>>,
+        _targets: &Vec<Ending<UmlSequenceElementView>>,
     ) {
         let model = self.model.read();
 

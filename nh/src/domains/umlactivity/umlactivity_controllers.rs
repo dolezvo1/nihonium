@@ -7667,6 +7667,8 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<UmlActivityElementView>>,
+        _targets: &Vec<Ending<UmlActivityElementView>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
@@ -7796,8 +7798,8 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlActivityElementView>>,
-        _target_views: &Vec<Ending<UmlActivityElementView>>,
+        _sources: &Vec<Ending<UmlActivityElementView>>,
+        _targets: &Vec<Ending<UmlActivityElementView>>,
     ) {
         let model = self.model.read();
 
@@ -8554,19 +8556,6 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityNoteLinkAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn draw_center_or_get_label(
-        &self,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
-        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
-        Ok(())
-    }
-
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -8612,8 +8601,8 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityNoteLinkAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlActivityElementView>>,
-        _target_views: &Vec<Ending<UmlActivityElementView>>,
+        _sources: &Vec<Ending<UmlActivityElementView>>,
+        _targets: &Vec<Ending<UmlActivityElementView>>,
     ) {
         let model = self.model.read();
 

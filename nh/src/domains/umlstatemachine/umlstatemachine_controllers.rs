@@ -7371,6 +7371,8 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<UmlStateMachineElementView>>,
+        _targets: &Vec<Ending<UmlStateMachineElementView>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
@@ -7478,8 +7480,8 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlStateMachineElementView>>,
-        _target_views: &Vec<Ending<UmlStateMachineElementView>>,
+        _sources: &Vec<Ending<UmlStateMachineElementView>>,
+        _targets: &Vec<Ending<UmlStateMachineElementView>>,
     ) {
         let model = self.model.read();
 
@@ -8232,19 +8234,6 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAd
         self.model.read().uuid.clone()
     }
 
-    fn draw_center_or_get_label(
-        &self,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
-        _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &<UmlStateMachineDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
-        Ok(())
-    }
-
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -8290,8 +8279,8 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAd
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlStateMachineElementView>>,
-        _target_views: &Vec<Ending<UmlStateMachineElementView>>,
+        _sources: &Vec<Ending<UmlStateMachineElementView>>,
+        _targets: &Vec<Ending<UmlStateMachineElementView>>,
     ) {
         let model = self.model.read();
 

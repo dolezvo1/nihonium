@@ -2310,6 +2310,8 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
 
     fn draw_center_or_get_label(
         &self,
+        sources: &Vec<Ending<ArchiMateElementView>>,
+        targets: &Vec<Ending<ArchiMateElementView>>,
         center: egui::Pos2,
         highlight: canvas::Highlight,
         _q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
@@ -2324,13 +2326,38 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 ArchiMateJunctionKind::OrJunction => (egui::Color32::WHITE, egui::Color32::BLACK),
             };
 
+            let radius = egui::Vec2::splat(10.0);
             canvas.draw_ellipse(
                 center,
-                egui::Vec2::new(10.0, 10.0),
+                radius,
                 bg,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 highlight,
             );
+            let shape = NHShape::Ellipse {
+                position: center,
+                bounds_radius: radius,
+            };
+            let c = (egui::Color32::BLACK, egui::Color32::WHITE);
+
+            let ah_from_sources = self.temporaries.arrow_data.iter().find(|e| e.0.0).unwrap();
+            for e in sources {
+                let p = e.points.last().unwrap().1;
+                let fp = shape.center_intersect(p);
+                ah_from_sources
+                    .1
+                    .arrowhead_type
+                    .draw_in(canvas, fp, p, c, highlight);
+            }
+            let ah_from_targets = self.temporaries.arrow_data.iter().find(|e| !e.0.0).unwrap();
+            for e in targets {
+                let p = e.points.last().unwrap().1;
+                let fp = shape.center_intersect(p);
+                ah_from_targets
+                    .1
+                    .arrowhead_type
+                    .draw_in(canvas, fp, p, c, highlight);
+            }
 
             canvas.draw_ellipse_proximity(
                 center,
@@ -2490,8 +2517,8 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<ArchiMateElementView>>,
-        _target_views: &Vec<Ending<ArchiMateElementView>>,
+        _sources: &Vec<Ending<ArchiMateElementView>>,
+        _targets: &Vec<Ending<ArchiMateElementView>>,
     ) {
         let model = self.model.read();
 

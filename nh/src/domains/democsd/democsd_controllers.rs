@@ -3727,8 +3727,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<DemoCsdElementView>>,
-        _target_views: &Vec<Ending<DemoCsdElementView>>,
+        _sources: &Vec<Ending<DemoCsdElementView>>,
+        _targets: &Vec<Ending<DemoCsdElementView>>,
     ) {
         let model = self.model.read();
 

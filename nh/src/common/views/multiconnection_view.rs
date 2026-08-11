@@ -120,6 +120,8 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
     }
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<DomainT::CommonElementViewT>>,
+        _targets: &Vec<Ending<DomainT::CommonElementViewT>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &DomainT::QueryableT<'_>,
@@ -170,8 +172,8 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
     );
     fn refresh_buffers(
         &mut self,
-        source_views: &Vec<Ending<DomainT::CommonElementViewT>>,
-        target_views: &Vec<Ending<DomainT::CommonElementViewT>>,
+        sources: &Vec<Ending<DomainT::CommonElementViewT>>,
+        targets: &Vec<Ending<DomainT::CommonElementViewT>>,
     );
 
     fn deep_copy_init(
@@ -205,8 +207,8 @@ where
     T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone,
 {
     #[nh_context_serde(entity)]
-    element: T,
-    points: Vec<(ViewUuid, egui::Pos2)>,
+    pub element: T,
+    pub points: Vec<(ViewUuid, egui::Pos2)>,
 }
 
 impl<T> Ending<T>
@@ -658,6 +660,8 @@ where
         self.draw_multiconnection(canvas, central_point, ad);
 
         match self.adapter.draw_center_or_get_label(
+            &self.sources,
+            &self.targets,
             central_point.1,
             self.highlight,
             q,

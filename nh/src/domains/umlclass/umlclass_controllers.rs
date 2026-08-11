@@ -8132,6 +8132,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
@@ -8323,8 +8325,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
     fn refresh_buffers(
         &mut self,
-        source_views: &Vec<Ending<UmlClassElementView<P>>>,
-        target_views: &Vec<Ending<UmlClassElementView<P>>>,
+        sources: &Vec<Ending<UmlClassElementView<P>>>,
+        targets: &Vec<Ending<UmlClassElementView<P>>>,
     ) {
         let model = self.model.read();
 
@@ -8332,8 +8334,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             Some(format!(
                 "{{{}, {}}}",
                 if model.set_is_covering
-                    && model.sources.len() == source_views.len()
-                    && model.targets.len() == target_views.len()
+                    && model.sources.len() == sources.len()
+                    && model.targets.len() == targets.len()
                 {
                     "complete"
                 } else {
@@ -8518,6 +8520,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
@@ -8674,8 +8678,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
-        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
     ) {
         let model = self.model.read();
 
@@ -8831,6 +8835,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
@@ -9252,8 +9258,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
-        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
     ) {
         let model = self.model.read();
 
@@ -9461,6 +9467,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
@@ -9652,8 +9660,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
-        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
     ) {
         let model = self.model.read();
 
@@ -10441,19 +10449,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassN
         self.model.read().uuid.clone()
     }
 
-    fn draw_center_or_get_label(
-        &self,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
-        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
-        Ok(())
-    }
-
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -10499,8 +10494,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassN
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<UmlClassElementView<P>>>,
-        _target_views: &Vec<Ending<UmlClassElementView<P>>>,
+        _sources: &Vec<Ending<UmlClassElementView<P>>>,
+        _targets: &Vec<Ending<UmlClassElementView<P>>>,
     ) {
         let model = self.model.read();
 

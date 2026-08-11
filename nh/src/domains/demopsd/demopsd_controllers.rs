@@ -4503,6 +4503,8 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
 
     fn draw_center_or_get_label(
         &self,
+        _sources: &Vec<Ending<DemoPsdElementView>>,
+        _targets: &Vec<Ending<DemoPsdElementView>>,
         _center: egui::Pos2,
         _highlight: canvas::Highlight,
         _q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
@@ -4620,8 +4622,8 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
     }
     fn refresh_buffers(
         &mut self,
-        _source_views: &Vec<Ending<DemoPsdElementView>>,
-        _target_views: &Vec<Ending<DemoPsdElementView>>,
+        _sources: &Vec<Ending<DemoPsdElementView>>,
+        _targets: &Vec<Ending<DemoPsdElementView>>,
     ) {
         let model = self.model.read();
 
