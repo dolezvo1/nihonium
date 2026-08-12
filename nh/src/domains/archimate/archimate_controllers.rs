@@ -59,6 +59,7 @@ pub struct ArchiMateOrdinalMovement {}
 #[derive(Clone)]
 pub enum ArchiMatePropChange {
     NameChange(Arc<String>),
+    StereotypeChange(Arc<String>),
 
     ConceptKindChange(ArchiMateConceptKind),
     RelationshipKindChange(ArchiMateRelationshipKind),
@@ -109,6 +110,7 @@ impl TryMerge for ArchiMatePropChange {
     {
         match (self, newer) {
             (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_))
             | (Self::CommentChange(_), newer @ Self::CommentChange(_)) => Some(newer.clone()),
             _ => None,
         }
@@ -496,14 +498,17 @@ pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (createreservation, createreservation_view) = new_archimate_concept(
         "Create a Reservation",
+        "Objective",
         ArchiMateConceptKind::Goal,
         egui::Pos2::new(200.0, 100.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
     );
+    createreservation_view.write().refresh_buffers();
 
     let (bookingcreation, bookingcreation_view) = new_archimate_concept(
         "Booking Creation",
+        "",
         ArchiMateConceptKind::Capability,
         egui::Pos2::new(400.0, 100.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -512,6 +517,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (phone, phone_view) = new_archimate_concept(
         "Phone",
+        "",
         ArchiMateConceptKind::BusinessInterface,
         egui::Pos2::new(300.0, 300.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -520,6 +526,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (client, client_view) = new_archimate_concept(
         "Client",
+        "",
         ArchiMateConceptKind::BusinessActor,
         egui::Pos2::new(200.0, 500.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -528,6 +535,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (bookb, bookb_view) = new_archimate_concept(
         "Book",
+        "",
         ArchiMateConceptKind::Service,
         egui::Pos2::new(400.0, 500.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -536,6 +544,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (web, web_view) = new_archimate_concept(
         "Web Front-End",
+        "",
         ArchiMateConceptKind::ApplicationInterface,
         egui::Pos2::new(200.0, 700.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -544,6 +553,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (booka, booka_view) = new_archimate_concept(
         "Book",
+        "",
         ArchiMateConceptKind::Service,
         egui::Pos2::new(400.0, 700.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -552,6 +562,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (bookingsystem, bookingsystem_view) = new_archimate_concept(
         "Booking System",
+        "",
         ArchiMateConceptKind::ApplicationComponent,
         egui::Pos2::new(200.0, 900.0),
         ArchiMateConceptRenderStyle::Icon,
@@ -560,6 +571,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (node, node_view) = new_archimate_concept(
         "Server",
+        "",
         ArchiMateConceptKind::Node,
         egui::Pos2::new(400.0, 900.0),
         ArchiMateConceptRenderStyle::Icon,
@@ -568,6 +580,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (location, location_view) = new_archimate_concept(
         "Headquarters",
+        "",
         ArchiMateConceptKind::Location,
         egui::Pos2::new(600.0, 900.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -747,13 +760,18 @@ impl DiagramSettings for ArchiMateSettings {
 
                     match tool {
                         ArchiMateToolStage::Concept {
+                            stereotype,
                             name,
                             kind,
                             background_color,
                             with_edge_from: _,
                         } => {
                             modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
+                                .labeled_text_edit_singleline("Stereotype", stereotype)
+                                .changed();
+
+                            modified |= columns[1]
+                                .labeled_text_edit_multiline("Name", name)
                                 .changed();
 
                             columns[1].label("Kind");
@@ -925,6 +943,7 @@ mod buttons {
         bool,
     ) {
         let stage = ArchiMateToolStage::Concept {
+            stereotype: "".to_owned(),
             name: "Stakeholder".to_owned(),
             kind: ArchiMateConceptKind::Stakeholder,
             background_color: MGlobalColor::None,
@@ -941,6 +960,7 @@ mod buttons {
         bool,
     ) {
         let stage = ArchiMateToolStage::Concept {
+            stereotype: "".to_owned(),
             name: "Resource".to_owned(),
             kind: ArchiMateConceptKind::Resource,
             background_color: MGlobalColor::None,
@@ -957,6 +977,7 @@ mod buttons {
         bool,
     ) {
         let stage = ArchiMateToolStage::Concept {
+            stereotype: "".to_owned(),
             name: "Business Actor".to_owned(),
             kind: ArchiMateConceptKind::BusinessActor,
             background_color: MGlobalColor::None,
@@ -973,6 +994,7 @@ mod buttons {
         bool,
     ) {
         let stage = ArchiMateToolStage::Concept {
+            stereotype: "".to_owned(),
             name: "Application Component".to_owned(),
             kind: ArchiMateConceptKind::ApplicationComponent,
             background_color: MGlobalColor::None,
@@ -989,6 +1011,7 @@ mod buttons {
         bool,
     ) {
         let stage = ArchiMateToolStage::Concept {
+            stereotype: "".to_owned(),
             name: "Node".to_owned(),
             kind: ArchiMateConceptKind::Node,
             background_color: MGlobalColor::None,
@@ -1005,6 +1028,7 @@ mod buttons {
         bool,
     ) {
         let stage = ArchiMateToolStage::Concept {
+            stereotype: "".to_owned(),
             name: "Deliverable".to_owned(),
             kind: ArchiMateConceptKind::Deliverable,
             background_color: MGlobalColor::None,
@@ -1045,6 +1069,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let es = |e: ArchiMateConceptKind| {
         (
             ArchiMateToolStage::Concept {
+                stereotype: "".to_owned(),
                 name: e.as_str().to_owned(),
                 kind: e,
                 background_color: MGlobalColor::None,
@@ -1181,6 +1206,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
     match s {
         ArchiMateToolStage::Concept {
+            stereotype,
             name,
             kind,
             background_color,
@@ -1188,17 +1214,20 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
         } => {
             let node_view = new_archimate_concept(
                 name,
+                stereotype,
                 *kind,
                 egui::Pos2::ZERO,
                 ArchiMateConceptRenderStyle::Icon,
                 *background_color,
             )
             .1;
+            node_view.write().refresh_buffers();
             node_view.into()
         }
         ArchiMateToolStage::RelationshipStart { kind } => {
             let d1 = new_archimate_concept(
                 "dummy",
+                "",
                 ArchiMateConceptKind::Node,
                 egui::Pos2::ZERO,
                 ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -1206,6 +1235,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
             );
             let d2 = new_archimate_concept(
                 "dummy",
+                "",
                 ArchiMateConceptKind::Node,
                 egui::Pos2::new(100.0, 75.0),
                 ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -1258,6 +1288,7 @@ inventory::submit! {DiagramInfo {
 #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ArchiMateToolStage {
     Concept {
+        stereotype: String,
         name: String,
         kind: ArchiMateConceptKind,
         background_color: MGlobalColor,
@@ -1397,6 +1428,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
         match (&self.current_stage, &mut self.result) {
             (
                 ArchiMateToolStage::Concept {
+                    stereotype,
                     name,
                     kind,
                     background_color,
@@ -1406,6 +1438,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
             ) => {
                 let view = new_archimate_concept(
                     name,
+                    stereotype,
                     *kind,
                     pos,
                     ArchiMateConceptRenderStyle::BoxWithIcon,
@@ -1652,6 +1685,7 @@ fn handle_element_button_click(
 
 fn new_archimate_concept(
     name: &str,
+    stereotype: &str,
     kind: ArchiMateConceptKind,
     position: egui::Pos2,
     render_style: ArchiMateConceptRenderStyle,
@@ -1660,6 +1694,7 @@ fn new_archimate_concept(
     let model = ERef::new(ArchiMateConcept::new(
         ModelUuid::now_v7(),
         kind,
+        stereotype.to_owned(),
         name.to_owned(),
         Vec::new(),
     ));
@@ -1677,6 +1712,8 @@ fn new_archimate_concept_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        stereotype_in_guillemets: String::new(),
+        stereotype_buffer: (*m.stereotype).to_owned(),
         name_buffer: (*m.name).to_owned(),
         kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
@@ -1697,6 +1734,10 @@ pub struct ArchiMateConceptView {
     #[nh_context_serde(entity)]
     pub model: ERef<ArchiMateConcept>,
 
+    #[nh_context_serde(skip_and_default)]
+    stereotype_in_guillemets: String,
+    #[nh_context_serde(skip_and_default)]
+    stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1764,6 +1805,16 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         }
 
         ui.label("Model properties");
+
+        if ui
+            .labeled_text_edit_singleline("Stereotype:", &mut self.stereotype_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                ArchiMatePropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+            ));
+        }
 
         if ui
             .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
@@ -1844,14 +1895,22 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveArchiMateTool)>,
     ) -> TargettingStatus {
-        self.bounds_rect = canvas
-            .measure_text(
-                self.position,
-                egui::Align2::CENTER_CENTER,
-                &self.name_buffer,
-                canvas::CLASS_MIDDLE_FONT_SIZE,
-            )
-            .expand2((30.0, 25.0).into());
+        let name_bounds = canvas.measure_text(
+            self.position,
+            egui::Align2::CENTER_CENTER,
+            &self.name_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+        );
+        let mut content_bounds = name_bounds;
+        if !self.stereotype_buffer.is_empty() {
+            content_bounds = content_bounds.union(canvas.measure_text(
+                name_bounds.center_top(),
+                egui::Align2::CENTER_BOTTOM,
+                &self.stereotype_in_guillemets,
+                canvas::CLASS_TOP_FONT_SIZE,
+            ));
+        }
+        self.bounds_rect = content_bounds.expand2((30.0, 25.0).into());
 
         // Draw shape and text
         let background_color = gdc
@@ -1936,6 +1995,15 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
+        if !self.stereotype_buffer.is_empty() {
+            canvas.draw_text(
+                name_bounds.center_top(),
+                egui::Align2::CENTER_BOTTOM,
+                &self.stereotype_in_guillemets,
+                canvas::CLASS_TOP_FONT_SIZE,
+                egui::Color32::BLACK,
+            );
+        }
 
         let icon_rect = egui::Rect::from_min_size(
             egui::Pos2::new(
@@ -3065,6 +3133,13 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
                     match property {
+                        ArchiMatePropChange::StereotypeChange(stereotype) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                ArchiMatePropChange::StereotypeChange(model.stereotype.clone()),
+                            ));
+                            model.stereotype = stereotype.clone();
+                        }
                         ArchiMatePropChange::NameChange(name) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -3105,6 +3180,12 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+        self.stereotype_in_guillemets = if !model.stereotype.is_empty() {
+            format!("«{}»", model.stereotype)
+        } else {
+            String::new()
+        };
+        self.stereotype_buffer = (*model.stereotype).clone();
         self.name_buffer = (*model.name).clone();
         self.kind_buffer = model.kind;
         self.comment_buffer = (*model.comment).clone();
@@ -3144,6 +3225,8 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
+            stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),

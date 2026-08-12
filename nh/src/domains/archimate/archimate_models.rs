@@ -714,6 +714,7 @@ impl ArchiMateConceptKind {
 pub struct ArchiMateConcept {
     pub uuid: Arc<ModelUuid>,
     pub kind: ArchiMateConceptKind,
+    pub stereotype: Arc<String>,
     pub name: Arc<String>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<ArchiMateElement>,
@@ -724,12 +725,14 @@ impl ArchiMateConcept {
     pub fn new(
         uuid: ModelUuid,
         kind: ArchiMateConceptKind,
+        stereotype: String,
         name: String,
         contained_elements: Vec<ArchiMateElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
+            stereotype: Arc::new(stereotype),
             name: Arc::new(name),
             contained_elements,
             comment: Arc::new("".to_owned()),
@@ -743,6 +746,7 @@ impl ArchiMateConcept {
         let new_model = ERef::new(Self {
             uuid: new_uuid.into(),
             kind: self.kind,
+            stereotype: self.stereotype.clone(),
             name: self.name.clone(),
             contained_elements: self
                 .contained_elements
