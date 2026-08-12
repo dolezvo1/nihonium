@@ -22,9 +22,9 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::ordered_views::OrderedViews;
 use crate::domains::archimate::archimate_models::{
-    ArchiMateConcept, ArchiMateConceptKind, ArchiMateConceptKindColorGroup,
-    ArchiMateConceptKindShapeGroup, ArchiMateDiagram, ArchiMateElement, ArchiMateJunctionKind,
-    ArchiMateRelationship, ArchiMateRelationshipEnding, ArchiMateRelationshipKind,
+    ArchiMateConcept, ArchiMateConceptDomain, ArchiMateConceptKind, ArchiMateConceptKindShapeGroup,
+    ArchiMateDiagram, ArchiMateElement, ArchiMateJunctionKind, ArchiMateRelationship,
+    ArchiMateRelationshipEnding, ArchiMateRelationshipKind,
 };
 use crate::{
     CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -706,6 +706,7 @@ pub struct ArchiMateSettings {
     palette: RwLock<ToolPalette<ArchiMateToolStage, ArchiMateDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<ArchiMateToolStage, ArchiMateElementView>>,
     element_buttons: Vec<(usize, usize, &'static str, &'static ElementButtonF)>,
+    element_domain_letter_indication: bool,
 }
 impl DiagramSettings for ArchiMateSettings {
     fn show(
@@ -837,6 +838,11 @@ impl DiagramSettings for ArchiMateSettings {
             }
         });
 
+        ui.checkbox(
+            &mut self.element_domain_letter_indication,
+            "Show element domain letter indication",
+        );
+
         ret
     }
 
@@ -852,6 +858,10 @@ impl DiagramSettings for ArchiMateSettings {
         table.insert(
             "palette".to_owned(),
             self.palette.read().unwrap().serialize()?,
+        );
+        table.insert(
+            "element_domain_letter_indication".to_owned(),
+            toml::Value::Boolean(self.element_domain_letter_indication),
         );
         Ok(table.into())
     }
@@ -1223,6 +1233,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
         element_buttons: buttons::ELEMENT_BUTTONS.clone(),
+        element_domain_letter_indication: false,
     })
 }
 
@@ -1290,6 +1301,12 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
             .into(),
         palette_edit_buffer: PaletteEditBuffer::None.into(),
         element_buttons: buttons::ELEMENT_BUTTONS.clone(),
+        element_domain_letter_indication: value
+            .get("element_domain_letter_indication")
+            .ok_or(())?
+            .clone()
+            .as_bool()
+            .ok_or(())?,
     }))
 }
 
@@ -1985,29 +2002,19 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         let background_color = gdc
             .global_colors
             .get(&self.background_color)
-            .unwrap_or_else(|| match self.kind_buffer.color_group() {
-                ArchiMateConceptKindColorGroup::Common
+            .unwrap_or_else(|| match self.kind_buffer.domain() {
+                ArchiMateConceptDomain::Common
                     if self.kind_buffer == ArchiMateConceptKind::Grouping =>
                 {
                     egui::Color32::TRANSPARENT
                 }
-                ArchiMateConceptKindColorGroup::Common => egui::Color32::from_rgb(0xDF, 0xDA, 0xD0),
-                ArchiMateConceptKindColorGroup::Motivation => {
-                    egui::Color32::from_rgb(0xCC, 0xCC, 0xFF)
-                }
-                ArchiMateConceptKindColorGroup::Strategy => {
-                    egui::Color32::from_rgb(0xF5, 0xDE, 0xAA)
-                }
-                ArchiMateConceptKindColorGroup::Business => {
-                    egui::Color32::from_rgb(0xFF, 0xFF, 0xAE)
-                }
-                ArchiMateConceptKindColorGroup::Application => {
-                    egui::Color32::from_rgb(0xB2, 0xFF, 0xFF)
-                }
-                ArchiMateConceptKindColorGroup::Technology => {
-                    egui::Color32::from_rgb(0xAF, 0xFF, 0xAF)
-                }
-                ArchiMateConceptKindColorGroup::ImplementationAndMigration => {
+                ArchiMateConceptDomain::Common => egui::Color32::from_rgb(0xDF, 0xDA, 0xD0),
+                ArchiMateConceptDomain::Motivation => egui::Color32::from_rgb(0xCC, 0xCC, 0xFF),
+                ArchiMateConceptDomain::Strategy => egui::Color32::from_rgb(0xF5, 0xDE, 0xAA),
+                ArchiMateConceptDomain::Business => egui::Color32::from_rgb(0xFF, 0xFF, 0xAE),
+                ArchiMateConceptDomain::Application => egui::Color32::from_rgb(0xB2, 0xFF, 0xFF),
+                ArchiMateConceptDomain::Technology => egui::Color32::from_rgb(0xAF, 0xFF, 0xAF),
+                ArchiMateConceptDomain::ImplementationAndMigration => {
                     egui::Color32::from_rgb(0xFF, 0xDF, 0xDF)
                 }
             });
@@ -2074,13 +2081,23 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             );
         }
 
-        let icon_rect = egui::Rect::from_min_size(
+        let letter_offset = egui::Vec2::new(17.0, 17.0);
+        let icon_rect = egui::Rect::from_center_size(
             egui::Pos2::new(
-                self.bounds_rect.right() - 27.0,
-                self.bounds_rect.top() + 7.0,
+                self.bounds_rect.right() - letter_offset.x,
+                self.bounds_rect.top() + letter_offset.y,
             ),
             egui::Vec2::new(20.0, 20.0),
         );
+        if settings.element_domain_letter_indication {
+            canvas.draw_text(
+                self.bounds_rect.left_top() + letter_offset,
+                egui::Align2::CENTER_CENTER,
+                self.kind_buffer.domain().as_str(),
+                canvas::CLASS_TOP_FONT_SIZE,
+                egui::Color32::BLACK,
+            );
+        }
         /*
         canvas.draw_rectangle(
             icon_rect,

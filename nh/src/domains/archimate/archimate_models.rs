@@ -483,7 +483,7 @@ pub enum ArchiMateConceptKind {
     Plateau,
 }
 
-pub enum ArchiMateConceptKindColorGroup {
+pub enum ArchiMateConceptDomain {
     Common,
     Motivation,
     Strategy,
@@ -491,6 +491,20 @@ pub enum ArchiMateConceptKindColorGroup {
     Application,
     Technology,
     ImplementationAndMigration,
+}
+
+impl ArchiMateConceptDomain {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ArchiMateConceptDomain::Common => "C",
+            ArchiMateConceptDomain::Motivation => "M",
+            ArchiMateConceptDomain::Strategy => "S",
+            ArchiMateConceptDomain::Business => "B",
+            ArchiMateConceptDomain::Application => "A",
+            ArchiMateConceptDomain::Technology => "T",
+            ArchiMateConceptDomain::ImplementationAndMigration => "I",
+        }
+    }
 }
 
 pub enum ArchiMateConceptKindShapeGroup {
@@ -606,7 +620,7 @@ impl ArchiMateConceptKind {
         }
     }
 
-    pub fn color_group(&self) -> ArchiMateConceptKindColorGroup {
+    pub fn domain(&self) -> ArchiMateConceptDomain {
         match self {
             ArchiMateConceptKind::Role
             | ArchiMateConceptKind::Collaboration
@@ -616,7 +630,7 @@ impl ArchiMateConceptKind {
             | ArchiMateConceptKind::Service
             | ArchiMateConceptKind::Event
             | ArchiMateConceptKind::Grouping
-            | ArchiMateConceptKind::Location => ArchiMateConceptKindColorGroup::Common,
+            | ArchiMateConceptKind::Location => ArchiMateConceptDomain::Common,
             ArchiMateConceptKind::Stakeholder
             | ArchiMateConceptKind::Driver
             | ArchiMateConceptKind::Assessment
@@ -625,18 +639,18 @@ impl ArchiMateConceptKind {
             | ArchiMateConceptKind::Principle
             | ArchiMateConceptKind::Requirement
             | ArchiMateConceptKind::Meaning
-            | ArchiMateConceptKind::Value => ArchiMateConceptKindColorGroup::Motivation,
+            | ArchiMateConceptKind::Value => ArchiMateConceptDomain::Motivation,
             ArchiMateConceptKind::Resource
             | ArchiMateConceptKind::Capability
             | ArchiMateConceptKind::ValueStream
-            | ArchiMateConceptKind::CourseOfAction => ArchiMateConceptKindColorGroup::Strategy,
+            | ArchiMateConceptKind::CourseOfAction => ArchiMateConceptDomain::Strategy,
             ArchiMateConceptKind::BusinessActor
             | ArchiMateConceptKind::BusinessInterface
             | ArchiMateConceptKind::BusinessObject
-            | ArchiMateConceptKind::Product => ArchiMateConceptKindColorGroup::Business,
+            | ArchiMateConceptKind::Product => ArchiMateConceptDomain::Business,
             ArchiMateConceptKind::ApplicationComponent
             | ArchiMateConceptKind::ApplicationInterface
-            | ArchiMateConceptKind::DataObject => ArchiMateConceptKindColorGroup::Application,
+            | ArchiMateConceptKind::DataObject => ArchiMateConceptDomain::Application,
             ArchiMateConceptKind::Node
             | ArchiMateConceptKind::TechnologyInterface
             | ArchiMateConceptKind::Device
@@ -646,12 +660,10 @@ impl ArchiMateConceptKind {
             | ArchiMateConceptKind::CommunicationNetwork
             | ArchiMateConceptKind::DistributionNetwork
             | ArchiMateConceptKind::Artifact
-            | ArchiMateConceptKind::Material => ArchiMateConceptKindColorGroup::Technology,
+            | ArchiMateConceptKind::Material => ArchiMateConceptDomain::Technology,
             ArchiMateConceptKind::WorkPackage
             | ArchiMateConceptKind::Deliverable
-            | ArchiMateConceptKind::Plateau => {
-                ArchiMateConceptKindColorGroup::ImplementationAndMigration
-            }
+            | ArchiMateConceptKind::Plateau => ArchiMateConceptDomain::ImplementationAndMigration,
         }
     }
     pub fn rectangle_shape_group(&self) -> ArchiMateConceptKindShapeGroup {
