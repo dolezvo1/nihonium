@@ -1851,13 +1851,18 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                 &self.name_buffer,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             )
-            .expand(15.0);
+            .expand2((30.0, 25.0).into());
 
         // Draw shape and text
         let background_color = gdc
             .global_colors
             .get(&self.background_color)
             .unwrap_or_else(|| match self.kind_buffer.color_group() {
+                ArchiMateConceptKindColorGroup::Common
+                    if self.kind_buffer == ArchiMateConceptKind::Grouping =>
+                {
+                    egui::Color32::TRANSPARENT
+                }
                 ArchiMateConceptKindColorGroup::Common => egui::Color32::from_rgb(0xDF, 0xDA, 0xD0),
                 ArchiMateConceptKindColorGroup::Motivation => {
                     egui::Color32::from_rgb(0xCC, 0xCC, 0xFF)
@@ -1932,9 +1937,963 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             egui::Color32::BLACK,
         );
 
+        let icon_rect = egui::Rect::from_min_size(
+            egui::Pos2::new(
+                self.bounds_rect.right() - 27.0,
+                self.bounds_rect.top() + 7.0,
+            ),
+            egui::Vec2::new(20.0, 20.0),
+        );
+        /*
+        canvas.draw_rectangle(
+            icon_rect,
+            egui::CornerRadius::ZERO,
+            egui::Color32::TRANSPARENT,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Highlight::NONE,
+        );
+        */
+
         // draw icons based on kind
         match self.kind_buffer {
-            _ => {}
+            ArchiMateConceptKind::Role | ArchiMateConceptKind::Stakeholder => {
+                let body_rect = icon_rect.shrink2((5.0, 5.0).into());
+                canvas.draw_ellipse(
+                    icon_rect.center() + (-5.0, 0.0).into(),
+                    egui::Vec2::new(3.0, 5.0),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    body_rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                    canvas::Highlight::NONE,
+                );
+                for e in [
+                    (body_rect.left_top(), body_rect.right_top()),
+                    (body_rect.left_bottom(), body_rect.right_bottom()),
+                ] {
+                    canvas.draw_line(
+                        [e.0, e.1],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                canvas.draw_ellipse(
+                    icon_rect.center() + (5.0, 0.0).into(),
+                    egui::Vec2::new(3.0, 5.0),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Collaboration => {
+                for (bg, fg) in [
+                    (background_color, egui::Color32::TRANSPARENT),
+                    (egui::Color32::TRANSPARENT, egui::Color32::BLACK),
+                ] {
+                    for offset in [-3.5, 3.5] {
+                        canvas.draw_ellipse(
+                            icon_rect.center() + (offset, 0.0).into(),
+                            egui::Vec2::splat(6.5),
+                            bg,
+                            canvas::Stroke::new_solid(1.0, fg),
+                            canvas::Highlight::NONE,
+                        );
+                    }
+                }
+            }
+            ArchiMateConceptKind::Path => {
+                let (slice_x, slice_y) = (3.0, 7.0);
+                for e in [
+                    icon_rect.center() + (-slice_x, 0.0).into(),
+                    icon_rect.center() + (slice_x, 0.0).into(),
+                ] {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_center_size(e, (slice_x, slice_x).into()),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::BLACK,
+                        canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                let (slice_y, refund) = (icon_rect.width() / 2.0 - slice_y, 2.0);
+                for e in [
+                    (
+                        icon_rect.left_center(),
+                        icon_rect.left_center() + (refund * slice_x, refund * slice_y).into(),
+                    ),
+                    (
+                        icon_rect.left_center(),
+                        icon_rect.left_center() + (refund * slice_x, refund * -slice_y).into(),
+                    ),
+                    (
+                        icon_rect.right_center(),
+                        icon_rect.right_center() + (refund * -slice_x, refund * -slice_y).into(),
+                    ),
+                    (
+                        icon_rect.right_center(),
+                        icon_rect.right_center() + (refund * -slice_x, refund * slice_y).into(),
+                    ),
+                ] {
+                    canvas.draw_line(
+                        [e.0, e.1],
+                        canvas::Stroke::new_solid(2.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Process => {
+                let ah_offset = 3.0;
+                canvas.draw_polygon(
+                    [
+                        (icon_rect.center().x + ah_offset, icon_rect.top()).into(),
+                        icon_rect.right_center(),
+                        (icon_rect.center().x + ah_offset, icon_rect.bottom()).into(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                let tail_width = 8.0;
+                let mut tail_rect = egui::Rect::from_min_size(
+                    icon_rect.left_top() + (0.0, (icon_rect.height() - tail_width) / 2.0).into(),
+                    (11.0 + ah_offset, tail_width).into(),
+                );
+                canvas.draw_rectangle(
+                    tail_rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                tail_rect.max.x -= 1.0;
+                for e in [
+                    (tail_rect.right_bottom(), tail_rect.left_bottom()),
+                    (tail_rect.left_bottom(), tail_rect.left_top()),
+                    (tail_rect.left_top(), tail_rect.right_top()),
+                ] {
+                    canvas.draw_line(
+                        [e.0, e.1],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Function => {
+                let slice = icon_rect.width() / 3.0;
+                let right_side = [
+                    (icon_rect.center().x, icon_rect.top()).into(),
+                    (icon_rect.right(), icon_rect.top() + slice).into(),
+                    (icon_rect.right(), icon_rect.bottom()).into(),
+                    (icon_rect.center().x, icon_rect.bottom() - slice).into(),
+                ]
+                .to_vec();
+                let left_side = [
+                    (icon_rect.center().x, icon_rect.bottom() - slice).into(),
+                    (icon_rect.left(), icon_rect.bottom()).into(),
+                    (icon_rect.left(), icon_rect.top() + slice).into(),
+                    (icon_rect.center().x, icon_rect.top()).into(),
+                ]
+                .to_vec();
+                canvas.draw_polygon(
+                    right_side.clone(),
+                    background_color,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    right_side.clone(),
+                    background_color,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                let all_pts = right_side
+                    .into_iter()
+                    .chain(left_side.into_iter())
+                    .collect();
+                canvas.draw_polygon(
+                    all_pts,
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Service | ArchiMateConceptKind::Event => {
+                let mut pts = Vec::new();
+                const SAMPLES: usize = 10;
+                let radius = 5.0;
+                let sc = |t0: f32, ox| {
+                    (0..=SAMPLES).map(move |i| {
+                        let t = i as f32 / SAMPLES as f32;
+                        let theta = t0 + std::f32::consts::PI * (1.0 - t);
+                        icon_rect.center()
+                            + (ox, 0.0).into()
+                            + (radius * theta.sin(), radius * theta.cos()).into()
+                    })
+                };
+
+                pts.extend(sc(0.0, 5.0));
+                match self.kind_buffer {
+                    ArchiMateConceptKind::Service => pts.extend(sc(180.0_f32.to_radians(), -5.0)),
+                    ArchiMateConceptKind::Event => {
+                        pts.push((icon_rect.left(), icon_rect.center().y + radius).into());
+                        pts.push((icon_rect.left() + 5.0, icon_rect.center().y).into());
+                        pts.push((icon_rect.left(), icon_rect.center().y - radius).into());
+                    }
+                    _ => unreachable!(),
+                }
+
+                canvas.draw_polygon(
+                    pts,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Grouping => {
+                let slice = icon_rect.width() / 3.0;
+                let top_rect =
+                    egui::Rect::from_min_size(icon_rect.left_top(), (2.0 * slice, slice).into());
+                let bottom_rect = egui::Rect::from_min_size(
+                    top_rect.left_bottom(),
+                    (3.0 * slice, 2.0 * slice).into(),
+                );
+                for e in [top_rect, bottom_rect] {
+                    canvas.draw_rectangle(
+                        e,
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::TRANSPARENT,
+                        stroke,
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Location => {
+                let mut pts = Vec::new();
+                const SAMPLES: usize = 10;
+                let radius = 7.0;
+                let sc = || {
+                    (0..=SAMPLES).map(move |i| {
+                        let t = i as f32 / SAMPLES as f32;
+                        let theta = std::f32::consts::PI * (1.0 - t);
+                        icon_rect.center()
+                            + (0.0, -3.0).into()
+                            + (radius * theta.cos(), -radius * theta.sin()).into()
+                    })
+                };
+
+                pts.extend(sc());
+                pts.push(icon_rect.center_bottom());
+
+                canvas.draw_polygon(
+                    pts,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Driver => {
+                for (radius, bg) in [
+                    (7.5, egui::Color32::BLACK),
+                    (6.5, background_color),
+                    (2.5, egui::Color32::BLACK),
+                ] {
+                    canvas.draw_ellipse(
+                        icon_rect.center(),
+                        egui::Vec2::splat(radius),
+                        bg,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                for e in [0.0, 45.0, 90.0, 135.0]
+                    .map(|e| (e as f32).to_radians())
+                    .map(|e| egui::Vec2::new(e.cos(), e.sin()))
+                {
+                    canvas.draw_line(
+                        [icon_rect.center() + e * 10.0, icon_rect.center() - e * 10.0],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Assessment => {
+                canvas.draw_line(
+                    [
+                        icon_rect.left_bottom() + (3.0, -3.0).into(),
+                        icon_rect.center(),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    icon_rect.center() + (3.0, -3.0).into(),
+                    egui::Vec2::new(6.0, 6.0),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Goal => {
+                for (radius, bg) in [
+                    (9.5, background_color),
+                    (7.0, background_color),
+                    (4.0, egui::Color32::BLACK),
+                ] {
+                    canvas.draw_ellipse(
+                        icon_rect.center(),
+                        egui::Vec2::splat(radius),
+                        bg,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Outcome => {
+                for (radius, bg) in [
+                    (8.0, background_color),
+                    (5.0, background_color),
+                    (2.0, background_color),
+                ] {
+                    canvas.draw_ellipse(
+                        icon_rect.center(),
+                        egui::Vec2::splat(radius),
+                        bg,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                for p in [(icon_rect.center(), icon_rect.right_top())]
+                    .into_iter()
+                    .chain(
+                        [(0.0, -5.0), (5.0, 0.0)]
+                            .map(|e| (icon_rect.center() + e.into(), icon_rect.center())),
+                    )
+                {
+                    canvas.draw_line(
+                        [p.0, p.1],
+                        canvas::Stroke::new_solid(3.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Principle => {
+                canvas.draw_rectangle(
+                    icon_rect.shrink2((3.5, 3.5).into()),
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    icon_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "!",
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+            }
+            ArchiMateConceptKind::Requirement => {
+                let tilt = 3.0;
+                let box_rect = icon_rect.shrink2((2.0, 5.0).into());
+                canvas.draw_polygon(
+                    [
+                        box_rect.left_top() + (tilt, 0.0).into(),
+                        box_rect.right_top(),
+                        box_rect.right_bottom() + (-tilt, 0.0).into(),
+                        box_rect.left_bottom(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Meaning => {
+                canvas.draw_ellipse(
+                    icon_rect.center() + (2.0, -5.0).into(),
+                    egui::Vec2::new(8.0, 5.0),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    icon_rect.center() + (-3.5, 1.5).into(),
+                    egui::Vec2::new(3.0, 2.0),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    icon_rect.center() + (-5.0, 5.0).into(),
+                    egui::Vec2::new(1.0, 1.0),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Value => {
+                canvas.draw_ellipse(
+                    icon_rect.center(),
+                    egui::Vec2::new(10.0, 6.0),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Resource => {
+                let box_rect = icon_rect.shrink2((3.0, 6.0).into());
+                canvas.draw_rectangle(
+                    box_rect,
+                    egui::CornerRadius::same(5),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    egui::Rect::from_min_size(
+                        (box_rect.right(), box_rect.top() + 2.0).into(),
+                        (3.0, 4.0).into(),
+                    ),
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                for e in 0..=2 {
+                    let x = box_rect.left() + 3.0 + e as f32 * 2.0;
+                    canvas.draw_line(
+                        [
+                            (x, box_rect.top() + 2.0).into(),
+                            (x, box_rect.bottom() - 2.0).into(),
+                        ],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Capability => {
+                let side_len = icon_rect.width() / 3.0;
+                for (x, y) in (0..=2)
+                    .into_iter()
+                    .flat_map(|x| (0..=2).into_iter().map(move |e| (x as f32, e as f32)))
+                    .filter(|(x, y)| *y >= 2.0 - *x)
+                {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_min_size(
+                            icon_rect.left_top() + (x * side_len, y * side_len).into(),
+                            (side_len, side_len).into(),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        background_color,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::ValueStream => {
+                let slice = icon_rect.width() / 3.0;
+                let bottom_side = [
+                    (icon_rect.right(), icon_rect.center().y).into(),
+                    (icon_rect.right() - slice, icon_rect.bottom()).into(),
+                    (icon_rect.left(), icon_rect.bottom()).into(),
+                    (icon_rect.left() + slice, icon_rect.center().y).into(),
+                ]
+                .to_vec();
+                let top_side = [
+                    (icon_rect.left() + slice, icon_rect.center().y).into(),
+                    (icon_rect.left(), icon_rect.top()).into(),
+                    (icon_rect.right() - slice, icon_rect.top()).into(),
+                    (icon_rect.right(), icon_rect.center().y).into(),
+                ]
+                .to_vec();
+                canvas.draw_polygon(
+                    bottom_side.clone(),
+                    background_color,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    top_side.clone(),
+                    background_color,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                let all_pts = bottom_side
+                    .into_iter()
+                    .chain(top_side.into_iter())
+                    .collect();
+                canvas.draw_polygon(
+                    all_pts,
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::CourseOfAction => {
+                for (bg, radius) in [
+                    (background_color, 5.0),
+                    (background_color, 3.0),
+                    (egui::Color32::BLACK, 1.0),
+                ] {
+                    canvas.draw_ellipse(
+                        icon_rect.center() + (5.0, -5.0).into(),
+                        egui::Vec2::splat(radius),
+                        bg,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                let p1 = egui::Pos2::new(icon_rect.left() + 5.0, icon_rect.bottom());
+                let p2 = egui::Pos2::new(icon_rect.left() + 5.0, icon_rect.bottom() - 5.0);
+                let p3 = icon_rect.center() + (1.0, -1.0).into();
+                for e in [(p1, p2), (p2, p3)].into_iter().chain(
+                    [(0.0, 5.0), (-5.0, 0.0)]
+                        .into_iter()
+                        .map(|e| (p3 + e.into(), p3)),
+                ) {
+                    canvas.draw_line(
+                        [e.0, e.1],
+                        canvas::Stroke::new_solid(3.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::BusinessActor => {
+                let head_radius = 4.0;
+                canvas.draw_ellipse(
+                    (icon_rect.center().x, icon_rect.top() + head_radius).into(),
+                    egui::Vec2::splat(head_radius),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                let right_hand = egui::Pos2::new(
+                    icon_rect.center().x + head_radius,
+                    icon_rect.center().y + 2.0,
+                );
+                let left_hand = egui::Pos2::new(
+                    icon_rect.center().x - head_radius,
+                    icon_rect.center().y + 2.0,
+                );
+                let pelvis =
+                    egui::Pos2::new(icon_rect.center().x, icon_rect.top() + 3.5 * head_radius);
+                for (p1, p2) in [
+                    (
+                        (icon_rect.center().x, icon_rect.top() + 2.0 * head_radius).into(),
+                        pelvis,
+                    ),
+                    (right_hand, left_hand),
+                    (pelvis, (right_hand.x, icon_rect.bottom()).into()),
+                    (pelvis, (left_hand.x, icon_rect.bottom()).into()),
+                ] {
+                    canvas.draw_line(
+                        [p1, p2],
+                        canvas::Stroke::new_solid(2.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::BusinessInterface
+            | ArchiMateConceptKind::ApplicationInterface
+            | ArchiMateConceptKind::TechnologyInterface => {
+                canvas.draw_line(
+                    [icon_rect.left_center(), icon_rect.center()],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    icon_rect.center() + (3.5, 0.0).into(),
+                    egui::Vec2::new(6.5, 6.5),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::BusinessObject | ArchiMateConceptKind::DataObject => {
+                let strip_height = 4.0;
+                let box_rect = icon_rect.shrink2((0.0, 4.0).into());
+                canvas.draw_rectangle(
+                    box_rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_line(
+                    [
+                        (box_rect.min.x, box_rect.top() + strip_height).into(),
+                        (box_rect.max.x, box_rect.top() + strip_height).into(),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Product => {
+                let strip_height = 4.0;
+                let box_rect = icon_rect.shrink2((0.0, 4.0).into());
+                canvas.draw_rectangle(
+                    box_rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    egui::Rect::from_min_size(box_rect.left_top(), (10.0, strip_height).into()),
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::ApplicationComponent => {
+                let overhang = 6.0;
+                let box_rect = icon_rect.with_min_x(icon_rect.min.x + overhang);
+                canvas.draw_rectangle(
+                    box_rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                for e in [-4.0, 4.0] {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_center_size(
+                            (box_rect.left(), box_rect.center().y + e).into(),
+                            (2.0 * overhang, 3.0).into(),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        background_color,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Node => {
+                let slice = icon_rect.width() / 3.0;
+                canvas.draw_polygon(
+                    [
+                        icon_rect.left_top() + (0.0, slice).into(),
+                        icon_rect.right_top() + (-slice, slice).into(),
+                        icon_rect.right_bottom() + (-slice, 0.0).into(),
+                        icon_rect.left_bottom(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        icon_rect.left_top() + (slice, 0.0).into(),
+                        icon_rect.right_top(),
+                        icon_rect.right_top() + (-slice, slice).into(),
+                        icon_rect.left_top() + (0.0, slice).into(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        icon_rect.right_top(),
+                        icon_rect.right_bottom() + (0.0, -slice).into(),
+                        icon_rect.right_bottom() + (-slice, 0.0).into(),
+                        icon_rect.right_top() + (-slice, slice).into(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Device => {
+                let slice = icon_rect.width() / 5.0;
+                let slice2 = slice / 4.0;
+                canvas.draw_polygon(
+                    [
+                        icon_rect.left_top() + (slice, 0.0).into(),
+                        icon_rect.right_top() + (-slice, 0.0).into(),
+                        icon_rect.right_top() + (-slice2, slice2).into(),
+                        icon_rect.right_top() + (0.0, slice).into(),
+                        icon_rect.right_bottom() + (0.0, -2.0 * slice).into(),
+                        icon_rect.right_bottom() + (-slice2, -slice - slice2).into(),
+                        icon_rect.right_bottom() + (-slice, -slice).into(),
+                        icon_rect.left_bottom() + (slice, -slice).into(),
+                        icon_rect.left_bottom() + (slice2, -slice - slice2).into(),
+                        icon_rect.left_bottom() + (0.0, -2.0 * slice).into(),
+                        icon_rect.left_top() + (0.0, slice).into(),
+                        icon_rect.left_top() + (slice2, slice2).into(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        icon_rect.right_bottom() + (-slice, -slice).into(),
+                        icon_rect.right_bottom(),
+                        icon_rect.left_bottom(),
+                        icon_rect.left_bottom() + (slice, -slice).into(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::SystemSoftware => {
+                for offset in [2.0, -2.0] {
+                    canvas.draw_ellipse(
+                        icon_rect.center() + (offset, -offset).into(),
+                        egui::Vec2::splat(8.0),
+                        background_color,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Equipment => {
+                for (offset, radii) in [((-3.0, 3.0), [7.0, 5.0]), ((5.0, -5.0), [5.0, 3.0])] {
+                    for radius in radii {
+                        canvas.draw_ellipse(
+                            icon_rect.center() + offset.into(),
+                            egui::Vec2::splat(radius),
+                            background_color,
+                            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                            canvas::Highlight::NONE,
+                        );
+                    }
+                }
+            }
+            ArchiMateConceptKind::Facility => {
+                let slice = icon_rect.width() / 4.0;
+                canvas.draw_polygon(
+                    [
+                        icon_rect.left_top(),
+                        (icon_rect.left() + slice, icon_rect.top()).into(),
+                        (icon_rect.left() + slice, icon_rect.center().y + slice).into(),
+                        icon_rect.center(),
+                        icon_rect.center() + (0.0, slice).into(),
+                        icon_rect.center() + (slice, 0.0).into(),
+                        icon_rect.center() + (slice, slice).into(),
+                        (icon_rect.right(), icon_rect.center().y).into(),
+                        icon_rect.right_bottom(),
+                        icon_rect.left_bottom(),
+                    ]
+                    .to_vec(),
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::CommunicationNetwork => {
+                let tilt = 3.0;
+                let box_rect = icon_rect.shrink2((3.0, 5.0).into());
+                let circuit_pts = [
+                    box_rect.left_bottom(),
+                    box_rect.left_top() + (tilt, 0.0).into(),
+                    box_rect.right_top(),
+                    box_rect.right_bottom() + (-tilt, 0.0).into(),
+                    box_rect.left_bottom(),
+                ];
+                for p in circuit_pts.iter().take(4) {
+                    canvas.draw_ellipse(
+                        *p,
+                        egui::Vec2::splat(2.0),
+                        egui::Color32::BLACK,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                for e in circuit_pts.array_windows::<2>() {
+                    canvas.draw_line(
+                        *e,
+                        canvas::Stroke::new_solid(2.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::DistributionNetwork => {
+                let (slice_x, slice_y) = (3.0, 7.0);
+                canvas.draw_polygon(
+                    [
+                        icon_rect.right_top() + (-slice_x, slice_y).into(),
+                        icon_rect.right_center(),
+                        icon_rect.right_bottom() + (-slice_x, -slice_y).into(),
+                        icon_rect.left_bottom() + (slice_x, -slice_y).into(),
+                        icon_rect.left_center(),
+                        icon_rect.left_top() + (slice_x, slice_y).into(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(2.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                let (slice_y, refund) = (icon_rect.width() / 2.0 - slice_y, 2.0);
+                for e in [
+                    (
+                        icon_rect.left_center(),
+                        icon_rect.left_center() + (refund * slice_x, refund * slice_y).into(),
+                    ),
+                    (
+                        icon_rect.left_center(),
+                        icon_rect.left_center() + (refund * slice_x, refund * -slice_y).into(),
+                    ),
+                    (
+                        icon_rect.right_center(),
+                        icon_rect.right_center() + (refund * -slice_x, refund * -slice_y).into(),
+                    ),
+                    (
+                        icon_rect.right_center(),
+                        icon_rect.right_center() + (refund * -slice_x, refund * slice_y).into(),
+                    ),
+                ] {
+                    canvas.draw_line(
+                        [e.0, e.1],
+                        canvas::Stroke::new_solid(2.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Artifact => {
+                let chamfer = 6.0;
+                let box_rect = icon_rect.shrink2((3.0, 0.0).into());
+                canvas.draw_polygon(
+                    [
+                        box_rect.left_top(),
+                        box_rect.right_top() + (-chamfer, 0.0).into(),
+                        box_rect.right_top() + (0.0, chamfer).into(),
+                        box_rect.right_bottom(),
+                        box_rect.left_bottom(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        box_rect.right_top() + (-chamfer, 0.0).into(),
+                        box_rect.right_top() + (0.0, chamfer).into(),
+                        box_rect.right_top() + (-chamfer, chamfer).into(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Material => {
+                let hexagon = |radius: f32| {
+                    (0..=6).map(move |i| {
+                        let theta = (i as f32 * 60.0).to_radians();
+                        icon_rect.center() + (radius * theta.cos(), -radius * theta.sin()).into()
+                    })
+                };
+                canvas.draw_polygon(
+                    hexagon(9.0).collect(),
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                let mut iter = hexagon(5.0);
+                while let Some(p1) = iter.next()
+                    && let Some(p2) = iter.next()
+                {
+                    canvas.draw_line(
+                        [p1, p2],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::WorkPackage => {
+                const SAMPLES: usize = 15;
+                let radius = 7.0;
+                let mut iter = (0..=SAMPLES)
+                    .map(move |i| {
+                        let t = i as f32 / SAMPLES as f32;
+                        let theta = 270.0_f32.to_radians() * (1.0 - t);
+                        icon_rect.center() + (radius * theta.cos(), -radius * theta.sin()).into()
+                    })
+                    .peekable();
+                while let Some(p1) = iter.next() {
+                    let Some(p2) = iter.peek() else {
+                        break;
+                    };
+                    canvas.draw_line(
+                        [p1, *p2],
+                        canvas::Stroke::new_solid(2.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                let arrow = 4.0;
+                let afp = icon_rect.center() + (radius, radius).into();
+                for (p1, p2) in [
+                    (icon_rect.center() + (0.0, radius).into(), afp),
+                    (afp, afp + (-arrow, -arrow).into()),
+                    (afp, afp + (-arrow, arrow).into()),
+                ] {
+                    canvas.draw_line(
+                        [p1, p2],
+                        canvas::Stroke::new_solid(2.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            ArchiMateConceptKind::Deliverable => {
+                let box_rect = icon_rect.shrink2((0.0, 4.0).into());
+                let mut pts = Vec::new();
+                const SAMPLES: usize = 10;
+                let amplitude = box_rect.height() / 4.0;
+                let sy = || {
+                    (0..=SAMPLES).map(move |i| {
+                        let t = i as f32 / SAMPLES as f32;
+                        let theta = 2.0 * std::f32::consts::PI * t;
+                        egui::Pos2::new(
+                            box_rect.right() - t * box_rect.width(),
+                            box_rect.center().y + amplitude - amplitude * theta.sin(),
+                        )
+                    })
+                };
+
+                pts.push(box_rect.left_top());
+                pts.push(box_rect.right_top());
+                pts.extend(sy());
+
+                canvas.draw_polygon(
+                    pts,
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            ArchiMateConceptKind::Plateau => {
+                let slice = icon_rect.width() / 4.0;
+                let size = egui::Vec2::new(2.0 * slice, slice);
+                for e in [
+                    egui::Rect::from_min_size(icon_rect.center_top(), size),
+                    egui::Rect::from_center_size(icon_rect.center(), size),
+                    egui::Rect::from_min_size(icon_rect.left_bottom() + (0.0, -slice).into(), size),
+                ] {
+                    canvas.draw_rectangle(
+                        e,
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::BLACK,
+                        canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
         }
 
         // Draw buttons
