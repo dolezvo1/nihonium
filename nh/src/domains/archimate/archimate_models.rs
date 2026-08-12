@@ -807,6 +807,9 @@ impl ContainerModel for ArchiMateConcept {
             if *e.uuid() == *uuid {
                 return Some((e.clone().into(), *self.uuid));
             }
+            if let Some(e) = e.find_element(uuid) {
+                return Some(e);
+            }
         }
         None
     }
