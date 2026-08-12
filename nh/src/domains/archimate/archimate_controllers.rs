@@ -1895,6 +1895,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             ));
         }
 
+        ui.add_space(crate::common::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
         ui.label("View properties");
 
         ui.horizontal(|ui| {
@@ -3770,6 +3771,8 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 }
             });
 
+        ui.add_space(crate::common::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING / 2.0);
+
         ui.label("Source multiplicities:");
         for e in self.temporaries.source_multiplicities_buffers.iter_mut() {
             if ui
@@ -3803,6 +3806,8 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 ));
             }
         }
+
+        ui.add_space(crate::common::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING / 2.0);
 
         if ui.button("Add source").clicked() {
             return PropertiesStatus::ToolRequest(Some(NaiveArchiMateTool {
