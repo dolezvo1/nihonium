@@ -312,35 +312,6 @@ impl UmlStateMachineElement {
         }
     }
 
-    fn deep_copy_clone(
-        &self,
-        new_uuid: ModelUuid,
-        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
-    ) -> Self {
-        match self {
-            Self::StateMachine(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::CompositeState(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::CompositeStateRegion(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::SimpleState(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::InternalTransition(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::InitialPseudostate(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::TerminatePseudostate(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::FinalState(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::Edge(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-        }
-    }
     fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, UmlStateMachineElement>) {
         match self {
             UmlStateMachineElement::StateMachine(_)

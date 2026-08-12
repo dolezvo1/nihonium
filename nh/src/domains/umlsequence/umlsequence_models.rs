@@ -84,29 +84,6 @@ impl UmlSequenceElement {
         }
     }
 
-    pub fn deep_copy_clone(
-        &self,
-        new_uuid: ModelUuid,
-        into: &mut HashMap<ModelUuid, UmlSequenceElement>,
-    ) -> Self {
-        match self {
-            Self::Diagram(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::CombinedFragment(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::CombinedFragmentSection(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::Lifeline(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::Message(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::Ref(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::DurationConstraint(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-        }
-    }
     pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, UmlSequenceElement>) {
         match self {
             Self::Diagram(..)

@@ -1459,13 +1459,6 @@ pub trait Queryable<'a, DomainT: Domain> {
     ) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
     where
         P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool;
-    fn find_container_inclusive<P>(
-        &self,
-        child: &ViewUuid,
-        predicate: P,
-    ) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
-    where
-        P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool;
 
     fn get_viewuuid_for(&self, m: &ModelUuid) -> Option<ViewUuid>;
     fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
@@ -1531,20 +1524,6 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
             }
             v = *parent2;
         }
-    }
-    fn find_container_inclusive<P>(
-        &self,
-        child: &ViewUuid,
-        mut predicate: P,
-    ) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
-    where
-        P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool,
-    {
-        self.flattened_views
-            .get(child)
-            .filter(|e| predicate(child, &e.0))
-            .map(|e| (*child, e.0.clone()))
-            .or_else(|| self.find_container(child, predicate))
     }
 
     fn get_viewuuid_for(&self, m: &ModelUuid) -> Option<ViewUuid> {

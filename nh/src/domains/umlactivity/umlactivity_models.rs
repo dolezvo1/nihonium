@@ -303,32 +303,6 @@ impl UmlActivityElement {
         }
     }
 
-    pub fn deep_copy_clone(
-        &self,
-        new_uuid: ModelUuid,
-        into: &mut HashMap<ModelUuid, UmlActivityElement>,
-    ) -> Self {
-        match self {
-            Self::Activity(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::InterruptibleRegion(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::Partition(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::PartitionSection(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            Self::ActionNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::InitialNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::FinalNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::DecisionNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::ForkNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::ObjectNode(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::Edge(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::Note(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            Self::NoteLink(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-        }
-    }
-
     pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, UmlActivityElement>) {
         match self {
             Self::Activity(..)
