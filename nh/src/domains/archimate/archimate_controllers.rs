@@ -287,11 +287,39 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
                 let mut s = String::new();
                 s.push_str(r.kind.as_str());
                 s.push_str(" (");
+                if !r.stereotype.is_empty() {
+                    s.push('«');
+                    s.push_str(&r.stereotype);
+                    s.push('»');
+                    if !r.name.is_empty() {
+                        s.push(' ');
+                    }
+                }
                 s.push_str(&r.name);
                 s.push(')');
                 s.into()
             }
-            ArchiMateElement::Relationship(inner) => inner.read().kind.as_str().to_owned().into(),
+            ArchiMateElement::Relationship(inner) => {
+                let r = inner.read();
+                let mut s = String::new();
+                s.push_str(r.kind.as_str());
+
+                if !r.stereotype.is_empty() || !r.name.is_empty() {
+                    s.push_str(" (");
+                    if !r.stereotype.is_empty() {
+                        s.push('«');
+                        s.push_str(&r.stereotype);
+                        s.push('»');
+                        if !r.name.is_empty() {
+                            s.push(' ');
+                        }
+                    }
+                    s.push_str(&r.name);
+                    s.push(')');
+                }
+
+                s.into()
+            }
         }
     }
 
