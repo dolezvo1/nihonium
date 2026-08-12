@@ -1,10 +1,10 @@
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorBundle, ColorChangeData, ControllerAdapter, DiagramAdapter, DiagramController,
+    ColorBundle, ColorChangeData, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController,
     DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
     EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand,
     MGlobalColor, MultiDiagramController, ProjectCommand, PropertiesStatus, Queryable,
-    SelectionStatus, TargettingStatus, Tool, TryMerge, View,
+    SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View,
 };
 use crate::common::diagram_settings::{
     DiagramSettings, DiagramSettings2, GroupDisplayStyle, PaletteEditBuffer, ShortCutStatus,
@@ -12,7 +12,7 @@ use crate::common::diagram_settings::{
 };
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::model::{BucketNoT, Model, PositionNoT};
+use crate::common::model::{BucketNoT, ContainerModel, DiagramModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
@@ -20,6 +20,7 @@ use crate::common::views::multiconnection_view::{
     self, ArrowData, Ending, FlipMulticonnection, MULTICONNECTION_SOURCE_BUCKET,
     MULTICONNECTION_TARGET_BUCKET, MulticonnectionAdapter, MulticonnectionView, VertexInformation,
 };
+use crate::common::views::ordered_views::OrderedViews;
 use crate::domains::archimate::archimate_models::{
     ArchiMateConcept, ArchiMateConceptKind, ArchiMateConceptKindColorGroup,
     ArchiMateConceptKindShapeGroup, ArchiMateDiagram, ArchiMateElement, ArchiMateJunctionKind,
@@ -1335,6 +1336,19 @@ impl NaiveArchiMateTool {
         self.result = PartialArchiMateElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
+    fn references(&self, uuid: &ModelUuid) -> bool {
+        match &self.result {
+            PartialArchiMateElement::None | PartialArchiMateElement::Some(_) => false,
+            PartialArchiMateElement::Relationship { source, dest } => {
+                *source.read().uuid == *uuid
+                    || dest.as_ref().is_some_and(|e| *e.read().uuid == *uuid)
+            }
+            PartialArchiMateElement::RelationshipEnding {
+                relationship_model,
+                new_model,
+            } => *relationship_model.read().uuid == *uuid || new_model.is_some_and(|e| e == *uuid),
+        }
+    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -1724,6 +1738,9 @@ fn new_archimate_concept_view(
     ERef::new(ArchiMateConceptView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
+        owned_views: OrderedViews::new(Vec::new()),
+        all_elements: HashMap::new(),
+        selected_direct_elements: HashSet::new(),
 
         stereotype_in_guillemets: String::new(),
         stereotype_buffer: (*m.stereotype).to_owned(),
@@ -1746,6 +1763,12 @@ pub struct ArchiMateConceptView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     pub model: ERef<ArchiMateConcept>,
+    #[nh_context_serde(entity)]
+    owned_views: OrderedViews<ArchiMateElementView>,
+    #[nh_context_serde(skip_and_default)]
+    all_elements: HashMap<ViewUuid, SelectionStatus>,
+    #[nh_context_serde(skip_and_default)]
+    selected_direct_elements: HashSet<ViewUuid>,
 
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: String,
@@ -1813,7 +1836,13 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             >,
         >,
     ) -> PropertiesStatus<ArchiMateDomain> {
-        if !self.highlight.selected {
+        let child = self
+            .owned_views
+            .event_order_find_mut(|v| v.show_properties(gdc, q, ui, commands).non_default());
+
+        if let Some(child) = child {
+            return child;
+        } else if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
@@ -1902,7 +1931,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
 
     fn draw_in(
         &mut self,
-        _q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
+        q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
         gdc: &GlobalDrawingContext,
         settings: &ArchiMateSettings,
         canvas: &mut dyn NHCanvas,
@@ -1923,6 +1952,9 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                 canvas::CLASS_TOP_FONT_SIZE,
             ));
         }
+        self.owned_views.draw_order_foreach_mut(|e| {
+            content_bounds = content_bounds.union(e.min_shape().bounding_box())
+        });
         self.bounds_rect = content_bounds.expand2((30.0, 25.0).into());
 
         // Draw shape and text
@@ -2977,6 +3009,13 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             }
         }
 
+        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
+        self.owned_views.draw_order_foreach_mut(|v| {
+            if v.draw_in(q, gdc, settings, canvas, tool) == TargettingStatus::Drawn {
+                drawn_child_targetting = TargettingStatus::Drawn;
+            }
+        });
+
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
             draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
@@ -2984,6 +3023,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
 
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
+            && drawn_child_targetting != TargettingStatus::Drawn
             && let Some(t) = tool
                 .as_ref()
                 .filter(|e| self.min_shape().contains(e.0))
@@ -2998,10 +3038,16 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             );
             TargettingStatus::Drawn
         } else {
-            TargettingStatus::NotDrawn
+            drawn_child_targetting
         }
     }
 
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
+        am.add_shape(*self.uuid, self.min_shape());
+
+        self.owned_views
+            .event_order_foreach_mut(|v| v.collect_allignment(am));
+    }
     fn handle_event(
         &mut self,
         event: InputEvent,
@@ -3009,7 +3055,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         settings: &<ArchiMateDomain as Domain>::SettingsT,
         q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveArchiMateTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 ArchiMateOrdinalMovement,
@@ -3018,7 +3064,19 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             >,
         >,
     ) -> EventHandlingStatus {
+        let k_status = self.owned_views.event_order_find_mut(|v| {
+            let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+            if s != EventHandlingStatus::NotHandled {
+                Some((*v.uuid(), s))
+            } else {
+                None
+            }
+        });
+
         match event {
+            InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if k_status.is_some() => {
+                EventHandlingStatus::HandledByContainer
+            }
             InputEvent::MouseDown(pos) => {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
@@ -3055,12 +3113,56 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                 });
                 EventHandlingStatus::HandledByContainer
             }
-            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
-                if let Some(tool) = tool {
-                    tool.add_section(self.model());
+            InputEvent::Click(pos) => {
+                if !self.bounds_rect.contains(pos) {
+                    return k_status
+                        .map(|e| e.1)
+                        .unwrap_or(EventHandlingStatus::NotHandled);
                 }
 
-                EventHandlingStatus::HandledByElement
+                if let Some(tool) = tool {
+                    tool.add_position(*event.mouse_position());
+                    tool.add_section(self.model.clone().into());
+
+                    if !tool.references(&self.model.read().uuid)
+                        && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                        && ehc
+                            .modifier_settings
+                            .alternative_tool_mode
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                    {
+                        *element_setup_modal = esm;
+                    }
+
+                    EventHandlingStatus::HandledByContainer
+                } else if let Some((k, status)) = k_status {
+                    if status == EventHandlingStatus::HandledByElement {
+                        if ehc
+                            .modifier_settings
+                            .hold_selection
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                        {
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ));
+                        } else {
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ));
+                        }
+                    }
+                    EventHandlingStatus::HandledByContainer
+                } else {
+                    EventHandlingStatus::HandledByElement
+                }
             }
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
@@ -3075,7 +3177,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     ehc.snap_manager
                         .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
-                let coerced_delta = coerced_pos - self.position;
+                let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
@@ -3097,7 +3199,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
 
     fn apply_command(
         &mut self,
-        _diagram_model: &ERef<ArchiMateDiagram>,
+        diagram_model: &ERef<ArchiMateDiagram>,
         command: &InsensitiveCommand<
             ArchiMateOrdinalMovement,
             ArchiMateElementOrVertex,
@@ -3112,20 +3214,33 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
+        macro_rules! recurse {
+            () => {
+                self.owned_views.event_order_foreach_mut(|v| {
+                    v.apply_command(diagram_model, command, undo_accumulator, affected_models)
+                });
+            };
+        }
+
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.highlight = self.highlight.combine(*set, *h);
+                recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
+                recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
                     || self.min_shape().contained_within(*rect);
+                recurse!();
             }
-            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
+                recurse!();
+            }
             InsensitiveCommand::MovePositional(_, delta)
             | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
@@ -3133,14 +3248,119 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
+                let mut void = vec![];
+                self.owned_views.event_order_foreach_mut(|v| {
+                    v.apply_command(
+                        diagram_model,
+                        &InsensitiveCommand::MovePositionalAll(*delta),
+                        &mut void,
+                        affected_models,
+                    );
+                });
             }
-            InsensitiveCommand::ResizeElementsBy(..)
-            | InsensitiveCommand::ResizeElementTo(..)
-            | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddDependency { .. }
-            | InsensitiveCommand::RemoveDependency { .. }
-            | InsensitiveCommand::ArrangeSpecificElements(..)
-            | InsensitiveCommand::MoveOrdinal(..) => {}
+            InsensitiveCommand::ResizeElementsBy(..) | InsensitiveCommand::ResizeElementTo(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
+                for (_uuid, element) in self
+                    .owned_views
+                    .iter_event_order_pairs()
+                    .filter(|e| uuids.contains(&e.0))
+                {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (0, None)
+                    } else if let Some((b, pos)) =
+                        self.model.read().get_element_pos(&element.model_uuid())
+                    {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: element.clone().into(),
+                        into_model: false,
+                    });
+                }
+
+                self.owned_views.retain(|k, _v| !uuids.contains(k));
+
+                recurse!();
+            }
+            InsensitiveCommand::AddDependency {
+                target,
+                bucket,
+                position,
+                element,
+                into_model,
+            } => {
+                let model_uuid = *self.model.read().uuid;
+                if *target == *self.uuid
+                    && *bucket == 0
+                    && let ArchiMateElementOrVertex::Element(mut view) = element.clone()
+                    && (!*into_model
+                        || diagram_model
+                            .write()
+                            .insert_element_into(model_uuid, 0, *position, view.model())
+                            .is_ok())
+                {
+                    let uuid = *view.uuid();
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        element: uuid,
+                        including_model: *into_model,
+                    });
+
+                    if *into_model {
+                        affected_models.insert(model_uuid);
+                    }
+                    let mut model_transitives = HashMap::new();
+                    view.head_count(
+                        &mut HashMap::new(),
+                        &mut HashMap::new(),
+                        &mut model_transitives,
+                    );
+                    affected_models.extend(model_transitives.into_keys());
+
+                    self.owned_views.push(uuid, view);
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::RemoveDependency {
+                target,
+                bucket,
+                element,
+                including_model,
+            } => {
+                let model_uuid = *self.model.read().uuid;
+                if *target == *self.uuid
+                    && *bucket == 0
+                    && let Some(view) = self.owned_views.get(element)
+                    && let Some((_, pos)) = diagram_model
+                        .write()
+                        .remove_element_from(model_uuid, &view.model_uuid())
+                {
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        position: Some(pos),
+                        element: view.clone().into(),
+                        into_model: *including_model,
+                    });
+
+                    if *including_model {
+                        affected_models.insert(model_uuid);
+                    }
+
+                    self.owned_views.retain(|k, _v| *k != *element);
+                }
+                recurse!();
+            }
+            InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -3187,6 +3407,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                         _ => {}
                     }
                 }
+                recurse!();
             }
             InsensitiveCommand::Macro(..) => unreachable!(),
         }
@@ -3206,12 +3427,52 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, (ArchiMateElementView, ViewUuid)>,
+        flattened_views: &mut HashMap<ViewUuid, (ArchiMateElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+
+        self.all_elements.clear();
+        self.owned_views.event_order_foreach_mut(|v| {
+            v.head_count(
+                flattened_views,
+                &mut self.all_elements,
+                flattened_represented_models,
+            )
+        });
+        for e in &self.all_elements {
+            flattened_views_status.insert(
+                *e.0,
+                match *e.1 {
+                    SelectionStatus::NotSelected if self.highlight.selected => {
+                        SelectionStatus::TransitivelySelected
+                    }
+                    e => e,
+                },
+            );
+        }
+
+        self.owned_views.event_order_foreach_mut(|v| {
+            flattened_views.insert(*v.uuid(), (v.clone(), *self.uuid));
+        });
+    }
+
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, ArchiMateElementView>,
+        c: &mut HashMap<ViewUuid, ArchiMateElementView>,
+        m: &mut HashMap<ModelUuid, ArchiMateElement>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid)) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            self.owned_views
+                .event_order_foreach(|v| v.deep_copy_walk(requested, uuid_present, tlc, c, m));
+        }
     }
 
     fn deep_copy_clone(
@@ -3234,10 +3495,22 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         } else {
             old_model.deep_copy_clone_inner(model_uuid, m)
         };
+        let mut inner = HashMap::new();
+        self.owned_views
+            .event_order_foreach(|v| v.deep_copy_clone(uuid_present, &mut inner, c, m));
+        let owned_views = OrderedViews::new(
+            self.owned_views
+                .iter_event_order_keys()
+                .flat_map(|e| inner.get(&e).cloned())
+                .collect(),
+        );
 
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            owned_views,
+            all_elements: HashMap::new(),
+            selected_direct_elements: HashSet::new(),
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
