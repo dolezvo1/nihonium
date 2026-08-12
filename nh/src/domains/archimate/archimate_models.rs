@@ -830,6 +830,7 @@ impl FullTextSearchable for ArchiMateConcept {
             &[
                 &self.uuid.to_string(),
                 &self.kind.as_str(),
+                &self.stereotype,
                 &self.name,
                 &self.comment,
             ],
@@ -942,6 +943,7 @@ pub struct ArchiMateRelationship {
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: ArchiMateRelationshipKind,
+    pub stereotype: Arc<String>,
     #[full_text_searchable(skip)]
     pub junction_kind: ArchiMateJunctionKind,
     #[full_text_searchable(skip)]
@@ -956,12 +958,14 @@ impl ArchiMateRelationship {
     pub fn new(
         uuid: ModelUuid,
         kind: ArchiMateRelationshipKind,
+        stereotype: String,
         sources: Vec<ArchiMateRelationshipEnding>,
         targets: Vec<ArchiMateRelationshipEnding>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
+            stereotype: Arc::new(stereotype),
             junction_kind: ArchiMateJunctionKind::AndJunction,
             sources,
             targets,
@@ -975,6 +979,7 @@ impl ArchiMateRelationship {
         let new_model = ERef::new(Self {
             uuid: new_uuid.into(),
             kind: self.kind,
+            stereotype: self.stereotype.clone(),
             junction_kind: self.junction_kind,
             sources: self.sources.clone(),
             targets: self.targets.clone(),

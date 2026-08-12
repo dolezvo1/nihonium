@@ -595,42 +595,49 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (e1, e1_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Serving,
+        "",
         None,
         (phone.clone(), phone_view.clone().into()),
         (client.clone(), client_view.clone().into()),
     );
     let (e2, e2_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Assignment,
+        "",
         None,
         (phone.clone(), phone_view.clone().into()),
         (bookb.clone(), bookb_view.clone().into()),
     );
     let (e3, e3_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Serving,
+        "",
         None,
         (web.clone(), web_view.clone().into()),
         (client.clone(), client_view.clone().into()),
     );
     let (e4, e4_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Assignment,
+        "",
         None,
         (web.clone(), web_view.clone().into()),
         (booka.clone(), booka_view.clone().into()),
     );
     let (e5, e5_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Realization,
+        "",
         None,
         (booka.clone(), booka_view.clone().into()),
         (bookb.clone(), bookb_view.clone().into()),
     );
     let (e6, e6_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Composition,
+        "",
         None,
         (bookingsystem.clone(), bookingsystem_view.clone().into()),
         (web.clone(), web_view.clone().into()),
     );
     let (e7, e7_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Realization,
+        "",
         None,
         (bookingsystem.clone(), bookingsystem_view.clone().into()),
         (booka.clone(), booka_view.clone().into()),
@@ -801,7 +808,7 @@ impl DiagramSettings for ArchiMateSettings {
                                 modified = true;
                             }
                         }
-                        ArchiMateToolStage::RelationshipStart { kind } => {
+                        ArchiMateToolStage::RelationshipStart { kind, stereotype } => {
                             columns[1].label("Line type");
                             egui::ComboBox::from_id_salt("line type")
                                 .selected_text(kind.as_str())
@@ -811,6 +818,10 @@ impl DiagramSettings for ArchiMateSettings {
                                             ui.selectable_value(kind, e, e.as_str()).clicked();
                                     }
                                 });
+
+                            modified |= columns[1]
+                                .labeled_text_edit_singleline("Stereotype", stereotype)
+                                .changed();
                         }
                         ArchiMateToolStage::RelationshipEnd
                         | ArchiMateToolStage::RelationshipAddEnding { .. } => {
@@ -890,6 +901,7 @@ mod buttons {
         (
             ArchiMateToolStage::RelationshipStart {
                 kind: ArchiMateRelationshipKind::AssociationUndirected,
+                stereotype: "".to_owned(),
             },
             ArchiMateToolStage::RelationshipEnd,
             PartialArchiMateElement::Relationship {
@@ -910,6 +922,7 @@ mod buttons {
         (
             ArchiMateToolStage::RelationshipStart {
                 kind: ArchiMateRelationshipKind::Serving,
+                stereotype: "".to_owned(),
             },
             ArchiMateToolStage::RelationshipEnd,
             PartialArchiMateElement::Relationship {
@@ -930,6 +943,7 @@ mod buttons {
         (
             ArchiMateToolStage::RelationshipStart {
                 kind: ArchiMateRelationshipKind::Specialization,
+                stereotype: "".to_owned(),
             },
             ArchiMateToolStage::RelationshipEnd,
             PartialArchiMateElement::Relationship {
@@ -1065,7 +1079,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         .iter()
         .map(|e| {
             (
-                ArchiMateToolStage::RelationshipStart { kind: *e },
+                ArchiMateToolStage::RelationshipStart {
+                    kind: *e,
+                    stereotype: "".to_owned(),
+                },
                 e.as_str(),
                 None,
             )
@@ -1230,7 +1247,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
             node_view.write().refresh_buffers();
             node_view.into()
         }
-        ArchiMateToolStage::RelationshipStart { kind } => {
+        ArchiMateToolStage::RelationshipStart { kind, stereotype } => {
             let d1 = new_archimate_concept(
                 "dummy",
                 "",
@@ -1250,6 +1267,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
 
             let association_view = new_archimate_relationship(
                 *kind,
+                stereotype,
                 None,
                 (d1.0.into(), d1.1.into()),
                 (d2.0.into(), d2.1.into()),
@@ -1302,6 +1320,7 @@ pub enum ArchiMateToolStage {
     },
     RelationshipStart {
         kind: ArchiMateRelationshipKind,
+        stereotype: String,
     },
     RelationshipEnd,
     RelationshipAddEnding {
@@ -1557,6 +1576,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                     {
                         let edge_view = new_archimate_relationship(
                             ArchiMateRelationshipKind::AssociationUndirected,
+                            "",
                             None,
                             (source_model, source.clone().into()),
                             (target_model, element.clone()),
@@ -1591,7 +1611,9 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                 source,
                 dest: Some(dest),
                 ..
-            } if let ArchiMateToolStage::RelationshipStart { kind } = &self.initial_stage => {
+            } if let ArchiMateToolStage::RelationshipStart { kind, stereotype } =
+                &self.initial_stage =>
+            {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
                 if let (Some(source_view), Some(dest_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -1602,6 +1624,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
 
                     let association_view = new_archimate_relationship(
                         *kind,
+                        stereotype,
                         None,
                         (source.clone(), source_view),
                         (dest.clone(), dest_view),
@@ -3531,6 +3554,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
 
 fn new_archimate_relationship(
     kind: ArchiMateRelationshipKind,
+    stereotype: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (ERef<ArchiMateConcept>, ArchiMateElementView),
     target: (ERef<ArchiMateConcept>, ArchiMateElementView),
@@ -3538,6 +3562,7 @@ fn new_archimate_relationship(
     let model = ERef::new(ArchiMateRelationship::new(
         ModelUuid::now_v7(),
         kind,
+        stereotype.to_owned(),
         vec![ArchiMateRelationshipEnding {
             concept: source.0,
             multiplicity: Arc::new("".to_owned()),
@@ -3608,7 +3633,9 @@ struct ArchiMateRelationshipAdapterTemporaries {
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 
+    stereotype_in_guillemets: String,
     kind_buffer: ArchiMateRelationshipKind,
+    stereotype_buffer: String,
     junction_kind_buffer: ArchiMateJunctionKind,
     source_multiplicities_buffers: Vec<(ModelUuid, String)>,
     target_multiplicities_buffers: Vec<(ModelUuid, String)>,
@@ -3650,7 +3677,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 highlight,
             );
-            let shape = NHShape::Ellipse {
+            let junction_shape = NHShape::Ellipse {
                 position: center,
                 bounds_radius: radius,
             };
@@ -3666,7 +3693,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 .without_text();
             for e in sources {
                 let p = e.points.last().unwrap().1;
-                let fp = shape.center_intersect(p);
+                let fp = junction_shape.center_intersect(p);
                 ah_from_sources
                     .arrowhead_type
                     .draw_in(canvas, fp, p, c, highlight);
@@ -3681,10 +3708,19 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 .without_text();
             for e in targets {
                 let p = e.points.last().unwrap().1;
-                let fp = shape.center_intersect(p);
+                let fp = junction_shape.center_intersect(p);
                 ah_from_targets
                     .arrowhead_type
                     .draw_in(canvas, fp, p, c, highlight);
+            }
+            if !self.temporaries.stereotype_in_guillemets.is_empty() {
+                canvas.draw_text(
+                    junction_shape.bounding_box().center_top(),
+                    egui::Align2::CENTER_BOTTOM,
+                    &self.temporaries.stereotype_in_guillemets,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
             }
 
             canvas.draw_ellipse_proximity(
@@ -3695,6 +3731,16 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 canvas::MULTICONNECTION_HANDLE_PROXIMITY,
                 canvas::Highlight::NONE,
             );
+        } else {
+            if !self.temporaries.stereotype_in_guillemets.is_empty() {
+                canvas.draw_text(
+                    center,
+                    egui::Align2::CENTER_BOTTOM,
+                    &self.temporaries.stereotype_in_guillemets,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+            }
         }
         Ok(())
     }
@@ -3747,6 +3793,18 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                     }
                 }
             });
+
+        if ui
+            .labeled_text_edit_singleline("Stereotype:", &mut self.temporaries.stereotype_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                ArchiMatePropChange::StereotypeChange(Arc::new(
+                    self.temporaries.stereotype_buffer.clone(),
+                )),
+            ));
+        }
 
         let mut junction_kind_label = egui::RichText::new("Junction kind:");
         if !self.temporaries.is_junction {
@@ -3870,6 +3928,13 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                         ArchiMatePropChange::RelationshipKindChange(model.kind),
                     ));
                     model.kind = *kind;
+                }
+                ArchiMatePropChange::StereotypeChange(stereotype) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        ArchiMatePropChange::StereotypeChange(model.stereotype.clone()),
+                    ));
+                    model.stereotype = stereotype.clone();
                 }
                 ArchiMatePropChange::RelationshipJunctionKindChange(kind) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -4027,7 +4092,13 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
             self.temporaries.target_uuids.push(uuid);
         }
 
+        self.temporaries.stereotype_in_guillemets = if !model.stereotype.is_empty() {
+            format!("«{}»", model.stereotype)
+        } else {
+            String::new()
+        };
         self.temporaries.kind_buffer = model.kind;
+        self.temporaries.stereotype_buffer = (*model.stereotype).clone();
         self.temporaries.junction_kind_buffer = model.junction_kind;
         self.temporaries.source_multiplicities_buffers = model
             .sources
