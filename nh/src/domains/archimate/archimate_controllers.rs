@@ -3536,13 +3536,13 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         } else {
             old_model.deep_copy_clone_inner(model_uuid, m)
         };
-        let mut inner = HashMap::new();
+        let mut dev_null = HashMap::new();
         self.owned_views
-            .event_order_foreach(|v| v.deep_copy_clone(uuid_present, &mut inner, c, m));
+            .event_order_foreach(|v| v.deep_copy_clone(uuid_present, &mut dev_null, c, m));
         let owned_views = OrderedViews::new(
             self.owned_views
                 .iter_event_order_keys()
-                .flat_map(|e| inner.get(&e).cloned())
+                .flat_map(|e| c.get(&e).cloned())
                 .collect(),
         );
 
