@@ -7414,6 +7414,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -8248,6 +8249,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAd
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<

@@ -7710,6 +7710,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -8570,6 +8571,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityNoteLinkAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<

@@ -45,6 +45,15 @@ impl ArrowData {
             reading: None,
         }
     }
+    pub fn without_text(&self) -> Self {
+        Self {
+            line_type: self.line_type,
+            arrowhead_type: self.arrowhead_type,
+            multiplicity: None,
+            role: None,
+            reading: None,
+        }
+    }
 }
 
 pub fn init_points(
@@ -141,6 +150,7 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
 
     fn show_properties(
         &mut self,
+        gdc: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -620,7 +630,7 @@ where
             MULTICONNECTION_TARGET_BUCKET,
         );
 
-        self.adapter.show_properties(q, ui, commands)
+        self.adapter.show_properties(gdc, q, ui, commands)
     }
 
     fn draw_in(

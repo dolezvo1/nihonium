@@ -5007,6 +5007,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<

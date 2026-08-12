@@ -3974,6 +3974,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -4264,6 +4265,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -4466,6 +4468,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -4729,6 +4732,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -4976,6 +4980,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<

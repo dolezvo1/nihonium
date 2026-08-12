@@ -3631,6 +3631,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<

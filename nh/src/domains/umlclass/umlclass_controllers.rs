@@ -8167,6 +8167,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -8555,6 +8556,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -8870,6 +8872,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -9502,6 +9505,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -10463,6 +10467,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassN
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<

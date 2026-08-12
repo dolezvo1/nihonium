@@ -2738,6 +2738,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<

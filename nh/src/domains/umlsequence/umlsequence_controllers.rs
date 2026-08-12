@@ -9227,6 +9227,7 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceNoteLinkAdapter {
 
     fn show_properties(
         &mut self,
+        _gdc: &GlobalDrawingContext,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<

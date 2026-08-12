@@ -23,7 +23,7 @@ use crate::common::views::multiconnection_view::{
 use crate::domains::archimate::archimate_models::{
     ArchiMateConcept, ArchiMateConceptKind, ArchiMateConceptKindColorGroup,
     ArchiMateConceptKindShapeGroup, ArchiMateDiagram, ArchiMateElement, ArchiMateJunctionKind,
-    ArchiMateRelationship, ArchiMateRelationshipKind,
+    ArchiMateRelationship, ArchiMateRelationshipEnding, ArchiMateRelationshipKind,
 };
 use crate::{
     CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -64,6 +64,7 @@ pub enum ArchiMatePropChange {
     ConceptKindChange(ArchiMateConceptKind),
     RelationshipKindChange(ArchiMateRelationshipKind),
     RelationshipJunctionKindChange(ArchiMateJunctionKind),
+    RelationshipMultiplicityChange(bool, ModelUuid, Arc<String>),
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
@@ -112,6 +113,10 @@ impl TryMerge for ArchiMatePropChange {
             (Self::NameChange(_), newer @ Self::NameChange(_))
             | (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_))
             | (Self::CommentChange(_), newer @ Self::CommentChange(_)) => Some(newer.clone()),
+            (
+                Self::RelationshipMultiplicityChange(b1, m1, _),
+                newer @ Self::RelationshipMultiplicityChange(b2, m2, _),
+            ) if b1 == b2 && m1 == m2 => Some(newer.clone()),
             _ => None,
         }
     }
@@ -254,18 +259,18 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
                 let (Some(sv), Some(tv)) = (
                     m.sources
                         .iter()
-                        .map(|e| q.get_view_for(&e.read().uuid))
+                        .map(|e| q.get_view_for(&e.concept.read().uuid))
                         .collect(),
                     m.targets
                         .iter()
-                        .map(|e| q.get_view_for(&e.read().uuid))
+                        .map(|e| q.get_view_for(&e.concept.read().uuid))
                         .collect(),
                 ) else {
                     return Err(m
                         .sources
                         .iter()
-                        .map(|e| *e.read().uuid)
-                        .chain(m.targets.iter().map(|e| *e.read().uuid))
+                        .map(|e| *e.concept.read().uuid)
+                        .chain(m.targets.iter().map(|e| *e.concept.read().uuid))
                         .collect());
                 };
                 new_archimate_relationship_view(inner.clone(), None, sv, tv).into()
@@ -1483,8 +1488,16 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                     let concept_uuid = *c.read().uuid;
                     let r = relationship_model.read();
 
-                    if (*source && !r.sources.iter().any(|e| *e.read().uuid == concept_uuid))
-                        || (!source && !r.targets.iter().any(|e| *e.read().uuid == concept_uuid))
+                    if (*source
+                        && !r
+                            .sources
+                            .iter()
+                            .any(|e| *e.concept.read().uuid == concept_uuid))
+                        || (!source
+                            && !r
+                                .targets
+                                .iter()
+                                .any(|e| *e.concept.read().uuid == concept_uuid))
                     {
                         *new_model = Some(concept_uuid);
                     }
@@ -3251,8 +3264,14 @@ fn new_archimate_relationship(
     let model = ERef::new(ArchiMateRelationship::new(
         ModelUuid::now_v7(),
         kind,
-        vec![source.0],
-        vec![target.0],
+        vec![ArchiMateRelationshipEnding {
+            concept: source.0,
+            multiplicity: Arc::new("".to_owned()),
+        }],
+        vec![ArchiMateRelationshipEnding {
+            concept: target.0,
+            multiplicity: Arc::new("".to_owned()),
+        }],
     ));
     let view = new_archimate_relationship_view(
         model.clone(),
@@ -3272,8 +3291,8 @@ fn new_archimate_relationship_view(
     let m = model.read();
 
     let (sp, mp, tp) = multiconnection_view::init_points(
-        m.sources.iter().map(|e| *e.read().uuid),
-        *m.targets[0].read().uuid,
+        m.sources.iter().map(|e| *e.concept.read().uuid),
+        *m.targets[0].concept.read().uuid,
         targets[0].min_shape(),
         center_point,
     );
@@ -3317,6 +3336,8 @@ struct ArchiMateRelationshipAdapterTemporaries {
 
     kind_buffer: ArchiMateRelationshipKind,
     junction_kind_buffer: ArchiMateJunctionKind,
+    source_multiplicities_buffers: Vec<(ModelUuid, String)>,
+    target_multiplicities_buffers: Vec<(ModelUuid, String)>,
     is_junction: bool,
 }
 
@@ -3361,21 +3382,33 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
             };
             let c = (egui::Color32::BLACK, egui::Color32::WHITE);
 
-            let ah_from_sources = self.temporaries.arrow_data.iter().find(|e| e.0.0).unwrap();
+            let ah_from_sources = self
+                .temporaries
+                .arrow_data
+                .iter()
+                .find(|e| e.0.0)
+                .unwrap()
+                .1
+                .without_text();
             for e in sources {
                 let p = e.points.last().unwrap().1;
                 let fp = shape.center_intersect(p);
                 ah_from_sources
-                    .1
                     .arrowhead_type
                     .draw_in(canvas, fp, p, c, highlight);
             }
-            let ah_from_targets = self.temporaries.arrow_data.iter().find(|e| !e.0.0).unwrap();
+            let ah_from_targets = self
+                .temporaries
+                .arrow_data
+                .iter()
+                .find(|e| !e.0.0)
+                .unwrap()
+                .1
+                .without_text();
             for e in targets {
                 let p = e.points.last().unwrap().1;
                 let fp = shape.center_intersect(p);
                 ah_from_targets
-                    .1
                     .arrowhead_type
                     .draw_in(canvas, fp, p, c, highlight);
             }
@@ -3411,6 +3444,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
 
     fn show_properties(
         &mut self,
+        gdc: &GlobalDrawingContext,
         q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -3462,6 +3496,40 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                     }
                 }
             });
+
+        ui.label("Source multiplicities:");
+        for e in self.temporaries.source_multiplicities_buffers.iter_mut() {
+            if ui
+                .labeled_text_edit_singleline(&*gdc.model_labels.get(&e.0), &mut e.1)
+                .changed()
+            {
+                commands.push(InsensitiveCommand::PropertyChange(
+                    q.selected_views(),
+                    ArchiMatePropChange::RelationshipMultiplicityChange(
+                        false,
+                        e.0,
+                        e.1.clone().into(),
+                    ),
+                ));
+            }
+        }
+
+        ui.label("Targets multiplicities:");
+        for e in self.temporaries.target_multiplicities_buffers.iter_mut() {
+            if ui
+                .labeled_text_edit_singleline(&*gdc.model_labels.get(&e.0), &mut e.1)
+                .changed()
+            {
+                commands.push(InsensitiveCommand::PropertyChange(
+                    q.selected_views(),
+                    ArchiMatePropChange::RelationshipMultiplicityChange(
+                        true,
+                        e.0,
+                        e.1.clone().into(),
+                    ),
+                ));
+            }
+        }
 
         if ui.button("Add source").clicked() {
             return PropertiesStatus::ToolRequest(Some(NaiveArchiMateTool {
@@ -3531,6 +3599,39 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                         ArchiMatePropChange::RelationshipJunctionKindChange(model.junction_kind),
                     ));
                     model.junction_kind = *kind;
+                }
+                ArchiMatePropChange::RelationshipMultiplicityChange(b, m, multiplicity) => {
+                    if !b
+                        && let Some(e) = model
+                            .sources
+                            .iter_mut()
+                            .find(|e| *e.concept.read().uuid == *m)
+                    {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            ArchiMatePropChange::RelationshipMultiplicityChange(
+                                *b,
+                                *m,
+                                e.multiplicity.clone(),
+                            ),
+                        ));
+                        e.multiplicity = multiplicity.clone();
+                    } else if *b
+                        && let Some(e) = model
+                            .targets
+                            .iter_mut()
+                            .find(|e| *e.concept.read().uuid == *m)
+                    {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            ArchiMatePropChange::RelationshipMultiplicityChange(
+                                *b,
+                                *m,
+                                e.multiplicity.clone(),
+                            ),
+                        ));
+                        e.multiplicity = multiplicity.clone();
+                    }
                 }
                 _ => {}
             }
@@ -3620,22 +3721,46 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
             ),
         };
         for e in &model.sources {
-            let uuid = *e.read().uuid;
-            self.temporaries
-                .arrow_data
-                .insert((false, uuid), ArrowData::new_labelless(lt, sah));
+            let uuid = *e.concept.read().uuid;
+            self.temporaries.arrow_data.insert(
+                (false, uuid),
+                ArrowData {
+                    line_type: lt,
+                    arrowhead_type: sah,
+                    multiplicity: Some(e.multiplicity.clone()).filter(|e| !e.is_empty()),
+                    role: None,
+                    reading: None,
+                },
+            );
             self.temporaries.source_uuids.push(uuid);
         }
         for e in &model.targets {
-            let uuid = *e.read().uuid;
-            self.temporaries
-                .arrow_data
-                .insert((true, uuid), ArrowData::new_labelless(lt, tah));
+            let uuid = *e.concept.read().uuid;
+            self.temporaries.arrow_data.insert(
+                (true, uuid),
+                ArrowData {
+                    line_type: lt,
+                    arrowhead_type: tah,
+                    multiplicity: Some(e.multiplicity.clone()).filter(|e| !e.is_empty()),
+                    role: None,
+                    reading: None,
+                },
+            );
             self.temporaries.target_uuids.push(uuid);
         }
 
         self.temporaries.kind_buffer = model.kind;
         self.temporaries.junction_kind_buffer = model.junction_kind;
+        self.temporaries.source_multiplicities_buffers = model
+            .sources
+            .iter()
+            .map(|e| (*e.concept.read().uuid, (*e.multiplicity).clone()))
+            .collect();
+        self.temporaries.target_multiplicities_buffers = model
+            .targets
+            .iter()
+            .map(|e| (*e.concept.read().uuid, (*e.multiplicity).clone()))
+            .collect();
         self.temporaries.is_junction = model.sources.len() > 1 || model.targets.len() > 1;
     }
 

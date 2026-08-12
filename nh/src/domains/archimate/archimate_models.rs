@@ -160,10 +160,10 @@ pub fn transitive_closure(
                         && (r
                             .sources
                             .iter()
-                            .all(|e| when_deleting.contains(&e.read().uuid))
+                            .all(|e| when_deleting.contains(&e.concept.read().uuid))
                             || r.targets
                                 .iter()
-                                .all(|e| when_deleting.contains(&e.read().uuid)))
+                                .all(|e| when_deleting.contains(&e.concept.read().uuid)))
                     {
                         also_delete.insert(*r.uuid);
                     }
@@ -198,10 +198,10 @@ pub fn top_sort_info(m: &ArchiMateElement) -> ModelTopSortInfo {
             ArchiMateElement::Relationship(inner) => {
                 let r = inner.read();
                 for e in &r.sources {
-                    required_models.insert(*e.read().uuid);
+                    required_models.insert(*e.concept.read().uuid);
                 }
                 for e in &r.targets {
-                    required_models.insert(*e.read().uuid);
+                    required_models.insert(*e.concept.read().uuid);
                 }
             }
         }
@@ -372,12 +372,12 @@ impl DiagramModel for ArchiMateDiagram {
                     .read()
                     .sources
                     .iter()
-                    .any(|e| self.find_element(&e.read().uuid).is_none())
+                    .any(|e| self.find_element(&e.concept.read().uuid).is_none())
                     || inner
                         .read()
                         .targets
                         .iter()
-                        .any(|e| self.find_element(&e.read().uuid).is_none())
+                        .any(|e| self.find_element(&e.concept.read().uuid).is_none())
                 {
                     return Err(element);
                 }
@@ -922,6 +922,15 @@ impl ArchiMateRelationshipKind {
 }
 
 #[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+pub struct ArchiMateRelationshipEnding {
+    #[nh_context_serde(entity)]
+    pub concept: ERef<ArchiMateConcept>,
+    pub multiplicity: Arc<String>,
+}
+
+#[derive(
     nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
 )]
 #[nh_context_serde(is_entity)]
@@ -934,18 +943,18 @@ pub struct ArchiMateRelationship {
     pub junction_kind: ArchiMateJunctionKind,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub sources: Vec<ERef<ArchiMateConcept>>,
+    pub sources: Vec<ArchiMateRelationshipEnding>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub targets: Vec<ERef<ArchiMateConcept>>,
+    pub targets: Vec<ArchiMateRelationshipEnding>,
 }
 
 impl ArchiMateRelationship {
     pub fn new(
         uuid: ModelUuid,
         kind: ArchiMateRelationshipKind,
-        sources: Vec<ERef<ArchiMateConcept>>,
-        targets: Vec<ERef<ArchiMateConcept>>,
+        sources: Vec<ArchiMateRelationshipEnding>,
+        targets: Vec<ArchiMateRelationshipEnding>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -973,15 +982,15 @@ impl ArchiMateRelationship {
     }
     pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, ArchiMateElement>) {
         for e in self.sources.iter_mut() {
-            let sid = *e.read().uuid;
+            let sid = *e.concept.read().uuid;
             if let Some(ArchiMateElement::Concept(s)) = all_models.get(&sid) {
-                *e = s.clone();
+                e.concept = s.clone();
             }
         }
         for e in self.targets.iter_mut() {
-            let tid = *e.read().uuid;
+            let tid = *e.concept.read().uuid;
             if let Some(ArchiMateElement::Concept(t)) = all_models.get(&tid) {
-                *e = t.clone();
+                e.concept = t.clone();
             }
         }
     }
@@ -1000,14 +1009,26 @@ impl ArchiMateRelationship {
                 let pos = position
                     .map(|e| e.try_into().unwrap())
                     .unwrap_or(self.sources.len());
-                self.sources.insert(pos, c);
+                self.sources.insert(
+                    pos,
+                    ArchiMateRelationshipEnding {
+                        concept: c,
+                        multiplicity: Arc::new("".to_owned()),
+                    },
+                );
                 Ok(pos.try_into().unwrap())
             }
             MULTICONNECTION_TARGET_BUCKET if let ArchiMateElement::Concept(c) = element => {
                 let pos = position
                     .map(|e| e.try_into().unwrap())
                     .unwrap_or(self.targets.len());
-                self.targets.insert(pos, c);
+                self.targets.insert(
+                    pos,
+                    ArchiMateRelationshipEnding {
+                        concept: c,
+                        multiplicity: Arc::new("".to_owned()),
+                    },
+                );
                 Ok(pos.try_into().unwrap())
             }
             _ => Err(element),
@@ -1016,7 +1037,7 @@ impl ArchiMateRelationship {
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         if self.sources.len() > 1 {
             for (idx, e) in self.sources.iter().enumerate() {
-                if *e.read().uuid == *uuid {
+                if *e.concept.read().uuid == *uuid {
                     self.sources.remove(idx);
                     return Some((MULTICONNECTION_SOURCE_BUCKET, idx.try_into().unwrap()));
                 }
@@ -1024,7 +1045,7 @@ impl ArchiMateRelationship {
         }
         if self.targets.len() > 1 {
             for (idx, e) in self.targets.iter().enumerate() {
-                if *e.read().uuid == *uuid {
+                if *e.concept.read().uuid == *uuid {
                     self.targets.remove(idx);
                     return Some((MULTICONNECTION_TARGET_BUCKET, idx.try_into().unwrap()));
                 }
