@@ -228,70 +228,70 @@ where
             .event_order_find_mut(|v| v.show_properties(gdc, q, ui, commands).non_default());
 
         if let Some(child) = child {
-            child
+            return child;
         } else if self.highlight.selected {
-            ui.label("Model properties");
+            return PropertiesStatus::NotShown;
+        }
 
-            self.adapter.show_model_properties(q, ui, commands);
+        ui.label("Model properties");
 
-            ui.add_space(super::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
-            ui.label("View properties");
+        self.adapter.show_model_properties(q, ui, commands);
 
-            egui::Grid::new("size_grid").show(ui, |ui| {
-                {
-                    let egui::Pos2 { mut x, mut y } = self.bounds_rect.left_top();
+        ui.add_space(super::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
+        ui.label("View properties");
 
-                    ui.label("x");
-                    if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MovePositional(
-                            q.selected_views(),
-                            egui::Vec2::new(x - self.bounds_rect.left(), 0.0),
-                        ));
-                    }
-                    ui.label("y");
-                    if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MovePositional(
-                            q.selected_views(),
-                            egui::Vec2::new(0.0, y - self.bounds_rect.top()),
-                        ));
-                    }
-                    ui.end_row();
+        egui::Grid::new("size_grid").show(ui, |ui| {
+            {
+                let egui::Pos2 { mut x, mut y } = self.bounds_rect.left_top();
+
+                ui.label("x");
+                if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        egui::Vec2::new(x - self.bounds_rect.left(), 0.0),
+                    ));
                 }
-
-                {
-                    let egui::Vec2 { mut x, mut y } = self.bounds_rect.size();
-
-                    ui.label("width");
-                    if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeElementsBy(
-                            q.selected_views(),
-                            egui::Align2::LEFT_CENTER,
-                            egui::Vec2::new(x - self.bounds_rect.width(), 0.0),
-                        ));
-                    }
-                    ui.label("height");
-                    if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeElementsBy(
-                            q.selected_views(),
-                            egui::Align2::CENTER_TOP,
-                            egui::Vec2::new(0.0, y - self.bounds_rect.height()),
-                        ));
-                    }
-                    ui.end_row();
+                ui.label("y");
+                if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        egui::Vec2::new(0.0, y - self.bounds_rect.top()),
+                    ));
                 }
-            });
-
-            if let Some(new_color) = self.adapter.show_color_property(gdc, ui) {
-                commands.push(InsensitiveCommand::PropertyChange(
-                    q.selected_views(),
-                    new_color.into(),
-                ));
+                ui.end_row();
             }
 
-            PropertiesStatus::Shown
-        } else {
-            PropertiesStatus::NotShown
+            {
+                let egui::Vec2 { mut x, mut y } = self.bounds_rect.size();
+
+                ui.label("width");
+                if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                    commands.push(InsensitiveCommand::ResizeElementsBy(
+                        q.selected_views(),
+                        egui::Align2::LEFT_CENTER,
+                        egui::Vec2::new(x - self.bounds_rect.width(), 0.0),
+                    ));
+                }
+                ui.label("height");
+                if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                    commands.push(InsensitiveCommand::ResizeElementsBy(
+                        q.selected_views(),
+                        egui::Align2::CENTER_TOP,
+                        egui::Vec2::new(0.0, y - self.bounds_rect.height()),
+                    ));
+                }
+                ui.end_row();
+            }
+        });
+
+        if let Some(new_color) = self.adapter.show_color_property(gdc, ui) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                new_color.into(),
+            ));
         }
+
+        PropertiesStatus::Shown
     }
     fn draw_in(
         &mut self,
