@@ -955,6 +955,7 @@ pub struct ArchiMateRelationship {
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: ArchiMateRelationshipKind,
+    pub name: Arc<String>,
     pub stereotype: Arc<String>,
     #[full_text_searchable(skip)]
     pub junction_kind: ArchiMateJunctionKind,
@@ -970,6 +971,7 @@ impl ArchiMateRelationship {
     pub fn new(
         uuid: ModelUuid,
         kind: ArchiMateRelationshipKind,
+        name: String,
         stereotype: String,
         sources: Vec<ArchiMateRelationshipEnding>,
         targets: Vec<ArchiMateRelationshipEnding>,
@@ -977,6 +979,7 @@ impl ArchiMateRelationship {
         Self {
             uuid: Arc::new(uuid),
             kind,
+            name: Arc::new(name),
             stereotype: Arc::new(stereotype),
             junction_kind: ArchiMateJunctionKind::AndJunction,
             sources,
@@ -991,6 +994,7 @@ impl ArchiMateRelationship {
         let new_model = ERef::new(Self {
             uuid: new_uuid.into(),
             kind: self.kind,
+            name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             junction_kind: self.junction_kind,
             sources: self.sources.clone(),
