@@ -2495,19 +2495,45 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                 }
             }
             ArchiMateConceptKind::Principle => {
-                canvas.draw_rectangle(
-                    icon_rect.shrink2((3.5, 3.5).into()),
-                    egui::CornerRadius::ZERO,
+                let slice = icon_rect.width() / 5.0;
+                let slice2 = slice / 4.0;
+                canvas.draw_polygon(
+                    [
+                        icon_rect.left_top() + (slice, 0.0).into(),
+                        icon_rect.right_top() + (-slice, 0.0).into(),
+                        icon_rect.right_top() + (-slice2, slice2).into(),
+                        icon_rect.right_top() + (0.0, slice).into(),
+                        icon_rect.right_bottom() + (0.0, -slice).into(),
+                        icon_rect.right_bottom() + (-slice2, -slice2).into(),
+                        icon_rect.right_bottom() + (-slice, 0.0).into(),
+                        icon_rect.left_bottom() + (slice, 0.0).into(),
+                        icon_rect.left_bottom() + (slice2, -slice2).into(),
+                        icon_rect.left_bottom() + (0.0, -slice).into(),
+                        icon_rect.left_top() + (0.0, slice).into(),
+                        icon_rect.left_top() + (slice2, slice2).into(),
+                    ]
+                    .to_vec(),
                     background_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                canvas.draw_text(
-                    icon_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "!",
-                    canvas::CLASS_MIDDLE_FONT_SIZE,
+
+                canvas.draw_rectangle(
+                    egui::Rect::from_center_size(
+                        icon_rect.center_top() + (0.0, 1.75 * slice).into(),
+                        (slice, 2.5 * slice).into(),
+                    ),
+                    egui::CornerRadius::ZERO,
                     egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    icon_rect.center_bottom() + (0.0, -slice).into(),
+                    egui::Vec2::splat(slice / 2.0),
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
                 );
             }
             ArchiMateConceptKind::Requirement => {
@@ -2874,16 +2900,34 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                 }
             }
             ArchiMateConceptKind::Equipment => {
-                for (offset, radii) in [((-3.0, 3.0), [7.0, 5.0]), ((5.0, -5.0), [5.0, 3.0])] {
-                    for radius in radii {
-                        canvas.draw_ellipse(
-                            icon_rect.center() + offset.into(),
-                            egui::Vec2::splat(radius),
+                for (offset, radius, teeth) in [((-3.0, 3.0), 4.0, 12), ((5.0, -5.0), 2.5, 8)] {
+                    let c = icon_rect.center() + offset.into();
+                    let (w2, h2) = (2.5, 1.5 / 2.0);
+
+                    for i in 0..teeth {
+                        let a = 2.0 * std::f32::consts::PI * i as f32 / teeth as f32;
+                        let dir = egui::Vec2::new(a.cos(), a.sin());
+                        let perp = egui::Vec2::new(-dir.y, dir.x);
+                        let c = c + (radius + h2) * egui::Vec2::new(a.cos(), a.sin());
+
+                        canvas.draw_polygon(
+                            [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
+                                .map(|(x, y)| (x * w2, y * h2))
+                                .map(|corner| c + corner.0 * dir + corner.1 * perp)
+                                .to_vec(),
                             background_color,
                             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                             canvas::Highlight::NONE,
                         );
                     }
+
+                    canvas.draw_ellipse(
+                        icon_rect.center() + offset.into(),
+                        egui::Vec2::splat(radius),
+                        background_color,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
                 }
             }
             ArchiMateConceptKind::Facility => {
