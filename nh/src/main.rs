@@ -3399,20 +3399,17 @@ impl eframe::App for NHApp {
             self.context.last_focused_diagram = Some(*uuid);
         }
 
-        // Set window title depending on the project path
+        // Set window title
         if self.context.should_change_title {
-            let modified = if self.context.has_unsaved_changes {
-                "*"
-            } else {
-                ""
-            };
-            ui.send_viewport_cmd(egui::ViewportCommand::Title(
-                if let Some(project_path) = &self.context.project_path {
-                    format!("Nihonium{} - {}", modified, project_path.to_string_lossy())
-                } else {
-                    format!("Nihonium{}", modified)
-                },
-            ));
+            let mut new_title = "Nihonium".to_owned();
+            if self.context.has_unsaved_changes {
+                new_title.push('*');
+            }
+            if let Some(project_path) = &self.context.project_path {
+                new_title.push_str(" - ");
+                new_title.push_str(&project_path.to_string_lossy());
+            }
+            ui.send_viewport_cmd(egui::ViewportCommand::Title(new_title));
             self.context.should_change_title = false;
         }
 
