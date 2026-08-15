@@ -31,6 +31,7 @@ use crate::common::canvas::{HeaderMode, Highlight, MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{
     ColorBundle, ColorHierarchyNode, DeleteKind, DiagramCommand, DiagramController, LabelProvider,
     ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT,
+    UnintendedDeleteBehavior,
 };
 use crate::common::diagram_settings::{DiagramSettings, ShowSettingsResult};
 use crate::common::eref::ERef;
@@ -371,6 +372,7 @@ struct NHContext {
         f32,
     )>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
+    unintended_deletes_data: Option<(usize, usize)>,
     shortcut_being_set: Option<SetShortcut>,
     selected_global_color: Option<uuid::Uuid>,
 
@@ -454,7 +456,7 @@ impl NHContext {
             egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::I),
         );
         shortcuts.insert(
-            DiagramCommand::CutSelectedElements.into(),
+            DiagramCommand::CutSelectedElements(None).into(),
             egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X),
         );
         shortcuts.insert(
@@ -466,7 +468,7 @@ impl NHContext {
             egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V),
         );
         shortcuts.insert(
-            DiagramCommand::DeleteSelectedElements(None).into(),
+            DiagramCommand::DeleteSelectedElements(None, None).into(),
             egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
         );
         shortcuts.insert(
@@ -2549,6 +2551,54 @@ impl NHContext {
                         );
                     }
                 });
+            fn delete_behavior_name(e: &Option<UnintendedDeleteBehavior>) -> &str {
+                match e {
+                    None => "Ask",
+                    Some(UnintendedDeleteBehavior::Cancel) => "Cancel",
+                    Some(UnintendedDeleteBehavior::CancelIfUnintendedModels) => {
+                        "Cancel if unintended models would be deleted"
+                    }
+                    Some(UnintendedDeleteBehavior::DeleteAll) => "Delete All",
+                }
+            }
+            ui.label("Unintended delete behavior:");
+            egui::ComboBox::from_id_salt("unintended delete behavior")
+                .selected_text(delete_behavior_name(
+                    &modifier_settings.unintended_deletes_behavior,
+                ))
+                .show_ui(ui, |ui| {
+                    for e in [
+                        None,
+                        Some(UnintendedDeleteBehavior::Cancel),
+                        Some(UnintendedDeleteBehavior::CancelIfUnintendedModels),
+                        Some(UnintendedDeleteBehavior::DeleteAll),
+                    ] {
+                        ui.selectable_value(
+                            &mut modifier_settings.unintended_deletes_behavior,
+                            e,
+                            delete_behavior_name(&e),
+                        );
+                    }
+                });
+            ui.label("Unintended delete on cut behavior:");
+            egui::ComboBox::from_id_salt("unintended delete on cut behavior")
+                .selected_text(delete_behavior_name(
+                    &modifier_settings.unintended_cut_deletes_behavior,
+                ))
+                .show_ui(ui, |ui| {
+                    for e in [
+                        None,
+                        Some(UnintendedDeleteBehavior::Cancel),
+                        Some(UnintendedDeleteBehavior::CancelIfUnintendedModels),
+                        Some(UnintendedDeleteBehavior::DeleteAll),
+                    ] {
+                        ui.selectable_value(
+                            &mut modifier_settings.unintended_cut_deletes_behavior,
+                            e,
+                            delete_behavior_name(&e),
+                        );
+                    }
+                });
             egui::Grid::new("modifiers grid").show(ui, |ui| {
                 ui.label("Enable");
                 ui.label("Modifiers");
@@ -3091,6 +3141,7 @@ impl NHApp {
             last_focused_diagram: None,
             svg_export_menu: None,
             confirm_modal_reason: None,
+            unintended_deletes_data: None,
             shortcut_being_set: None,
             selected_global_color: None,
 
@@ -3436,6 +3487,38 @@ impl eframe::App for NHApp {
             }};
         }
 
+        macro_rules! check_cut {
+            ($u:expr, $command:expr, $commands:expr) => {
+                let u = $u.or(self
+                    .context
+                    .modifier_settings
+                    .unintended_cut_deletes_behavior);
+
+                let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() else {
+                    continue;
+                };
+                let Some(ac) = self.context.diagram_controllers.get(uuid) else {
+                    continue;
+                };
+
+                let (m_no, v_no) = ac
+                    .read()
+                    .calculate_unselected_deletes(uuid, DeleteKind::DeleteAll);
+                if u.is_none() && (m_no > 0 || v_no > 0) {
+                    self.context.unintended_deletes_data = Some((m_no, v_no));
+                    self.context.confirm_modal_reason =
+                        Some(DiagramCommand::CutSelectedElements(None).into());
+                } else if (m_no == 0 && m_no == 0)
+                    || u.is_some_and(|e| {
+                        e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m_no == 0
+                    })
+                    || u.is_some_and(|e| e == UnintendedDeleteBehavior::DeleteAll)
+                {
+                    $commands.push($command.into())
+                }
+            };
+        }
+
         // Show ui
         egui::Panel::top("egui_dock::MenuBar").show(ui, |ui| {
             // Check diagram-handled shortcuts
@@ -3452,17 +3535,30 @@ impl eframe::App for NHApp {
                                 self.tree.find_active_focused(),
                                 Some((_, NHTab::Diagram { .. }))
                             ) {
-                                commands.push(
-                                    SimpleProjectCommand::from(match e {
-                                        egui::Event::Cut => DiagramCommand::CutSelectedElements,
-                                        egui::Event::Copy => DiagramCommand::CopySelectedElements,
-                                        egui::Event::Paste(_) => {
-                                            DiagramCommand::PasteClipboardElements(None, None)
-                                        }
-                                        _ => unreachable!(),
-                                    })
-                                    .into(),
-                                )
+                                match e {
+                                    egui::Event::Cut => {
+                                        check_cut!(
+                                            None,
+                                            SimpleProjectCommand::from(
+                                                DiagramCommand::CutSelectedElements(None)
+                                            ),
+                                            commands
+                                        );
+                                    }
+                                    egui::Event::Copy | egui::Event::Paste(_) => commands.push(
+                                        SimpleProjectCommand::from(match e {
+                                            egui::Event::Copy => {
+                                                DiagramCommand::CopySelectedElements
+                                            }
+                                            egui::Event::Paste(_) => {
+                                                DiagramCommand::PasteClipboardElements(None, None)
+                                            }
+                                            _ => unreachable!(),
+                                        })
+                                        .into(),
+                                    ),
+                                    _ => unreachable!(),
+                                }
                             }
                         }
                         egui::Event::Key {
@@ -3525,10 +3621,12 @@ impl eframe::App for NHApp {
                                         match dc {
                                             DiagramCommand::DropRedoStackAndLastChangeFlag
                                             | DiagramCommand::SetLastChangeFlag => unreachable!(),
+                                            DiagramCommand::CutSelectedElements(u) => {
+                                                check_cut!(u, e, commands);
+                                            }
                                             DiagramCommand::UndoImmediate
                                             | DiagramCommand::RedoImmediate
-                                            | DiagramCommand::DeleteSelectedElements(_)
-                                            | DiagramCommand::CutSelectedElements
+                                            | DiagramCommand::DeleteSelectedElements(..)
                                             | DiagramCommand::CopySelectedElements
                                             | DiagramCommand::PasteClipboardElements(..) => {
                                                 if matches!(
@@ -3673,7 +3771,7 @@ impl eframe::App for NHApp {
                     button!(
                         ui,
                         "nh-edit-cut",
-                        SimpleProjectCommand::from(DiagramCommand::CutSelectedElements)
+                        SimpleProjectCommand::from(DiagramCommand::CutSelectedElements(None))
                     );
                     button!(
                         ui,
@@ -3695,21 +3793,24 @@ impl eframe::App for NHApp {
                             ui,
                             "nh-generic-deletemodel-view",
                             SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
-                                Some(DeleteKind::DeleteView)
+                                Some(DeleteKind::DeleteView),
+                                None,
                             ))
                         );
                         button!(
                             ui,
                             "nh-generic-deletemodel-modelif",
                             SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
-                                Some(DeleteKind::DeleteModelIfOnlyView)
+                                Some(DeleteKind::DeleteModelIfOnlyView),
+                                None,
                             ))
                         );
                         button!(
                             ui,
                             "nh-generic-deletemodel-all",
                             SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
-                                Some(DeleteKind::DeleteAll)
+                                Some(DeleteKind::DeleteAll),
+                                None,
                             ))
                         );
                     });
@@ -4131,80 +4232,181 @@ impl eframe::App for NHApp {
         }
 
         if let Some(confirm_reason) = self.context.confirm_modal_reason {
-            egui::Modal::new("Confirm Modal Window".into()).show(ui.ctx(), |ui| {
-                if let SimpleProjectCommand::FocusedDiagramCommand(
-                    DiagramCommand::DeleteSelectedElements(k),
-                ) = confirm_reason
-                {
-                    ui.label(translate!("nh-generic-deletemodel-title"));
+            macro_rules! unselected_deletes {
+                ($ui:expr, $u:expr, $m:expr, $v:expr, $cmd:expr, $dont_ask_again_default:expr, $dont_ask_again_target:expr) => {
+                    $ui.label(format!("This operation would also delete other (unselected) elements ({} models and {} views). How would you like to continue?", $m, $v));
 
-                    let mut dont_ask_again = k.is_some();
-                    if ui
+                    let mut dont_ask_again = $u.is_some();
+                    if $ui
                         .checkbox(&mut dont_ask_again, translate!("nh-generic-dontaskagain"))
                         .changed()
                     {
-                        self.context.confirm_modal_reason = Some(
-                            DiagramCommand::DeleteSelectedElements(match dont_ask_again {
-                                true => Some(Default::default()),
-                                false => None,
-                            })
-                            .into(),
-                        );
+                        self.context.confirm_modal_reason = Some($dont_ask_again_default(dont_ask_again));
                     }
 
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button(translate!("nh-generic-deletemodel-view"))
-                            .clicked()
-                        {
+                    $ui.horizontal(|ui| {
+                        if ui.button("Delete All").clicked() {
                             commands.push(
-                                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
-                                    Some(DeleteKind::DeleteView),
-                                ))
-                                .into(),
+                                SimpleProjectCommand::from($cmd).into(),
                             );
-                            if k.is_some() {
-                                self.context.modifier_settings.default_delete_kind =
-                                    Some(DeleteKind::DeleteView);
+                            if $u.is_some() {
+                                $dont_ask_again_target = Some(UnintendedDeleteBehavior::DeleteAll);
                             }
                             self.context.confirm_modal_reason = None;
-                        }
-                        if ui
-                            .button(translate!("nh-generic-deletemodel-modelif"))
-                            .clicked()
-                        {
-                            commands.push(
-                                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
-                                    Some(DeleteKind::DeleteModelIfOnlyView),
-                                ))
-                                .into(),
-                            );
-                            if k.is_some() {
-                                self.context.modifier_settings.default_delete_kind =
-                                    Some(DeleteKind::DeleteModelIfOnlyView);
-                            }
-                            self.context.confirm_modal_reason = None;
-                        }
-                        if ui
-                            .button(translate!("nh-generic-deletemodel-all"))
-                            .clicked()
-                        {
-                            commands.push(
-                                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
-                                    Some(DeleteKind::DeleteAll),
-                                ))
-                                .into(),
-                            );
-                            if k.is_some() {
-                                self.context.modifier_settings.default_delete_kind =
-                                    Some(DeleteKind::DeleteAll);
-                            }
-                            self.context.confirm_modal_reason = None;
+                            self.context.unintended_deletes_data = None;
                         }
                         if ui.button(translate!("nh-generic-cancel")).clicked() {
                             self.context.confirm_modal_reason = None;
+                            self.context.unintended_deletes_data = None;
                         }
                     });
+                };
+            }
+
+            egui::Modal::new("Confirm Modal Window".into()).show(ui.ctx(), |ui| {
+                if let SimpleProjectCommand::FocusedDiagramCommand(
+                    DiagramCommand::DeleteSelectedElements(k, u),
+                ) = confirm_reason
+                {
+                    match self.context.unintended_deletes_data {
+                        None => {
+                            ui.label(translate!("nh-generic-deletemodel-title"));
+
+                            let mut dont_ask_again = k.is_some();
+                            if ui
+                                .checkbox(
+                                    &mut dont_ask_again,
+                                    translate!("nh-generic-dontaskagain"),
+                                )
+                                .changed()
+                            {
+                                self.context.confirm_modal_reason = Some(
+                                    DiagramCommand::DeleteSelectedElements(
+                                        match dont_ask_again {
+                                            true => Some(Default::default()),
+                                            false => None,
+                                        },
+                                        u,
+                                    )
+                                    .into(),
+                                );
+                            }
+
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .button(translate!("nh-generic-deletemodel-view"))
+                                    .clicked()
+                                {
+                                    commands.push(
+                                        SimpleProjectCommand::from(
+                                            DiagramCommand::DeleteSelectedElements(
+                                                Some(DeleteKind::DeleteView),
+                                                u,
+                                            ),
+                                        )
+                                        .into(),
+                                    );
+                                    if k.is_some() {
+                                        self.context.modifier_settings.default_delete_kind =
+                                            Some(DeleteKind::DeleteView);
+                                    }
+                                    self.context.confirm_modal_reason = None;
+                                }
+                                if ui
+                                    .button(translate!("nh-generic-deletemodel-modelif"))
+                                    .clicked()
+                                {
+                                    commands.push(
+                                        SimpleProjectCommand::from(
+                                            DiagramCommand::DeleteSelectedElements(
+                                                Some(DeleteKind::DeleteModelIfOnlyView),
+                                                u,
+                                            ),
+                                        )
+                                        .into(),
+                                    );
+                                    if k.is_some() {
+                                        self.context.modifier_settings.default_delete_kind =
+                                            Some(DeleteKind::DeleteModelIfOnlyView);
+                                    }
+                                    self.context.confirm_modal_reason = None;
+                                }
+                                if ui
+                                    .button(translate!("nh-generic-deletemodel-all"))
+                                    .clicked()
+                                {
+                                    commands.push(
+                                        SimpleProjectCommand::from(
+                                            DiagramCommand::DeleteSelectedElements(
+                                                Some(DeleteKind::DeleteAll),
+                                                u,
+                                            ),
+                                        )
+                                        .into(),
+                                    );
+                                    if k.is_some() {
+                                        self.context.modifier_settings.default_delete_kind =
+                                            Some(DeleteKind::DeleteAll);
+                                    }
+                                    self.context.confirm_modal_reason = None;
+                                }
+                                if ui.button(translate!("nh-generic-cancel")).clicked() {
+                                    self.context.confirm_modal_reason = None;
+                                }
+                            });
+                        }
+                        Some((m, v)) => {
+                            let cmd = DiagramCommand::DeleteSelectedElements(
+                                k,
+                                Some(UnintendedDeleteBehavior::DeleteAll),
+                            );
+                            let daad = |daa| {
+                                DiagramCommand::DeleteSelectedElements(
+                                    k,
+                                    match daa {
+                                        true => Some(Default::default()),
+                                        false => None,
+                                    },
+                                )
+                                .into()
+                            };
+                            unselected_deletes!(
+                                ui,
+                                u,
+                                m,
+                                v,
+                                cmd,
+                                daad,
+                                self.context.modifier_settings.unintended_deletes_behavior
+                            );
+                        }
+                    }
+                } else if let SimpleProjectCommand::FocusedDiagramCommand(
+                    DiagramCommand::CutSelectedElements(u),
+                ) = confirm_reason
+                    && let Some((m, v)) = self.context.unintended_deletes_data
+                {
+                    let cmd = DiagramCommand::CutSelectedElements(Some(
+                        UnintendedDeleteBehavior::DeleteAll,
+                    ));
+                    let daad = |daa| {
+                        DiagramCommand::CutSelectedElements(match daa {
+                            true => Some(Default::default()),
+                            false => None,
+                        })
+                        .into()
+                    };
+                    unselected_deletes!(
+                        ui,
+                        u,
+                        m,
+                        v,
+                        cmd,
+                        daad,
+                        self.context
+                            .modifier_settings
+                            .unintended_cut_deletes_behavior
+                    );
                 } else {
                     ui.label(translate!("nh-generic-unsavedchanges-warning"));
 
@@ -4288,22 +4490,58 @@ impl eframe::App for NHApp {
         for c in commands {
             match c {
                 ProjectCommand::SimpleProjectCommand(spc) => match spc {
-                    SimpleProjectCommand::FocusedDiagramCommand(dc) => match dc {
-                        DiagramCommand::UndoImmediate => self.undo_immediate(),
-                        DiagramCommand::RedoImmediate => self.redo_immediate(),
-                        DiagramCommand::DeleteSelectedElements(k) => {
-                            match k.or(self.context.modifier_settings.default_delete_kind) {
-                                None => {
-                                    self.context.confirm_modal_reason =
-                                        Some(DiagramCommand::DeleteSelectedElements(None).into());
+                    SimpleProjectCommand::FocusedDiagramCommand(dc) => {
+                        match dc {
+                            DiagramCommand::UndoImmediate => self.undo_immediate(),
+                            DiagramCommand::RedoImmediate => self.redo_immediate(),
+                            DiagramCommand::DeleteSelectedElements(k, u) => {
+                                match (
+                                    k.or(self.context.modifier_settings.default_delete_kind),
+                                    u.or(self
+                                        .context
+                                        .modifier_settings
+                                        .unintended_deletes_behavior),
+                                ) {
+                                    (None, u) => {
+                                        self.context.confirm_modal_reason = Some(
+                                            DiagramCommand::DeleteSelectedElements(None, u).into(),
+                                        );
+                                    }
+                                    (otherwise, u) => {
+                                        let Some((_, NHTab::Diagram { uuid })) =
+                                            self.tree.find_active_focused()
+                                        else {
+                                            continue;
+                                        };
+                                        let Some(ac) = self.context.diagram_controllers.get(uuid)
+                                        else {
+                                            continue;
+                                        };
+
+                                        let (m_no, v_no) = ac.read().calculate_unselected_deletes(
+                                            uuid,
+                                            otherwise.unwrap_or_default(),
+                                        );
+                                        if u.is_none() && (m_no > 0 || v_no > 0) {
+                                        self.context.unintended_deletes_data = Some((m_no, v_no));
+                                        self.context.confirm_modal_reason =
+                                            Some(DiagramCommand::DeleteSelectedElements(otherwise, None).into());
+                                    } else if (m_no == 0 && m_no == 0)
+                                        || u.is_some_and(|e| e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m_no == 0)
+                                        || u.is_some_and(|e| e == UnintendedDeleteBehavior::DeleteAll) {
+                                        ac.write().apply_diagram_command(
+                                            uuid,
+                                            DiagramCommand::DeleteSelectedElements(otherwise, u),
+                                            &mut self.context.clipboard,
+                                            &mut self.context.affected_models,
+                                        );
+                                    }
+                                    }
                                 }
-                                otherwise => send_to_focused_diagram!(
-                                    DiagramCommand::DeleteSelectedElements(otherwise)
-                                ),
                             }
+                            dc => send_to_focused_diagram!(dc),
                         }
-                        dc => send_to_focused_diagram!(dc),
-                    },
+                    }
                     SimpleProjectCommand::SpecificDiagramCommand(v, dc) => {
                         send_to_diagram!(&v, dc);
                     }

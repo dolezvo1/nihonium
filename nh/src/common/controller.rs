@@ -204,8 +204,8 @@ pub enum DiagramCommand {
     UndoImmediate,
     RedoImmediate,
     InvertSelection,
-    DeleteSelectedElements(Option<DeleteKind>),
-    CutSelectedElements,
+    DeleteSelectedElements(Option<DeleteKind>, Option<UnintendedDeleteBehavior>),
+    CutSelectedElements(Option<UnintendedDeleteBehavior>),
     CopySelectedElements,
     PasteClipboardElements(Option<ModelUuid>, Option<(i64, i64)>),
     ArrangeSelected(Arrangement),
@@ -1058,6 +1058,12 @@ pub trait DiagramController: Any + NHContextSerialize {
         clipboard: &mut Vec<Box<dyn Any>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
+    /// Find the numbers of unselected (i.e. "unintended") elements that would also get deleted if all selected elements were deleted
+    fn calculate_unselected_deletes(
+        &self,
+        uuid: &ViewUuid,
+        delete_kind: DeleteKind,
+    ) -> (usize, usize);
 
     fn undo_immediate(
         &mut self,
@@ -1109,9 +1115,21 @@ pub enum DeleteKind {
     DeleteAll,
 }
 
+#[derive(
+    Clone, Copy, Default, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize,
+)]
+pub enum UnintendedDeleteBehavior {
+    #[default]
+    Cancel,
+    CancelIfUnintendedModels,
+    DeleteAll,
+}
+
 #[derive(Clone, Copy)]
 pub struct ModifierSettings {
     pub default_delete_kind: Option<DeleteKind>,
+    pub unintended_deletes_behavior: Option<UnintendedDeleteBehavior>,
+    pub unintended_cut_deletes_behavior: Option<UnintendedDeleteBehavior>,
     pub delete_view_modifier: Option<ModifierKeys>,
     pub delete_model_if_modifier: Option<ModifierKeys>,
     pub delete_all_modifier: Option<ModifierKeys>,
@@ -1145,6 +1163,8 @@ impl Default for ModifierSettings {
     fn default() -> Self {
         Self {
             default_delete_kind: None,
+            unintended_deletes_behavior: None,
+            unintended_cut_deletes_behavior: None,
             delete_view_modifier: None,
             delete_model_if_modifier: None,
             delete_all_modifier: Some(ModifierKeys::SHIFT),
@@ -2112,7 +2132,7 @@ where
                                 true,
                                 Highlight::SELECTED
                             ));
-                            push_dia!(DiagramCommand::CutSelectedElements);
+                            push_dia!(DiagramCommand::CutSelectedElements(None));
                             ui.close();
                         }
 
@@ -2505,6 +2525,40 @@ where
             .write()
             .diagram_command_to_sensitives(command, clipboard);
         self.apply_commands(uuid, commands, true, affected_models);
+    }
+    fn calculate_unselected_deletes(
+        &self,
+        uuid: &ViewUuid,
+        delete_kind: DeleteKind,
+    ) -> (usize, usize) {
+        let collect_deleted_views = |cmds: &Vec<_>| {
+            let mut deleted_views = HashSet::<ViewUuid>::new();
+            for c in cmds.iter() {
+                if let InsensitiveCommand::DeleteSpecificElements(hash_set, _delete_kind) = c {
+                    deleted_views.extend(hash_set.iter());
+                }
+            }
+            let mut deleted_models = HashSet::new();
+            self.views
+                .draw_order_foreach(|e| e.extend_models_for(&deleted_views, &mut deleted_models));
+            (deleted_models, deleted_views)
+        };
+
+        let view = self.views.get(uuid).unwrap();
+        let mut commands = view.write().diagram_command_to_sensitives(
+            DiagramCommand::DeleteSelectedElements(Some(delete_kind), None),
+            &mut Vec::new(),
+        );
+        let intended = collect_deleted_views(&commands);
+        commands = commands
+            .into_iter()
+            .map(|e| self.recurse_delete(view, e, &mut HashSet::new()))
+            .collect();
+        let all = collect_deleted_views(&commands);
+        (
+            all.0.iter().filter(|e| !intended.0.contains(e)).count(),
+            all.1.iter().filter(|e| !intended.1.contains(e)).count(),
+        )
     }
 
     fn undo_immediate(
@@ -3736,7 +3790,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         button!(
             ui,
             "nh-edit-cut",
-            SimpleProjectCommand::from(DiagramCommand::CutSelectedElements)
+            SimpleProjectCommand::from(DiagramCommand::CutSelectedElements(None))
         );
         button!(
             ui,
@@ -3780,23 +3834,26 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             button!(
                 ui,
                 "nh-generic-deletemodel-view",
-                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(
-                    DeleteKind::DeleteView
-                )))
+                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
+                    Some(DeleteKind::DeleteView,),
+                    None
+                ))
             );
             button!(
                 ui,
                 "nh-generic-deletemodel-modelif",
-                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(
-                    DeleteKind::DeleteModelIfOnlyView
-                )))
+                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
+                    Some(DeleteKind::DeleteModelIfOnlyView),
+                    None
+                ))
             );
             button!(
                 ui,
                 "nh-generic-deletemodel-all",
-                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(
-                    DeleteKind::DeleteAll
-                )))
+                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(
+                    Some(DeleteKind::DeleteAll),
+                    None
+                ))
             );
         });
         ui.separator();
@@ -4280,22 +4337,22 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     InsensitiveCommand::HighlightSpecific(se!(), false, Highlight::SELECTED),
                 ];
             }
-            DiagramCommand::DeleteSelectedElements(_)
-            | DiagramCommand::CutSelectedElements
+            DiagramCommand::DeleteSelectedElements(_, _)
+            | DiagramCommand::CutSelectedElements(_)
             | DiagramCommand::PasteClipboardElements(..)
             | DiagramCommand::ArrangeSelected(_) => {
-                if matches!(command, DiagramCommand::CutSelectedElements) {
+                if matches!(command, DiagramCommand::CutSelectedElements(_)) {
                     self.set_clipboard_from_selected(clipboard);
                 }
 
                 return match command {
-                    DiagramCommand::DeleteSelectedElements(b) => {
+                    DiagramCommand::DeleteSelectedElements(b, _) => {
                         vec![InsensitiveCommand::DeleteSpecificElements(
                             se!(),
                             b.unwrap_or_default(),
                         )]
                     }
-                    DiagramCommand::CutSelectedElements => {
+                    DiagramCommand::CutSelectedElements(_) => {
                         let se: HashSet<_> = se!();
                         vec![InsensitiveCommand::Macro(
                             "nh-viewcommand-cutelements".to_owned().into(),
