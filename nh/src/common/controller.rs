@@ -1058,12 +1058,12 @@ pub trait DiagramController: Any + NHContextSerialize {
         clipboard: &mut Vec<Box<dyn Any>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
-    /// Find the numbers of unselected (i.e. "unintended") elements that would also get deleted if all selected elements were deleted
-    fn calculate_unselected_deletes(
+    /// Find the numbers of unintended (i.e. unselected) elements that would also get deleted if all selected elements were deleted
+    fn calculate_unintended_deletes(
         &self,
         uuid: &ViewUuid,
         delete_kind: DeleteKind,
-    ) -> (usize, usize);
+    ) -> (Vec<ModelUuid>, Vec<(usize, ViewUuid)>);
 
     fn undo_immediate(
         &mut self,
@@ -2526,11 +2526,11 @@ where
             .diagram_command_to_sensitives(command, clipboard);
         self.apply_commands(uuid, commands, true, affected_models);
     }
-    fn calculate_unselected_deletes(
+    fn calculate_unintended_deletes(
         &self,
         uuid: &ViewUuid,
         delete_kind: DeleteKind,
-    ) -> (usize, usize) {
+    ) -> (Vec<ModelUuid>, Vec<(usize, ViewUuid)>) {
         let collect_deleted_views = |cmds: &Vec<_>| {
             let mut deleted_views = HashSet::<ViewUuid>::new();
             for c in cmds.iter() {
@@ -2555,9 +2555,27 @@ where
             .map(|e| self.recurse_delete(view, e, &mut HashSet::new()))
             .collect();
         let all = collect_deleted_views(&commands);
+
+        let mut views_per_views = HashMap::new();
+        for v in all.1.iter().filter(|e| !intended.1.contains(e)) {
+            self.views.draw_order_foreach(|v2| {
+                if v2.represented_models().values().find(|e| *e == v).is_some() {
+                    *views_per_views.entry(*v2.uuid()).or_default() += 1;
+                }
+            });
+        }
+
         (
-            all.0.iter().filter(|e| !intended.0.contains(e)).count(),
-            all.1.iter().filter(|e| !intended.1.contains(e)).count(),
+            all.0
+                .iter()
+                .filter(|e| !intended.0.contains(e))
+                .cloned()
+                .collect(),
+            views_per_views
+                .into_iter()
+                .filter(|e| e.1 != 0)
+                .map(|e| (e.1, e.0))
+                .collect(),
         )
     }
 
