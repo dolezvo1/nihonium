@@ -269,8 +269,6 @@ pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter
     #[nh_context_serde(skip_and_default)]
     selected_vertices: HashSet<ViewUuid>,
     center_point: UFOption<(ViewUuid, egui::Pos2)>,
-    #[nh_context_serde(skip_and_default)]
-    point_to_origin: HashMap<ViewUuid, (bool, usize)>,
 }
 
 impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>>
@@ -286,17 +284,6 @@ where
         targets: Vec<Ending<DomainT::CommonElementViewT>>,
         center_point: Option<(ViewUuid, egui::Pos2)>,
     ) -> ERef<Self> {
-        let mut point_to_origin = HashMap::new();
-        for (idx, e) in sources.iter().enumerate() {
-            for p in &e.points {
-                point_to_origin.insert(p.0, (false, idx));
-            }
-        }
-        for (idx, e) in targets.iter().enumerate() {
-            for p in &e.points {
-                point_to_origin.insert(p.0, (true, idx));
-            }
-        }
         adapter.refresh_buffers(&sources, &targets);
 
         ERef::new(Self {
@@ -309,7 +296,6 @@ where
             selected_vertices: HashSet::new(),
 
             center_point: center_point.into(),
-            point_to_origin,
         })
     }
 
@@ -1278,7 +1264,7 @@ where
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 let self_uuid = *self.uuid;
 
-                // Handle dependencies being deleted
+                // Handle endings
                 let mut retain =
                     |b: BucketNoT, target: bool, e: &Ending<DomainT::CommonElementViewT>| {
                         if uuids.contains(&e.element.uuid()) {
@@ -1316,7 +1302,7 @@ where
                 self.targets
                     .retain(|e| retain(MULTICONNECTION_TARGET_BUCKET, true, e));
 
-                // Handle regular vertices
+                // Handle center
                 if let Some(center_point) =
                     self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
                 {
@@ -1324,26 +1310,45 @@ where
                         target: self_uuid,
                         bucket: MULTICONNECTION_VERTEX_BUCKET,
                         position: None,
-                        element: DomainT::AddCommandElementT::from(VertexInformation {
+                        element: VertexInformation {
                             after: (false, ViewUuid::nil()),
                             id: center_point.0,
                             position: center_point.1,
-                        }),
+                        }
+                        .into(),
                         into_model: false,
                     });
 
                     // Move any last point to the center
                     self.center_point = 'a: {
-                        if let Some(e) = self.sources.iter_mut().find(|p| p.points.len() > 1) {
-                            break 'a e.points.pop().into();
+                        macro_rules! try_pop {
+                            ($target:expr, $v:ident) => {
+                                if let Some(e) = self.$v.iter_mut().find(|p| p.points.len() > 1) {
+                                    let popped = e.points.pop().unwrap();
+                                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                        target: self_uuid,
+                                        bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                        position: None,
+                                        element: VertexInformation {
+                                            after: ($target, e.points.last().unwrap().0),
+                                            id: popped.0,
+                                            position: popped.1,
+                                        }
+                                        .into(),
+                                        into_model: false,
+                                    });
+                                    break 'a UFOption::Some(popped);
+                                }
+                            };
                         }
-                        if let Some(e) = self.targets.iter_mut().find(|p| p.points.len() > 1) {
-                            break 'a e.points.pop().into();
-                        }
+                        try_pop!(false, sources);
+                        try_pop!(true, targets);
+
                         None.into()
                     };
                 }
 
+                // Handle other vertices
                 macro_rules! delete_vertices {
                     ($target:expr, $v:ident) => {
                         for e in self.$v.iter_mut() {
@@ -1442,19 +1447,6 @@ where
                     }) = element.clone().try_into()
                     {
                         if after.1.is_nil() {
-                            // Push popped center point point back to its original path
-                            if let Some(o) = self
-                                .center_point
-                                .as_ref()
-                                .and_then(|e| self.point_to_origin.get(&e.0))
-                            {
-                                if !o.0 {
-                                    self.sources[o.1].points.push(self.center_point.unwrap());
-                                } else {
-                                    self.targets[o.1].points.push(self.center_point.unwrap());
-                                }
-                            }
-
                             self.center_point = UFOption::Some((id, position));
 
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
@@ -1464,10 +1456,9 @@ where
                         } else {
                             macro_rules! insert_vertex {
                                 ($v:ident, $b:expr) => {
-                                    for (idx1, e) in self.$v.iter_mut().enumerate() {
+                                    for e in self.$v.iter_mut() {
                                         for (idx2, p) in e.points.iter().enumerate() {
                                             if p.0 == after.1 {
-                                                self.point_to_origin.insert(id, ($b, idx1));
                                                 e.points.insert(idx2 + 1, (id, position));
                                                 undo_accumulator.push(
                                                     InsensitiveCommand::DeleteSpecificElements(
@@ -1680,9 +1671,6 @@ where
             highlight: self.highlight,
             selected_vertices: self.selected_vertices.clone(),
             center_point,
-
-            // There is no need to keep it (undo would destroy the whole clone first)
-            point_to_origin: HashMap::new(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
