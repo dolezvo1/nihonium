@@ -175,6 +175,19 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
     fn loop_target_move_behavior(&self) -> LoopTargetMoveBehavior {
         LoopTargetMoveBehavior::OneToOneOnly
     }
+    fn jettison_ending_data(
+        &self,
+        _view_uuid: &ViewUuid,
+        _ending: (bool, ModelUuid),
+    ) -> Vec<
+        InsensitiveCommand<
+            DomainT::OrdinalMovementT,
+            DomainT::AddCommandElementT,
+            DomainT::PropChangeT,
+        >,
+    > {
+        Vec::new()
+    }
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
@@ -1268,6 +1281,15 @@ where
                 let mut retain =
                     |b: BucketNoT, target: bool, e: &Ending<DomainT::CommonElementViewT>| {
                         if uuids.contains(&e.element.uuid()) {
+                            undo_accumulator.extend(
+                                self.adapter
+                                    .jettison_ending_data(
+                                        &self_uuid,
+                                        (target, *e.element.model_uuid()),
+                                    )
+                                    .into_iter(),
+                            );
+
                             let p0 = e.points.first().unwrap().0;
                             for p in e.points.iter().skip(1) {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -1491,12 +1513,18 @@ where
                     if *bucket == MULTICONNECTION_SOURCE_BUCKET && self.sources.len() > 1 {
                         self.sources.retain(|e| {
                             if *element == *e.element.uuid() {
+                                let data = self.adapter.jettison_ending_data(
+                                    &self.uuid,
+                                    (false, *e.element.model_uuid()),
+                                );
+
                                 let position = if !including_model {
                                     None
                                 } else if let Some((_, pos)) = diagram_model
                                     .write()
                                     .remove_element_from(model_uuid, &e.element.model_uuid())
                                 {
+                                    undo_accumulator.extend(data);
                                     Some(pos)
                                 } else {
                                     return true;
@@ -1536,12 +1564,18 @@ where
                     } else if *bucket == MULTICONNECTION_TARGET_BUCKET && self.targets.len() > 1 {
                         self.targets.retain(|e| {
                             if *element == *e.element.uuid() {
+                                let data = self.adapter.jettison_ending_data(
+                                    &self.uuid,
+                                    (true, *e.element.model_uuid()),
+                                );
+
                                 let position = if !including_model {
                                     None
                                 } else if let Some((_, pos)) = diagram_model
                                     .write()
                                     .remove_element_from(model_uuid, &e.element.model_uuid())
                                 {
+                                    undo_accumulator.extend(data);
                                     Some(pos)
                                 } else {
                                     return true;

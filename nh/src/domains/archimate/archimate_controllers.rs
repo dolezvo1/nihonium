@@ -4031,6 +4031,37 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
 
         PropertiesStatus::Shown
     }
+    fn jettison_ending_data(
+        &self,
+        view_uuid: &ViewUuid,
+        ending: (bool, ModelUuid),
+    ) -> Vec<
+        InsensitiveCommand<
+            <ArchiMateDomain as Domain>::OrdinalMovementT,
+            <ArchiMateDomain as Domain>::AddCommandElementT,
+            <ArchiMateDomain as Domain>::PropChangeT,
+        >,
+    > {
+        let r = self.model.read();
+        let es = match ending.0 {
+            false => &r.sources,
+            true => &r.targets,
+        };
+        es.iter()
+            .find(|e| *e.concept.read().uuid == ending.1)
+            .map(|e| {
+                vec![InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    ArchiMatePropChange::RelationshipMultiplicityChange(
+                        ending.0,
+                        ending.1,
+                        e.multiplicity.clone(),
+                    ),
+                )]
+            })
+            .unwrap_or_default()
+    }
+
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
