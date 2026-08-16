@@ -4929,12 +4929,9 @@ fn new_network_association_view(
     source: NetworkElementView,
     target: NetworkElementView,
 ) -> ERef<LinkViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.source.uuid()),
-        *m.target.uuid(),
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         None,
     );
 

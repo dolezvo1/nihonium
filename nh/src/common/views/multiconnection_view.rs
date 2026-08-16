@@ -57,50 +57,61 @@ impl ArrowData {
 }
 
 pub fn init_points(
-    mut source_uuid: impl Iterator<Item = ModelUuid>,
-    target_uuid: ModelUuid,
-    target_shape: canvas::NHShape,
+    source_uuids: impl Iterator<Item = (ViewUuid, canvas::NHShape)> + Clone,
+    target_uuids: impl Iterator<Item = ViewUuid> + Clone,
     center_point: Option<(ViewUuid, egui::Pos2)>,
 ) -> (
     Vec<Vec<(ViewUuid, egui::Pos2)>>,
     Option<(ViewUuid, egui::Pos2)>,
     Vec<Vec<(ViewUuid, egui::Pos2)>>,
 ) {
-    if source_uuid.any(|e| e == target_uuid) {
-        let (min, quarter_size) = match target_shape {
-            canvas::NHShape::Rect { inner } => (inner.min, inner.size() / 4.0),
-            canvas::NHShape::Ellipse {
-                position,
-                bounds_radius,
-            }
-            | canvas::NHShape::Rhombus {
-                position,
-                bounds_radius,
-            } => (position - bounds_radius, bounds_radius / 2.0),
-        };
+    let loop_target = source_uuids
+        .clone()
+        .find(|e1| target_uuids.clone().any(|e2| e1.0 == e2));
+    if let Some((target_uuid, target_shape)) = loop_target {
+        let bb = target_shape.bounding_box();
+        let (min, quarter_size) = (bb.min, bb.size() / 4.0);
 
         (
-            vec![vec![
-                (ViewUuid::now_v7(), egui::Pos2::ZERO),
-                (
-                    ViewUuid::now_v7(),
-                    min + egui::Vec2::new(quarter_size.x, -quarter_size.y),
-                ),
-            ]],
+            source_uuids
+                .map(|e| {
+                    if e.0 == target_uuid {
+                        vec![
+                            (e.0, egui::Pos2::ZERO),
+                            (
+                                ViewUuid::now_v7(),
+                                min + egui::Vec2::new(quarter_size.x, -quarter_size.y),
+                            ),
+                        ]
+                    } else {
+                        vec![(e.0, egui::Pos2::ZERO)]
+                    }
+                })
+                .collect(),
             Some((ViewUuid::now_v7(), min - quarter_size)),
-            vec![vec![
-                (ViewUuid::now_v7(), egui::Pos2::ZERO),
-                (
-                    ViewUuid::now_v7(),
-                    min + egui::Vec2::new(-quarter_size.x, quarter_size.y),
-                ),
-            ]],
+            target_uuids
+                .map(|e| {
+                    if e == target_uuid {
+                        vec![
+                            (e, egui::Pos2::ZERO),
+                            (
+                                ViewUuid::now_v7(),
+                                min + egui::Vec2::new(-quarter_size.x, quarter_size.y),
+                            ),
+                        ]
+                    } else {
+                        vec![(e, egui::Pos2::ZERO)]
+                    }
+                })
+                .collect(),
         )
     } else {
         (
-            vec![vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)]],
+            source_uuids
+                .map(|e| vec![(e.0, egui::Pos2::ZERO)])
+                .collect(),
             center_point,
-            vec![vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)]],
+            target_uuids.map(|e| vec![(e, egui::Pos2::ZERO)]).collect(),
         )
     }
 }
@@ -202,7 +213,7 @@ pub const MULTICONNECTION_VERTEX_BUCKET: BucketNoT = 3;
 
 #[derive(Clone, Debug)]
 pub struct VertexInformation {
-    after: ViewUuid,
+    after: (bool, ViewUuid),
     id: ViewUuid,
     position: egui::Pos2,
 }
@@ -218,6 +229,8 @@ where
 {
     #[nh_context_serde(entity)]
     pub element: T,
+    /// Note: The first point (i.e. nearest to given source/target view)
+    /// must have the same ViewUuid as its respective view.
     pub points: Vec<(ViewUuid, egui::Pos2)>,
 }
 
@@ -307,6 +320,13 @@ where
             .into_iter()
             .chain(self.sources.iter().flat_map(|e| e.points.iter()))
             .chain(self.targets.iter().flat_map(|e| e.points.iter()))
+    }
+    fn owned_vertices(&self) -> impl Iterator<Item = &(ViewUuid, egui::Pos2)> {
+        self.center_point
+            .as_ref()
+            .into_iter()
+            .chain(self.sources.iter().flat_map(|e| e.points.iter().skip(1)))
+            .chain(self.targets.iter().flat_map(|e| e.points.iter().skip(1)))
     }
 
     fn draw_multiconnection(
@@ -928,7 +948,7 @@ where
                             bucket: MULTICONNECTION_VERTEX_BUCKET,
                             position: None,
                             element: VertexInformation {
-                                after: ViewUuid::nil(),
+                                after: (false, ViewUuid::nil()),
                                 id: self.dragged_vertex.unwrap().0,
                                 position: self.position(),
                             }
@@ -943,7 +963,7 @@ where
 
                 // Check whether over midpoint, if so add a new joint
                 macro_rules! check_midpoints {
-                    ($v:ident) => {
+                    ($target:expr, $v:ident) => {
                         for e in &mut self.$v {
                             // Iterates over 2-windows
                             let mut iter = e
@@ -968,7 +988,7 @@ where
                                             bucket: MULTICONNECTION_VERTEX_BUCKET,
                                             position: None,
                                             element: VertexInformation {
-                                                after: u.0,
+                                                after: ($target, u.0),
                                                 id: self.dragged_vertex.unwrap().0,
                                                 position: pos,
                                             }
@@ -984,8 +1004,8 @@ where
                         }
                     };
                 }
-                check_midpoints!(sources);
-                check_midpoints!(targets);
+                check_midpoints!(false, sources);
+                check_midpoints!(true, targets);
 
                 // Check whether over a joint, if so drag it
                 macro_rules! check_joints {
@@ -1118,7 +1138,7 @@ where
                 };
                 let coerced_delta = coerced_pos
                     - self
-                        .all_vertices()
+                        .owned_vertices()
                         .find(|e| e.0 == dragged_vertex.0)
                         .unwrap()
                         .1;
@@ -1157,7 +1177,7 @@ where
         >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
-        macro_rules! all_pts_mut {
+        macro_rules! owned_vertices_mut {
             () => {
                 self.center_point
                     .as_mut()
@@ -1165,13 +1185,13 @@ where
                     .chain(
                         self.sources
                             .iter_mut()
-                            .map(|e| e.points.iter_mut())
+                            .map(|e| e.points.iter_mut().skip(1))
                             .flatten(),
                     )
                     .chain(
                         self.targets
                             .iter_mut()
-                            .map(|e| e.points.iter_mut())
+                            .map(|e| e.points.iter_mut().skip(1))
                             .flatten(),
                     )
             };
@@ -1183,7 +1203,7 @@ where
                     match set {
                         false => self.selected_vertices.clear(),
                         true => {
-                            for p in all_pts_mut!() {
+                            for p in owned_vertices_mut!() {
                                 self.selected_vertices.insert(p.0);
                             }
                         }
@@ -1198,7 +1218,7 @@ where
                     match set {
                         false => self.selected_vertices.retain(|e| !uuids.contains(e)),
                         true => {
-                            for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
+                            for p in owned_vertices_mut!().filter(|e| uuids.contains(&e.0)) {
                                 self.selected_vertices.insert(p.0);
                             }
                         }
@@ -1207,7 +1227,7 @@ where
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || all_pts_mut!().find(|p| !rect.contains(p.1)).is_none();
+                    || self.all_vertices().find(|p| !rect.contains(p.1)).is_none();
             }
             InsensitiveCommand::MovePositional(uuids, delta) => {
                 let already_moved_all = match self.adapter.loop_target_move_behavior() {
@@ -1218,7 +1238,7 @@ where
                             && uuids.contains(&s)
                             && self.targets.first().is_some_and(|e| *e.element.uuid() == s) =>
                     {
-                        for p in all_pts_mut!() {
+                        for p in owned_vertices_mut!() {
                             p.1 += *delta;
                         }
                         true
@@ -1232,7 +1252,7 @@ where
 
                 if !already_moved_all {
                     let move_all = uuids.contains(&*self.uuid);
-                    for p in all_pts_mut!().filter(|e| move_all || uuids.contains(&e.0)) {
+                    for p in owned_vertices_mut!().filter(|e| move_all || uuids.contains(&e.0)) {
                         p.1 += *delta;
                         undo_accumulator.push(InsensitiveCommand::MovePositional(
                             std::iter::once(p.0).collect(),
@@ -1243,7 +1263,7 @@ where
             }
             InsensitiveCommand::MovePositionalAll(delta) => {
                 // TODO: I'm not sure if this is technically correct, since there is no way to tell whether a loop target was moved
-                for p in all_pts_mut!() {
+                for p in owned_vertices_mut!() {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MovePositional(
                         std::iter::once(p.0).collect(),
@@ -1257,6 +1277,46 @@ where
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 let self_uuid = *self.uuid;
+
+                // Handle dependencies being deleted
+                let mut retain =
+                    |b: BucketNoT, target: bool, e: &Ending<DomainT::CommonElementViewT>| {
+                        if uuids.contains(&e.element.uuid()) {
+                            let p0 = e.points.first().unwrap().0;
+                            for p in e.points.iter().skip(1) {
+                                undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                    target: self_uuid,
+                                    bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                    position: None,
+                                    element: VertexInformation {
+                                        after: (target, p0),
+                                        id: p.0,
+                                        position: p.1,
+                                    }
+                                    .into(),
+                                    into_model: false,
+                                });
+                            }
+
+                            undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                target: self_uuid,
+                                bucket: b,
+                                position: None,
+                                element: e.element.clone().into(),
+                                into_model: false,
+                            });
+
+                            false
+                        } else {
+                            true
+                        }
+                    };
+                self.sources
+                    .retain(|e| retain(MULTICONNECTION_SOURCE_BUCKET, false, e));
+                self.targets
+                    .retain(|e| retain(MULTICONNECTION_TARGET_BUCKET, true, e));
+
+                // Handle regular vertices
                 if let Some(center_point) =
                     self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
                 {
@@ -1265,7 +1325,7 @@ where
                         bucket: MULTICONNECTION_VERTEX_BUCKET,
                         position: None,
                         element: DomainT::AddCommandElementT::from(VertexInformation {
-                            after: ViewUuid::nil(),
+                            after: (false, ViewUuid::nil()),
                             id: center_point.0,
                             position: center_point.1,
                         }),
@@ -1285,7 +1345,7 @@ where
                 }
 
                 macro_rules! delete_vertices {
-                    ($v:ident) => {
+                    ($target:expr, $v:ident) => {
                         for e in self.$v.iter_mut() {
                             // 2-windows over vertices
                             let mut iter = e.points.iter().peekable();
@@ -1300,7 +1360,7 @@ where
                                         position: None,
                                         element: DomainT::AddCommandElementT::from(
                                             VertexInformation {
-                                                after: a.0,
+                                                after: ($target, a.0),
                                                 id: b.0,
                                                 position: b.1,
                                             },
@@ -1314,28 +1374,8 @@ where
                         }
                     };
                 }
-                delete_vertices!(sources);
-                delete_vertices!(targets);
-
-                // Handle dependencies being deleted
-                let mut retain = |b: BucketNoT, e: &Ending<DomainT::CommonElementViewT>| {
-                    if uuids.contains(&e.element.uuid()) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency {
-                            target: self_uuid,
-                            bucket: b,
-                            position: None,
-                            element: e.element.clone().into(),
-                            into_model: false,
-                        });
-                        false
-                    } else {
-                        true
-                    }
-                };
-                self.sources
-                    .retain(|e| retain(MULTICONNECTION_SOURCE_BUCKET, e));
-                self.targets
-                    .retain(|e| retain(MULTICONNECTION_TARGET_BUCKET, e));
+                delete_vertices!(false, sources);
+                delete_vertices!(true, targets);
             }
             InsensitiveCommand::AddDependency {
                 target,
@@ -1356,16 +1396,17 @@ where
                                     .insert_element_into(model_uuid, *bucket, *position, e.model())
                                     .is_ok())
                         {
+                            let e_uuid = *e.uuid();
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
                                 bucket: *bucket,
-                                element: *e.uuid(),
+                                element: e_uuid,
                                 including_model: *into_model,
                             });
 
                             self.sources.push(Ending {
                                 element: e,
-                                points: vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)],
+                                points: vec![(e_uuid, egui::Pos2::ZERO)],
                             });
 
                             affected_models.insert(model_uuid);
@@ -1376,16 +1417,17 @@ where
                                     .insert_element_into(model_uuid, *bucket, *position, e.model())
                                     .is_ok())
                         {
+                            let e_uuid = *e.uuid();
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
                                 bucket: *bucket,
-                                element: *e.uuid(),
+                                element: e_uuid,
                                 including_model: *into_model,
                             });
 
                             self.targets.push(Ending {
                                 element: e,
-                                points: vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)],
+                                points: vec![(e_uuid, egui::Pos2::ZERO)],
                             });
 
                             affected_models.insert(model_uuid);
@@ -1399,7 +1441,7 @@ where
                         position,
                     }) = element.clone().try_into()
                     {
-                        if after.is_nil() {
+                        if after.1.is_nil() {
                             // Push popped center point point back to its original path
                             if let Some(o) = self
                                 .center_point
@@ -1424,7 +1466,7 @@ where
                                 ($v:ident, $b:expr) => {
                                     for (idx1, e) in self.$v.iter_mut().enumerate() {
                                         for (idx2, p) in e.points.iter().enumerate() {
-                                            if p.0 == after {
+                                            if p.0 == after.1 {
                                                 self.point_to_origin.insert(id, ($b, idx1));
                                                 e.points.insert(idx2 + 1, (id, position));
                                                 undo_accumulator.push(
@@ -1439,8 +1481,10 @@ where
                                     }
                                 };
                             }
-                            insert_vertex!(sources, false);
-                            insert_vertex!(targets, true);
+                            match after.0 {
+                                false => insert_vertex!(sources, false),
+                                true => insert_vertex!(targets, true),
+                            }
                         }
                     }
                 }
@@ -1467,6 +1511,22 @@ where
                                     return true;
                                 };
 
+                                let p0 = e.points.first().unwrap().0;
+                                for p in e.points.iter().skip(1) {
+                                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                        target: *self.uuid,
+                                        bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                        position: None,
+                                        element: VertexInformation {
+                                            after: (false, p0),
+                                            id: p.0,
+                                            position: p.1,
+                                        }
+                                        .into(),
+                                        into_model: false,
+                                    });
+                                }
+
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
                                     bucket: *bucket,
@@ -1474,6 +1534,7 @@ where
                                     element: e.element.clone().into(),
                                     into_model: *including_model,
                                 });
+
                                 false
                             } else {
                                 true
@@ -1495,6 +1556,22 @@ where
                                     return true;
                                 };
 
+                                let p0 = e.points.first().unwrap().0;
+                                for p in e.points.iter().skip(1) {
+                                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                        target: *self.uuid,
+                                        bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                        position: None,
+                                        element: VertexInformation {
+                                            after: (true, p0),
+                                            id: p.0,
+                                            position: p.1,
+                                        }
+                                        .into(),
+                                        into_model: false,
+                                    });
+                                }
+
                                 undo_accumulator.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
                                     bucket: *bucket,
@@ -1502,6 +1579,7 @@ where
                                     element: e.element.clone().into(),
                                     into_model: *including_model,
                                 });
+
                                 false
                             } else {
                                 true
@@ -1545,7 +1623,7 @@ where
         flattened_views_status.insert(*self.uuid, self.highlight.selected.into());
         flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
 
-        for e in self.all_vertices() {
+        for e in self.owned_vertices() {
             flattened_views_status.insert(
                 e.0,
                 match self.selected_vertices.contains(&e.0) {

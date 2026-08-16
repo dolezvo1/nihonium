@@ -7614,12 +7614,9 @@ pub fn new_umlactivity_edge_view(
     source: UmlActivityElementView,
     target: UmlActivityElementView,
 ) -> ERef<FlowEdgeViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.source.uuid()),
-        *m.target.uuid(),
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 

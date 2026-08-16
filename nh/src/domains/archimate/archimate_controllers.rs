@@ -3708,12 +3708,9 @@ fn new_archimate_relationship_view(
     sources: Vec<ArchiMateElementView>,
     targets: Vec<ArchiMateElementView>,
 ) -> ERef<RelationshipViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        m.sources.iter().map(|e| *e.concept.read().uuid),
-        *m.targets[0].concept.read().uuid,
-        targets[0].min_shape(),
+        sources.iter().map(|e| (*e.uuid(), e.min_shape())),
+        targets.iter().map(|e| *e.uuid()),
         center_point,
     );
 

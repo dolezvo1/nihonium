@@ -8067,12 +8067,9 @@ pub fn new_umlclass_generalization_view<P: UmlClassProfile>(
     sources: Vec<UmlClassElementView<P>>,
     targets: Vec<UmlClassElementView<P>>,
 ) -> ERef<GeneralizationViewT<P>> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        m.sources.iter().map(|e| *e.read().uuid),
-        *m.targets[0].read().uuid,
-        targets[0].min_shape(),
+        sources.iter().map(|e| (*e.uuid(), e.min_shape())),
+        targets.iter().map(|e| *e.uuid()),
         center_point,
     );
 
@@ -8464,12 +8461,9 @@ pub fn new_umlclass_dependency_view<P: UmlClassProfile>(
     source: UmlClassElementView<P>,
     target: UmlClassElementView<P>,
 ) -> ERef<DependencyViewT<P>> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.source.uuid()),
-        *m.target.uuid(),
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 
@@ -8771,12 +8765,9 @@ pub fn new_umlclass_association_view<P: UmlClassProfile>(
     source: UmlClassElementView<P>,
     target: UmlClassElementView<P>,
 ) -> ERef<AssociationViewT<P>> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.source.uuid()),
-        *m.target.uuid(),
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 
@@ -9405,12 +9396,9 @@ pub fn new_uml_usecasegeneralization_view<P: UmlClassProfile>(
     sources: Vec<UmlClassElementView<P>>,
     targets: Vec<UmlClassElementView<P>>,
 ) -> ERef<UseCaseGeneralizationViewT<P>> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        m.sources.iter().map(|e| *e.read().uuid),
-        *m.targets[0].read().uuid,
-        targets[0].min_shape(),
+        sources.iter().map(|e| (*e.uuid(), e.min_shape())),
+        sources.iter().map(|e| *e.uuid()),
         center_point,
     );
 

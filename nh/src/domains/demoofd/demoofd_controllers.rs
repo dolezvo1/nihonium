@@ -3881,12 +3881,9 @@ fn new_demoofd_propertytype_view(
     source: DemoOfdElementView,
     target: DemoOfdElementView,
 ) -> ERef<PropertyTypeViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.domain_element.read().uuid),
-        *m.range_element.read().uuid,
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 
@@ -4196,12 +4193,9 @@ fn new_demoofd_specialization_view(
     source: DemoOfdElementView,
     target: DemoOfdElementView,
 ) -> ERef<SpecializationViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.domain_element.read().uuid),
-        *m.range_element.read().uuid,
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 
@@ -4395,12 +4389,9 @@ fn new_demoofd_aggregation_view(
     sources: Vec<DemoOfdElementView>,
     target: DemoOfdElementView,
 ) -> ERef<AggregationViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        m.domain_elements.iter().map(|e| *e.read().uuid),
-        *m.range_element.read().uuid,
-        target.min_shape(),
+        sources.iter().map(|e| (*e.uuid(), e.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 
@@ -4663,12 +4654,9 @@ fn new_demoofd_precedence_view(
     source: DemoOfdElementView,
     target: DemoOfdElementView,
 ) -> ERef<PrecedenceViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.domain_element.read().uuid),
-        *m.range_element.read().uuid,
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 
@@ -4861,12 +4849,9 @@ fn new_demoofd_exclusion_view(
     source: DemoOfdElementView,
     target: DemoOfdElementView,
 ) -> ERef<ExclusionViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.domain_element.uuid()),
-        *m.range_element.uuid(),
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         center_point,
     );
 

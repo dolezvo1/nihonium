@@ -2647,12 +2647,9 @@ fn new_rdf_predicate_view(
     source: RdfElementView,
     target: RdfElementView,
 ) -> ERef<LinkViewT> {
-    let m = model.read();
-
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once(*m.source.read().uuid),
-        *m.target.uuid(),
-        target.min_shape(),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once(*target.uuid()),
         None,
     );
 
