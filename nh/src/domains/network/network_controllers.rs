@@ -273,7 +273,9 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                 },
             )
             .into(),
-            NetworkElement::Node(inner) => new_network_node_view(inner, egui::Pos2::ZERO).into(),
+            NetworkElement::Node(inner) => {
+                new_network_node_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
+            }
             NetworkElement::User(inner) => {
                 new_network_user_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
             }
@@ -543,21 +545,25 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "Cloud",
         NetworkNodeKind::Cloud,
         egui::Pos2::new(200.0, 200.0),
+        MGlobalColor::None,
     );
     let (router, router_view) = new_network_node(
         "Router",
         NetworkNodeKind::Router,
         egui::Pos2::new(300.0, 400.0),
+        MGlobalColor::None,
     );
     let (swtch, swtch_view) = new_network_node(
         "Switch",
         NetworkNodeKind::Switch,
         egui::Pos2::new(400.0, 200.0),
+        MGlobalColor::None,
     );
     let (workstation, workstation_view) = new_network_node(
         "Workstation",
         NetworkNodeKind::Workstation,
         egui::Pos2::new(500.0, 400.0),
+        MGlobalColor::None,
     );
     let (user, user_view) = new_network_user(
         "User",
@@ -728,6 +734,7 @@ impl DiagramSettings for NetworkSettings {
                         NetworkToolStage::Node {
                             name,
                             kind,
+                            background_color,
                             with_edge_from: _,
                         } => {
                             modified |= columns[1]
@@ -743,6 +750,17 @@ impl DiagramSettings for NetworkSettings {
                                             ui.selectable_value(kind, e, e.as_str()).clicked();
                                     }
                                 });
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    background_color,
+                                )
+                            {
+                                *background_color = new_color;
+                                modified = true;
+                            }
                         }
                         NetworkToolStage::User {
                             name,
@@ -1041,6 +1059,7 @@ mod buttons {
         let stage = NetworkToolStage::Node {
             name: "Node".to_owned(),
             kind: NetworkNodeKind::Server,
+            background_color: MGlobalColor::None,
             with_edge_from: Some(*m.uuid()),
         };
         (stage.clone(), stage, PartialNetworkElement::None, true)
@@ -1116,6 +1135,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Workstation".to_owned(),
                         kind: NetworkNodeKind::Workstation,
+                        background_color: MGlobalColor::None,
                         with_edge_from: None,
                     },
                     "Workstation",
@@ -1128,6 +1148,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Laptop".to_owned(),
                         kind: NetworkNodeKind::Laptop,
+                        background_color: MGlobalColor::None,
                         with_edge_from: None,
                     },
                     "Laptop",
@@ -1137,6 +1158,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Router".to_owned(),
                         kind: NetworkNodeKind::Router,
+                        background_color: MGlobalColor::None,
                         with_edge_from: None,
                     },
                     "Router",
@@ -1149,6 +1171,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     NetworkToolStage::Node {
                         name: "Switch".to_owned(),
                         kind: NetworkNodeKind::Switch,
+                        background_color: MGlobalColor::None,
                         with_edge_from: None,
                     },
                     "Switch",
@@ -1327,9 +1350,10 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
         NetworkToolStage::Node {
             name,
             kind,
+            background_color,
             with_edge_from: _,
         } => {
-            let node_view = new_network_node(name, *kind, egui::Pos2::ZERO).1;
+            let node_view = new_network_node(name, *kind, egui::Pos2::ZERO, *background_color).1;
             node_view.into()
         }
         NetworkToolStage::User {
@@ -1373,6 +1397,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
                 "dummy",
                 NetworkNodeKind::Workstation,
                 egui::Pos2::new(100.0, 75.0),
+                MGlobalColor::None,
             );
 
             let association_view = new_network_association(
@@ -1440,6 +1465,7 @@ pub enum NetworkToolStage {
     Node {
         name: String,
         kind: NetworkNodeKind,
+        background_color: MGlobalColor,
         with_edge_from: Option<ModelUuid>,
     },
     User {
@@ -1635,11 +1661,12 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 NetworkToolStage::Node {
                     name,
                     kind,
+                    background_color,
                     with_edge_from: _,
                 },
                 _,
             ) => {
-                let (_, node_view) = new_network_node(name, *kind, pos);
+                let (_, node_view) = new_network_node(name, *kind, pos, *background_color);
                 self.result = PartialNetworkElement::Some(node_view.into());
                 self.event_lock = true;
             }
@@ -2115,12 +2142,17 @@ fn new_network_node(
     name: &str,
     kind: NetworkNodeKind,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<NetworkNode>, ERef<NetworkNodeView>) {
-    let node_model = ERef::new(NetworkNode::new(ModelUuid::now_v7(), name.to_owned(), kind));
-    let node_view = new_network_node_view(node_model.clone(), position);
-    (node_model, node_view)
+    let model = ERef::new(NetworkNode::new(ModelUuid::now_v7(), name.to_owned(), kind));
+    let view = new_network_node_view(model.clone(), position, background_color);
+    (model, view)
 }
-fn new_network_node_view(model: ERef<NetworkNode>, position: egui::Pos2) -> ERef<NetworkNodeView> {
+fn new_network_node_view(
+    model: ERef<NetworkNode>,
+    position: egui::Pos2,
+    background_color: MGlobalColor,
+) -> ERef<NetworkNodeView> {
     let m = model.read();
     ERef::new(NetworkNodeView {
         uuid: ViewUuid::now_v7().into(),
@@ -2134,6 +2166,7 @@ fn new_network_node_view(model: ERef<NetworkNode>, position: egui::Pos2) -> ERef
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_pos(position),
+        background_color,
     })
 }
 
@@ -2157,6 +2190,7 @@ pub struct NetworkNodeView {
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
 }
 
 impl Entity for NetworkNodeView {
@@ -2193,7 +2227,7 @@ impl ElementController<NetworkElement> for NetworkNodeView {
 impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
     fn show_properties(
         &mut self,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -2264,13 +2298,23 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             }
         });
 
+        ui.label("Background color:");
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::ColorChange((0, new_color).into()),
+            ));
+        }
+
         PropertiesStatus::Shown
     }
 
     fn draw_in(
         &mut self,
         _q: &<NetworkDomain as Domain>::QueryableT<'_>,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         settings: &NetworkSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveNetworkTool)>,
@@ -2294,12 +2338,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             egui::Color32::BLACK,
         );
         self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
+        let color = gdc.global_colors.get(&self.background_color);
 
         // draw icons based on kind
         match self.kind_buffer {
             NetworkNodeKind::Cloud => {
                 const SIZE: egui::Vec2 = egui::Vec2::new(15.0, 8.0);
-                const SHAPE_COLOR: egui::Color32 = egui::Color32::from_rgb(0xD0, 0xED, 0xEB);
+                let color = color.unwrap_or(egui::Color32::from_rgb(0xD0, 0xED, 0xEB));
                 let stroke = canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT);
                 canvas.draw_rectangle(
                     inner_rect,
@@ -2311,33 +2356,34 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 canvas.draw_ellipse(
                     self.position + egui::Vec2::new(-5.0, -5.0),
                     egui::Vec2::new(10.0, 10.0),
-                    SHAPE_COLOR,
+                    color,
                     stroke,
                     canvas::Highlight::NONE,
                 );
                 canvas.draw_ellipse(
                     self.position + egui::Vec2::new(5.0, -5.0),
                     egui::Vec2::new(5.0, 5.0),
-                    SHAPE_COLOR,
+                    color,
                     stroke,
                     canvas::Highlight::NONE,
                 );
                 canvas.draw_ellipse(
                     self.position + egui::Vec2::new(5.0, 5.0),
                     SIZE,
-                    SHAPE_COLOR,
+                    color,
                     stroke,
                     canvas::Highlight::NONE,
                 );
                 canvas.draw_ellipse(
                     self.position + egui::Vec2::new(-5.0, 5.0),
                     SIZE,
-                    SHAPE_COLOR,
+                    color,
                     stroke,
                     canvas::Highlight::NONE,
                 );
             }
             NetworkNodeKind::Firewall => {
+                let color = color.unwrap_or(egui::Color32::RED);
                 for e in 0..7 {
                     let r = egui::Rect::from_center_size(
                         inner_rect.center_top() + egui::Vec2::new(0.0, 5.0 + e as f32 * 5.0),
@@ -2346,7 +2392,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas.draw_rectangle(
                         r,
                         egui::CornerRadius::ZERO,
-                        egui::Color32::RED,
+                        color,
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
@@ -2366,13 +2412,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             | NetworkNodeKind::LoadBalancer
             | NetworkNodeKind::Hub
             | NetworkNodeKind::Switch) => {
-                const COLOR: egui::Color32 = egui::Color32::from_rgb(0x08, 0xb8, 0xdb);
+                let color = color.unwrap_or(egui::Color32::from_rgb(0x08, 0xb8, 0xdb));
                 let inner_rect =
                     egui::Rect::from_center_size(self.position, egui::Vec2::splat(38.0));
                 canvas.draw_rectangle(
                     inner_rect,
                     egui::CornerRadius::ZERO,
-                    COLOR,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2392,7 +2438,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         canvas.draw_ellipse(
                             self.position,
                             egui::Vec2::splat(arrows_rect.width() * 0.3 - 2.0),
-                            COLOR,
+                            color,
                             s,
                             h,
                         );
@@ -2506,12 +2552,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 }
             }
             k @ (NetworkNodeKind::Router | NetworkNodeKind::WirelessRouter) => {
-                const COLOR: egui::Color32 = egui::Color32::from_rgb(0x08, 0xb8, 0xdb);
+                let color = color.unwrap_or(egui::Color32::from_rgb(0x08, 0xb8, 0xdb));
                 const RADIUS: f32 = 17.0;
                 canvas.draw_ellipse(
                     self.position,
                     egui::Vec2::splat(RADIUS),
-                    COLOR,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2553,6 +2599,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 }
             }
             NetworkNodeKind::Server => {
+                let color = color.unwrap_or(egui::Color32::WHITE);
                 canvas.draw_polygon(
                     [
                         self.position + egui::Vec2::new(18.0, -18.0),
@@ -2573,7 +2620,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         self.position + egui::Vec2::new(10.0, 18.0),
                     ]
                     .to_vec(),
-                    egui::Color32::WHITE,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2613,6 +2660,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 }
             }
             k @ (NetworkNodeKind::VirtualMachine | NetworkNodeKind::Workstation) => {
+                let color = color.unwrap_or(egui::Color32::LIGHT_BLUE);
                 let screen_rect =
                     egui::Rect::from_center_size(self.position, egui::Vec2::new(32.0, 18.0));
                 canvas.draw_rectangle(
@@ -2625,7 +2673,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 canvas.draw_rectangle(
                     screen_rect,
                     egui::CornerRadius::ZERO,
-                    egui::Color32::LIGHT_BLUE,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2674,6 +2722,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 }
             }
             NetworkNodeKind::IpPhone => {
+                let color = color.unwrap_or(egui::Color32::LIGHT_BLUE);
                 let box_rect =
                     egui::Rect::from_center_size(self.position, egui::Vec2::new(32.0, 18.0));
                 canvas.draw_rectangle(
@@ -2699,7 +2748,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 canvas.draw_rectangle(
                     screen_rect,
                     egui::CornerRadius::ZERO,
-                    egui::Color32::LIGHT_BLUE,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2735,8 +2784,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 }
             }
             NetworkNodeKind::Printer => {
-                let b = egui::Color32::BLACK;
-                let s = canvas::Stroke::new_solid(1.0, b);
+                let color = color.unwrap_or(egui::Color32::LIGHT_GRAY);
+                let s = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
                 let h = canvas::Highlight::NONE;
                 const WIDTH_A2: f32 = 12.0;
                 const WIDTH_B2: f32 = 16.0;
@@ -2752,7 +2801,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         self.position + egui::Vec2::new(-WIDTH_A2, -HEIGHT_A),
                     ]
                     .to_vec(),
-                    egui::Color32::LIGHT_GRAY,
+                    color,
                     s,
                     h,
                 );
@@ -2764,7 +2813,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         self.position + egui::Vec2::new(-WIDTH_B2, 0.0),
                     ]
                     .to_vec(),
-                    egui::Color32::LIGHT_GRAY,
+                    color,
                     s,
                     h,
                 );
@@ -2795,6 +2844,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 );
             }
             NetworkNodeKind::Laptop => {
+                let color = color.unwrap_or(egui::Color32::LIGHT_BLUE);
                 let screen_rect = egui::Rect::from_two_pos(
                     self.position + egui::Vec2::new(-13.0, -13.0),
                     self.position + egui::Vec2::new(13.0, -2.0),
@@ -2809,7 +2859,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 canvas.draw_rectangle(
                     screen_rect,
                     egui::CornerRadius::ZERO,
-                    egui::Color32::LIGHT_BLUE,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2827,6 +2877,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 );
             }
             NetworkNodeKind::Tablet => {
+                let color = color.unwrap_or(egui::Color32::LIGHT_BLUE);
                 let screen_rect =
                     egui::Rect::from_center_size(self.position, egui::Vec2::new(32.0, 18.0));
                 canvas.draw_rectangle(
@@ -2839,12 +2890,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 canvas.draw_rectangle(
                     screen_rect,
                     egui::CornerRadius::ZERO,
-                    egui::Color32::LIGHT_BLUE,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
             }
             NetworkNodeKind::CellularPhone => {
+                let color = color.unwrap_or(egui::Color32::LIGHT_BLUE);
                 let screen_rect =
                     egui::Rect::from_center_size(self.position, egui::Vec2::new(18.0, 32.0));
                 canvas.draw_rectangle(
@@ -2857,19 +2909,20 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 canvas.draw_rectangle(
                     screen_rect,
                     egui::CornerRadius::ZERO,
-                    egui::Color32::LIGHT_BLUE,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
             }
             NetworkNodeKind::UsbDrive => {
+                let color = color.unwrap_or(egui::Color32::LIGHT_BLUE);
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(
                         self.position + egui::Vec2::new(-8.0, 18.0),
                         self.position + egui::Vec2::new(8.0, -8.0),
                     ),
                     egui::CornerRadius::ZERO,
-                    egui::Color32::LIGHT_BLUE,
+                    color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2898,6 +2951,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 // TODO: draw USB logo
             }
             NetworkNodeKind::OpticalMedia => {
+                let color = color.unwrap_or(egui::Color32::LIGHT_YELLOW);
                 let outer_radius: f32 = inner_rect.width() / 2.0;
                 let middle_radius: f32 = inner_rect.width() / 4.0;
                 let inner_radius: f32 = inner_rect.width() / 8.0;
@@ -2905,7 +2959,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
                 let dtheta = std::f32::consts::TAU / SAMPLES as f32;
                 for (outer_r, inner_r, color) in [
-                    (outer_radius, middle_radius, egui::Color32::LIGHT_YELLOW),
+                    (outer_radius, middle_radius, color),
                     (middle_radius, inner_radius, egui::Color32::LIGHT_GRAY),
                 ] {
                     for i in 0..SAMPLES {
@@ -3117,6 +3171,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                             ));
                             model.comment = comment.clone();
                         }
+                        NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::ColorChange(ColorChangeData {
+                                    slot: 0,
+                                    color: self.background_color,
+                                }),
+                            ));
+                            self.background_color = *color;
+                        }
                         _ => {}
                     }
                 }
@@ -3172,6 +3236,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
