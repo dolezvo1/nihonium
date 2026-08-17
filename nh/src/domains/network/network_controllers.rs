@@ -2378,29 +2378,47 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 );
                 match k {
                     NetworkNodeKind::IntrusionPreventionSystem => {
-                        // two way lines through a circle
-                        let arrows_rect = inner_rect.shrink2((5.0, 15.0).into());
+                        // two way arrows through a circle
+                        let arrows_rect = inner_rect.shrink2((2.5, 15.0).into());
                         let s = canvas::Stroke::new_solid(1.0, egui::Color32::WHITE);
                         let h = canvas::Highlight::NONE;
-                        canvas.draw_line([arrows_rect.left_top(), arrows_rect.right_top()], s, h);
-                        canvas.draw_line(
-                            [arrows_rect.left_bottom(), arrows_rect.right_bottom()],
+                        canvas.draw_ellipse(
+                            self.position,
+                            egui::Vec2::splat(arrows_rect.width() * 0.3),
+                            egui::Color32::WHITE,
                             s,
                             h,
                         );
                         canvas.draw_ellipse(
                             self.position,
-                            egui::Vec2::splat(arrows_rect.width() / 3.0),
-                            egui::Color32::TRANSPARENT,
+                            egui::Vec2::splat(arrows_rect.width() * 0.3 - 2.0),
+                            COLOR,
                             s,
                             h,
                         );
+                        for (p1, p2) in [
+                            (arrows_rect.left_top(), arrows_rect.right_top()),
+                            (arrows_rect.right_bottom(), arrows_rect.left_bottom()),
+                        ] {
+                            canvas.draw_rectangle(
+                                egui::Rect::from_two_pos(p1, p2).expand2((-2.0, 1.0).into()),
+                                egui::CornerRadius::ZERO,
+                                egui::Color32::WHITE,
+                                s,
+                                h,
+                            );
+                            let outward_angle = (p1.y - p2.y).atan2(p1.x - p2.x);
+                            let [p3, p4] = [-35.0_f32, 35.0]
+                                .map(|e| e.to_radians() + outward_angle)
+                                .map(|a| p2 + egui::Vec2::new(a.cos(), a.sin()) * 5.0);
+                            canvas.draw_polygon(vec![p2, p3, p4], egui::Color32::WHITE, s, h);
+                        }
                     }
                     NetworkNodeKind::LoadBalancer => {
-                        // full circle to empty circle to three lines
+                        // full circle to empty circle to three arrows
                         const IN_ELLIPSE_RADIUS: egui::Vec2 = egui::Vec2::splat(3.0);
                         const ELLIPSE_RADIUS: egui::Vec2 = egui::Vec2::splat(4.0);
-                        let s = canvas::Stroke::new_solid(1.0, egui::Color32::WHITE);
+                        let s = canvas::Stroke::new_solid(2.0, egui::Color32::WHITE);
                         let h = canvas::Highlight::NONE;
                         let in_ellipse =
                             self.position - 3.0 * egui::Vec2::new(ELLIPSE_RADIUS.x, 0.0);
@@ -2423,29 +2441,28 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                             s,
                             h,
                         );
-                        const ARROW_RADIUS: f32 = 10.0;
+                        const ARROW_RADIUS: f32 = 15.0;
                         for angle in [45.0_f32, 0.0_f32, -45.0_f32] {
                             let (sin, cos) = (angle.to_radians().sin(), angle.to_radians().cos());
-                            canvas.draw_line(
-                                [
-                                    self.position
-                                        + egui::Vec2::new(
-                                            ELLIPSE_RADIUS.x * cos,
-                                            ELLIPSE_RADIUS.y * sin,
-                                        ),
-                                    self.position
-                                        + egui::Vec2::new(ARROW_RADIUS * cos, ARROW_RADIUS * sin),
-                                ],
-                                s,
-                                h,
-                            );
+                            let p1 = self.position
+                                + egui::Vec2::new(ELLIPSE_RADIUS.x * cos, ELLIPSE_RADIUS.y * sin);
+                            let p2 = self.position
+                                + egui::Vec2::new(ARROW_RADIUS * cos, ARROW_RADIUS * sin);
+                            canvas.draw_line([p1, p2], s, h);
+                            let outward_angle =
+                                (self.position.y - p2.y).atan2(self.position.x - p2.x);
+                            let [p3, p4] = [-35.0_f32, 35.0]
+                                .map(|e| e.to_radians() + outward_angle)
+                                .map(|a| p2 + egui::Vec2::new(a.cos(), a.sin()) * 5.0);
+                            canvas.draw_line([p2, p3], s, h);
+                            canvas.draw_line([p2, p4], s, h);
                         }
                     }
                     NetworkNodeKind::Hub => {
                         // full circle with 8 arrows
                         const ELLIPSE_RADIUS: egui::Vec2 = egui::Vec2::splat(4.0);
                         const ARROW_RADIUS: f32 = 15.0;
-                        let s = canvas::Stroke::new_solid(1.0, egui::Color32::WHITE);
+                        let s = canvas::Stroke::new_solid(2.0, egui::Color32::WHITE);
                         let h = canvas::Highlight::NONE;
                         canvas.draw_ellipse(
                             self.position,
@@ -2584,6 +2601,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
+                for e in [3.0, 14.0] {
+                    canvas.draw_line(
+                        [
+                            self.position + (-18.0, e).into(),
+                            self.position + (10.0, e).into(),
+                        ],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
             k @ (NetworkNodeKind::VirtualMachine | NetworkNodeKind::Workstation) => {
                 let screen_rect =
@@ -2711,11 +2738,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 let b = egui::Color32::BLACK;
                 let s = canvas::Stroke::new_solid(1.0, b);
                 let h = canvas::Highlight::NONE;
-                const WIDTH_A2: f32 = 8.0;
-                const WIDTH_B2: f32 = 12.0;
-                const WIDTH_C2: f32 = 12.0;
-                const HEIGHT_A: f32 = 5.0;
-                const HEIGHT_B: f32 = 8.0;
+                const WIDTH_A2: f32 = 12.0;
+                const WIDTH_B2: f32 = 16.0;
+                const WIDTH_C2: f32 = 16.0;
+                const HEIGHT_A: f32 = 9.0;
+                const HEIGHT_B: f32 = 11.0;
                 // Box
                 canvas.draw_polygon(
                     [
@@ -2838,67 +2865,73 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             NetworkNodeKind::UsbDrive => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(
-                        self.position + egui::Vec2::new(-8.0, -18.0),
-                        self.position + egui::Vec2::new(8.0, 8.0),
+                        self.position + egui::Vec2::new(-8.0, 18.0),
+                        self.position + egui::Vec2::new(8.0, -8.0),
                     ),
                     egui::CornerRadius::ZERO,
-                    egui::Color32::DARK_BLUE,
+                    egui::Color32::LIGHT_BLUE,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(
-                        self.position + egui::Vec2::new(-5.0, 8.0),
-                        self.position + egui::Vec2::new(5.0, 18.0),
+                        self.position + egui::Vec2::new(-5.0, -8.0),
+                        self.position + egui::Vec2::new(5.0, -18.0),
                     ),
                     egui::CornerRadius::ZERO,
                     egui::Color32::LIGHT_GRAY,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(
-                        self.position + egui::Vec2::new(-3.0, 12.0),
-                        self.position + egui::Vec2::new(-1.0, 14.0),
-                    ),
-                    egui::CornerRadius::ZERO,
-                    egui::Color32::BLACK,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-                canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(
-                        self.position + egui::Vec2::new(1.0, 12.0),
-                        self.position + egui::Vec2::new(3.0, 14.0),
-                    ),
-                    egui::CornerRadius::ZERO,
-                    egui::Color32::BLACK,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
+                for e in [-1.0, 1.0] {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_two_pos(
+                            self.position + egui::Vec2::new(e * 3.0, -12.0),
+                            self.position + egui::Vec2::new(e * 1.0, -14.0),
+                        ),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::BLACK,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+                // TODO: draw USB logo
             }
             NetworkNodeKind::OpticalMedia => {
-                canvas.draw_ellipse(
-                    self.position,
-                    inner_rect.size() / 2.0,
-                    egui::Color32::LIGHT_YELLOW,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-                canvas.draw_ellipse(
-                    self.position,
-                    inner_rect.size() / 4.0,
-                    egui::Color32::LIGHT_GRAY,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-                canvas.draw_ellipse(
-                    self.position,
-                    inner_rect.size() / 8.0,
-                    egui::Color32::WHITE,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
+                let outer_radius: f32 = inner_rect.width() / 2.0;
+                let middle_radius: f32 = inner_rect.width() / 4.0;
+                let inner_radius: f32 = inner_rect.width() / 8.0;
+                const SAMPLES: usize = 20;
+
+                let dtheta = std::f32::consts::TAU / SAMPLES as f32;
+                for (outer_r, inner_r, color) in [
+                    (outer_radius, middle_radius, egui::Color32::LIGHT_YELLOW),
+                    (middle_radius, inner_radius, egui::Color32::LIGHT_GRAY),
+                ] {
+                    for i in 0..SAMPLES {
+                        let t0 = i as f32 * dtheta;
+                        let t1 = (i + 1) as f32 * dtheta;
+
+                        canvas.draw_polygon(
+                            [(outer_r, t0), (outer_r, t1), (inner_r, t1), (inner_r, t0)]
+                                .iter()
+                                .map(|(r, t)| self.position + (r * t.cos(), r * t.sin()).into())
+                                .collect(),
+                            color,
+                            canvas::Stroke::new_solid(0.0, egui::Color32::TRANSPARENT),
+                            canvas::Highlight::NONE,
+                        );
+                    }
+                }
+                for e in [outer_radius, middle_radius, inner_radius] {
+                    canvas.draw_ellipse(
+                        self.position,
+                        egui::Vec2::splat(e),
+                        egui::Color32::TRANSPARENT,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
         }
 
