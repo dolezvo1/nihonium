@@ -5338,6 +5338,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
             let line_type = match line_type {
                 NetworkAssociationLineType::Solid => canvas::LineType::Solid,
                 NetworkAssociationLineType::Dashed => canvas::LineType::Dashed,
+                NetworkAssociationLineType::Dotted => canvas::LineType::Dotted,
             };
             let arrowhead_type = match arrowhead_type {
                 NetworkAssociationArrowheadType::None => canvas::ArrowheadType::None,
@@ -5346,6 +5347,12 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 }
                 NetworkAssociationArrowheadType::EmptyTriangle => {
                     canvas::ArrowheadType::EmptyTriangle
+                }
+                NetworkAssociationArrowheadType::FullTriangle => {
+                    canvas::ArrowheadType::FullTriangle
+                }
+                NetworkAssociationArrowheadType::FullCircle => {
+                    canvas::ArrowheadType::FullCircleSmall
                 }
             };
             let multiplicity = if multiplicity.is_empty() {

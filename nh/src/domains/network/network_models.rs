@@ -974,15 +974,17 @@ pub enum NetworkAssociationLineType {
     #[default]
     Solid,
     Dashed,
+    Dotted,
 }
 
 impl NetworkAssociationLineType {
-    pub const VARIANTS: [Self; 2] = [Self::Solid, Self::Dashed];
+    pub const VARIANTS: [Self; 3] = [Self::Solid, Self::Dashed, Self::Dotted];
 
     pub fn as_str(&self) -> &'static str {
         match self {
             NetworkAssociationLineType::Solid => "Solid",
             NetworkAssociationLineType::Dashed => "Dashed",
+            NetworkAssociationLineType::Dotted => "Dotted",
         }
     }
 }
@@ -993,16 +995,26 @@ pub enum NetworkAssociationArrowheadType {
     None,
     OpenTriangle,
     EmptyTriangle,
+    FullTriangle,
+    FullCircle,
 }
 
 impl NetworkAssociationArrowheadType {
-    pub const VARIANTS: [Self; 3] = [Self::None, Self::OpenTriangle, Self::EmptyTriangle];
+    pub const VARIANTS: [Self; 5] = [
+        Self::None,
+        Self::OpenTriangle,
+        Self::EmptyTriangle,
+        Self::FullTriangle,
+        Self::FullCircle,
+    ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
             NetworkAssociationArrowheadType::None => "None",
             NetworkAssociationArrowheadType::OpenTriangle => "Open Triangle",
             NetworkAssociationArrowheadType::EmptyTriangle => "Empty Triangle",
+            NetworkAssociationArrowheadType::FullTriangle => "Full Triangle",
+            NetworkAssociationArrowheadType::FullCircle => "Full Circle",
         }
     }
 }
