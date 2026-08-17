@@ -3240,6 +3240,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         undo_uuids,
                         direction.inverse(),
                     ));
+                    affected_models.insert(*self.model_uuid());
                 }
 
                 recurse!();
@@ -3303,16 +3304,56 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         self.identifier_buffer = (*model.identifier).clone();
         self.comment_buffer = (*model.comment).clone();
 
-        for e in &mut self.before_views {
-            e.view.refresh_buffers();
-        }
-        if let UFOption::Some(e) = &self.p_act_view {
-            let mut w = e.write();
-            w.refresh_buffers();
-        }
-        for e in &mut self.after_views {
-            e.view.refresh_buffers();
-        }
+        // Structural refresh
+        let views_map = self
+            .before_views
+            .iter()
+            .map(|e| (*e.view.model_uuid(), e.view.clone()))
+            .chain(
+                self.p_act_view
+                    .as_ref()
+                    .map(|e| (*e.read().model_uuid(), e.clone().into())),
+            )
+            .chain(
+                self.after_views
+                    .iter()
+                    .map(|e| (*e.view.model_uuid(), e.view.clone())),
+            )
+            .collect::<HashMap<_, _>>();
+        self.before_views = model
+            .before
+            .iter()
+            .flat_map(|e1| {
+                views_map
+                    .get(&e1.state.uuid())
+                    .map(|e2| DemoPsdStateViewInfo {
+                        view: e2.clone(),
+                        executor: e1.executor,
+                    })
+            })
+            .collect();
+        self.p_act_view = model
+            .p_act
+            .as_ref()
+            .and_then(|e| {
+                views_map.get(&e.read().uuid).map(|e| match e {
+                    DemoPsdStateView::Fact(_) => panic!(),
+                    DemoPsdStateView::Act(inner) => inner.clone(),
+                })
+            })
+            .into();
+        self.after_views = model
+            .after
+            .iter()
+            .flat_map(|e1| {
+                views_map
+                    .get(&e1.state.uuid())
+                    .map(|e2| DemoPsdStateViewInfo {
+                        view: e2.clone(),
+                        executor: e1.executor,
+                    })
+            })
+            .collect();
     }
 
     fn head_count(

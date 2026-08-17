@@ -3951,6 +3951,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                         undo_uuids,
                         direction.inverse(),
                     ));
+                    affected_models.insert(*self.model_uuid());
                 }
                 recurse!();
             }
@@ -3993,6 +3994,28 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         }
         self.temporaries.stereotype_buffer = (*r.stereotype).clone();
         self.temporaries.name_buffer = (*r.name).clone();
+
+        // Structural refresh
+        let views_map = self
+            .internal_transition_views
+            .iter()
+            .map(|e| (*e.read().model_uuid(), e.clone()))
+            .collect::<HashMap<_, _>>();
+        self.internal_transition_views = r
+            .internal_transitions
+            .iter()
+            .flat_map(|e| views_map.get(&e.read().uuid).cloned())
+            .collect();
+        let views_map = self
+            .region_views
+            .iter()
+            .map(|e| (*e.read().model_uuid(), e.clone()))
+            .collect::<HashMap<_, _>>();
+        self.region_views = r
+            .regions
+            .iter()
+            .flat_map(|e| views_map.get(&e.read().uuid).cloned())
+            .collect();
     }
 
     fn head_count(

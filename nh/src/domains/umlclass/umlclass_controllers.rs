@@ -7125,6 +7125,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         undo_uuids,
                         direction.inverse(),
                     ));
+                    affected_models.insert(*self.model_uuid());
                 }
 
                 recurse!();
@@ -7216,12 +7217,27 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         self.is_abstract_buffer = model.is_abstract;
         self.comment_buffer = (*model.comment).clone();
 
-        for e in &self.properties_views {
-            e.write().refresh_buffers();
-        }
-        for e in &self.operations_views {
-            e.write().refresh_buffers();
-        }
+        // Structural refresh
+        let views_map = self
+            .properties_views
+            .iter()
+            .map(|e| (*e.read().model_uuid(), e.clone()))
+            .collect::<HashMap<_, _>>();
+        self.properties_views = model
+            .properties
+            .iter()
+            .flat_map(|e| views_map.get(&e.read().uuid).cloned())
+            .collect();
+        let views_map = self
+            .operations_views
+            .iter()
+            .map(|e| (*e.read().model_uuid(), e.clone()))
+            .collect::<HashMap<_, _>>();
+        self.operations_views = model
+            .operations
+            .iter()
+            .flat_map(|e| views_map.get(&e.read().uuid).cloned())
+            .collect();
     }
 
     fn head_count(
