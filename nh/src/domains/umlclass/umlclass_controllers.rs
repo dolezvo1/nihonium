@@ -469,9 +469,8 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     MGlobalColor::None,
                 ))
             }
-            UmlClassElement::Property(..) | UmlClassElement::Operation(..) => {
-                unreachable!()
-            }
+            UmlClassElement::Property(inner) => new_umlclass_property_view(inner.clone()).into(),
+            UmlClassElement::Operation(inner) => new_umlclass_operation_view(inner.clone()).into(),
             UmlClassElement::UseCase(inner) => {
                 let r = inner.read();
                 new_uml_usecase_view(
