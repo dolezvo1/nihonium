@@ -3135,6 +3135,18 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     }
                     DemoPsdOrdinalMovement::StateLeft | DemoPsdOrdinalMovement::StateRight => {
                         let mut remainder = None;
+                        if *direction == DemoPsdOrdinalMovement::StateRight
+                            && self
+                                .before_views
+                                .last()
+                                .filter(|e| uuids.contains(&e.view.uuid()))
+                                .is_some()
+                        {
+                            remainder = Some((
+                                self.model.write().before.pop().unwrap(),
+                                self.before_views.pop().unwrap(),
+                            ));
+                        }
                         {
                             let before_iter: Box<dyn Iterator<Item = &mut DemoPsdStateViewInfo>> =
                                 match direction {
@@ -3164,16 +3176,16 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 }
                             }
                         }
-                        if *direction == DemoPsdOrdinalMovement::StateRight
+                        if *direction == DemoPsdOrdinalMovement::StateLeft
                             && self
-                                .before_views
-                                .last()
+                                .after_views
+                                .first()
                                 .filter(|e| uuids.contains(&e.view.uuid()))
                                 .is_some()
                         {
                             remainder = Some((
-                                self.model.write().before.pop().unwrap(),
-                                self.before_views.pop().unwrap(),
+                                self.model.write().after.remove(0),
+                                self.after_views.remove(0),
                             ));
                         }
                         {
@@ -3204,18 +3216,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     std::mem::swap(dest, *src);
                                 }
                             }
-                        }
-                        if *direction == DemoPsdOrdinalMovement::StateLeft
-                            && self
-                                .after_views
-                                .first()
-                                .filter(|e| uuids.contains(&e.view.uuid()))
-                                .is_some()
-                        {
-                            remainder = Some((
-                                self.model.write().after.remove(0),
-                                self.after_views.remove(0),
-                            ));
                         }
                         if let Some((mi, vi)) = remainder {
                             undo_uuids.insert(*vi.view.uuid());
