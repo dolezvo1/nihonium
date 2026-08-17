@@ -25,7 +25,7 @@ Note: The following browser settings are recommended for optimal experience:
 
 ### As a native binary
 
-If you don't have `cargo` on your system, [install it first](https://rustup.rs/).
+If you don't have `cargo` on your system, [install it first](https://rustup.rs/). For more details on installation and prerequisites see [the rustup book](https://rust-lang.github.io/rustup/index.html).
 
 Assuming you have `cargo` installed, you only need to
 
