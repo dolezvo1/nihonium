@@ -1063,7 +1063,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &self,
         uuid: &ViewUuid,
         delete_kind: DeleteKind,
-    ) -> (Vec<ModelUuid>, Vec<(usize, ViewUuid)>);
+    ) -> (Vec<ModelUuid>, Vec<ModelUuid>, Vec<(usize, ViewUuid)>);
 
     fn undo_immediate(
         &mut self,
@@ -2530,7 +2530,7 @@ where
         &self,
         uuid: &ViewUuid,
         delete_kind: DeleteKind,
-    ) -> (Vec<ModelUuid>, Vec<(usize, ViewUuid)>) {
+    ) -> (Vec<ModelUuid>, Vec<ModelUuid>, Vec<(usize, ViewUuid)>) {
         let collect_deleted_views = |cmds: &Vec<_>| {
             let mut deleted_views = HashSet::<ViewUuid>::new();
             for c in cmds.iter() {
@@ -2565,12 +2565,20 @@ where
             });
         }
 
-        (
+        let (unintended, transitives) =
             all.0
                 .iter()
                 .filter(|e| !intended.0.contains(e))
-                .cloned()
-                .collect(),
+                .partition(|e| {
+                    self.adapter
+                        .model()
+                        .read()
+                        .find_element(*e)
+                        .is_none_or(|e| !all.0.contains(&e.1))
+                });
+        (
+            unintended,
+            transitives,
             views_per_views
                 .into_iter()
                 .filter(|e| e.1 != 0)

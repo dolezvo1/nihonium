@@ -372,7 +372,7 @@ struct NHContext {
         f32,
     )>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
-    unintended_deletes_data: Option<(Vec<ModelUuid>, Vec<(usize, ViewUuid)>)>,
+    unintended_deletes_data: Option<(Vec<ModelUuid>, Vec<ModelUuid>, Vec<(usize, ViewUuid)>)>,
     shortcut_being_set: Option<SetShortcut>,
     selected_global_color: Option<uuid::Uuid>,
 
@@ -3501,17 +3501,17 @@ impl eframe::App for NHApp {
                     continue;
                 };
 
-                let (m, v) = ac
+                let (m1, m2, v) = ac
                     .read()
                     .calculate_unintended_deletes(uuid, DeleteKind::DeleteAll);
                 let v_no = v.iter().map(|e| e.0).sum::<usize>();
-                if u.is_none() && (m.len() > 0 || v_no > 0) {
-                    self.context.unintended_deletes_data = Some((m, v));
+                if u.is_none() && (m1.len() > 0 || v_no > 0) {
+                    self.context.unintended_deletes_data = Some((m1, m2, v));
                     self.context.confirm_modal_reason =
                         Some(DiagramCommand::CutSelectedElements(None).into());
-                } else if (m.len() == 0 && v_no == 0)
+                } else if (m1.len() == 0 && v_no == 0)
                     || u.is_some_and(|e| {
-                        e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m.len() == 0
+                        e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m1.len() == 0
                     })
                     || u.is_some_and(|e| e == UnintendedDeleteBehavior::DeleteAll)
                 {
@@ -4234,14 +4234,22 @@ impl eframe::App for NHApp {
 
         if let Some(confirm_reason) = self.context.confirm_modal_reason {
             macro_rules! unselected_deletes {
-                ($ui:expr, $u:expr, $m:expr, $v:expr, $cmd:expr, $dont_ask_again_default:expr, $dont_ask_again_target:expr) => {
+                ($ui:expr, $u:expr, $m1:expr, $m2:expr, $v:expr, $cmd:expr, $dont_ask_again_default:expr, $dont_ask_again_target:expr) => {
                     const SPACING: f32 = 5.0;
-                    $ui.label(format!("This operation would also delete other (unselected) elements (see below). How would you like to continue?"));
+                    $ui.label(format!("This operation would also delete other (unselected) elements (and their children) (see below). How would you like to continue?"));
                     $ui.add_space(SPACING);
                     $ui.collapsing(
-                        format!("Model elements ({})", $m.len()),
+                        format!("Unselected model elements ({})", $m1.len()),
                         |ui| {
-                            for e in $m {
+                            for e in $m1 {
+                                ui.label(&*self.context.drawing_context.model_labels.get(e));
+                            }
+                        },
+                    );
+                    $ui.collapsing(
+                        format!("Other model elements ({})", $m2.len()),
+                        |ui| {
+                            for e in $m2 {
                                 ui.label(&*self.context.drawing_context.model_labels.get(e));
                             }
                         },
@@ -4375,7 +4383,7 @@ impl eframe::App for NHApp {
                                 }
                             });
                         }
-                        Some((m, v)) => {
+                        Some((m1, m2, v)) => {
                             let daad = |daa| {
                                 DiagramCommand::DeleteSelectedElements(
                                     k,
@@ -4389,7 +4397,8 @@ impl eframe::App for NHApp {
                             unselected_deletes!(
                                 ui,
                                 u,
-                                m,
+                                m1,
+                                m2,
                                 v,
                                 DiagramCommand::DeleteSelectedElements(
                                     k,
@@ -4403,7 +4412,7 @@ impl eframe::App for NHApp {
                 } else if let SimpleProjectCommand::FocusedDiagramCommand(
                     DiagramCommand::CutSelectedElements(u),
                 ) = confirm_reason
-                    && let Some((m, v)) = &self.context.unintended_deletes_data
+                    && let Some((m1, m2, v)) = &self.context.unintended_deletes_data
                 {
                     let daad = |daa| {
                         DiagramCommand::CutSelectedElements(match daa {
@@ -4415,7 +4424,8 @@ impl eframe::App for NHApp {
                     unselected_deletes!(
                         ui,
                         u,
-                        m,
+                        m1,
+                        m2,
                         v,
                         DiagramCommand::CutSelectedElements(Some(
                             UnintendedDeleteBehavior::DeleteAll,
@@ -4536,17 +4546,17 @@ impl eframe::App for NHApp {
                                             continue;
                                         };
 
-                                        let (m, v) = ac.read().calculate_unintended_deletes(
+                                        let (m1, m2, v) = ac.read().calculate_unintended_deletes(
                                             uuid,
                                             otherwise.unwrap_or_default(),
                                         );
                                         let v_no = v.iter().map(|e| e.0).sum::<usize>();
-                                        if u.is_none() && (m.len() > 0 || v_no > 0) {
-                                            self.context.unintended_deletes_data = Some((m, v));
+                                        if u.is_none() && (m1.len() > 0 || v_no > 0) {
+                                            self.context.unintended_deletes_data = Some((m1, m2, v));
                                             self.context.confirm_modal_reason =
                                                 Some(DiagramCommand::DeleteSelectedElements(otherwise, None).into());
-                                        } else if (m.len() == 0 && v_no == 0)
-                                            || u.is_some_and(|e| e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m.len() == 0)
+                                        } else if (m1.len() == 0 && v_no == 0)
+                                            || u.is_some_and(|e| e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m1.len() == 0)
                                             || u.is_some_and(|e| e == UnintendedDeleteBehavior::DeleteAll) {
                                             ac.write().apply_diagram_command(
                                                 uuid,
