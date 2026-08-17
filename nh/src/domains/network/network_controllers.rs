@@ -2916,11 +2916,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             }
             NetworkNodeKind::UsbDrive => {
                 let color = color.unwrap_or(egui::Color32::LIGHT_BLUE);
+                let body_rect = egui::Rect::from_two_pos(
+                    self.position + egui::Vec2::new(-8.0, 18.0),
+                    self.position + egui::Vec2::new(8.0, -8.0),
+                );
                 canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(
-                        self.position + egui::Vec2::new(-8.0, 18.0),
-                        self.position + egui::Vec2::new(8.0, -8.0),
-                    ),
+                    body_rect,
                     egui::CornerRadius::ZERO,
                     color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -2948,7 +2949,44 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         canvas::Highlight::NONE,
                     );
                 }
-                // TODO: draw USB logo
+                let logo1 = body_rect.center() + (0.0, 6.0).into();
+                let logo2 = body_rect.center() + (-3.0, -0.0).into();
+                let logo3 = body_rect.center() + (0.0, -7.0).into();
+                let logo4 = body_rect.center() + (3.0, -3.0).into();
+                canvas.draw_ellipse(
+                    logo1,
+                    egui::Vec2::splat(2.0),
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    logo2,
+                    egui::Vec2::splat(1.0),
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [logo3, logo3 + (1.0, 1.5).into(), logo3 + (-1.0, 1.5).into()].to_vec(),
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    egui::Rect::from_center_size(logo4, egui::Vec2::splat(2.0)),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                for p2 in [logo2, logo3, logo4] {
+                    canvas.draw_line(
+                        [logo1, p2],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
             NetworkNodeKind::OpticalMedia => {
                 let color = color.unwrap_or(egui::Color32::LIGHT_YELLOW);
