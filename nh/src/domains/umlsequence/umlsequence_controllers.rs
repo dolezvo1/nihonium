@@ -9241,7 +9241,7 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceNoteLinkAdapter {
         PropertiesStatus::Shown
     }
     fn apply_change(
-        &self,
+        &mut self,
         _view_uuid: &ViewUuid,
         _command: &InsensitiveCommand<
             UmlSequenceOrdinalMovement,

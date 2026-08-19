@@ -293,7 +293,13 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
-                new_network_association_view(inner.clone(), source_view, target_view).into()
+                new_network_association_view(
+                    inner.clone(),
+                    source_view,
+                    target_view,
+                    MGlobalColor::None,
+                )
+                .into()
             }
             NetworkElement::Note(inner) => new_network_note_view(
                 inner,
@@ -584,6 +590,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         NetworkAssociationArrowheadType::None,
         (router.clone().into(), router_view.clone().into()),
         NetworkAssociationArrowheadType::OpenTriangle,
+        MGlobalColor::None,
     );
     let (e2, e2_view) = new_network_association(
         NetworkAssociationLineType::Solid,
@@ -591,6 +598,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         NetworkAssociationArrowheadType::None,
         (swtch.clone().into(), swtch_view.clone().into()),
         NetworkAssociationArrowheadType::OpenTriangle,
+        MGlobalColor::None,
     );
     let (e3, e3_view) = new_network_association(
         NetworkAssociationLineType::Solid,
@@ -598,6 +606,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         NetworkAssociationArrowheadType::None,
         (workstation.clone().into(), workstation_view.clone().into()),
         NetworkAssociationArrowheadType::OpenTriangle,
+        MGlobalColor::None,
     );
     let (e4, e4_view) = new_network_association(
         NetworkAssociationLineType::Solid,
@@ -605,6 +614,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         NetworkAssociationArrowheadType::None,
         (file.clone().into(), file_view.clone().into()),
         NetworkAssociationArrowheadType::OpenTriangle,
+        MGlobalColor::None,
     );
     let (e5, e5_view) = new_network_association(
         NetworkAssociationLineType::Dashed,
@@ -612,6 +622,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         NetworkAssociationArrowheadType::None,
         (file.clone().into(), file_view.clone().into()),
         NetworkAssociationArrowheadType::OpenTriangle,
+        MGlobalColor::None,
     );
 
     let diagram = ERef::new(NetworkDiagram::new(
@@ -847,6 +858,7 @@ impl DiagramSettings for NetworkSettings {
                             line_type,
                             source_arrowhead,
                             target_arrowhead,
+                            color,
                         } => {
                             columns[1].label("Line type");
                             egui::ComboBox::from_id_salt("line type")
@@ -879,6 +891,17 @@ impl DiagramSettings for NetworkSettings {
                                             .clicked();
                                     }
                                 });
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    color,
+                                )
+                            {
+                                *color = new_color;
+                                modified = true;
+                            }
                         }
                         NetworkToolStage::ContainerStart { name } => {
                             modified |= columns[1]
@@ -1016,6 +1039,7 @@ mod buttons {
                 line_type: NetworkAssociationLineType::Solid,
                 source_arrowhead: NetworkAssociationArrowheadType::None,
                 target_arrowhead: NetworkAssociationArrowheadType::None,
+                color: MGlobalColor::None,
             },
             NetworkToolStage::AssociationEnd,
             PartialNetworkElement::Association {
@@ -1038,6 +1062,7 @@ mod buttons {
                 line_type: NetworkAssociationLineType::Solid,
                 source_arrowhead: NetworkAssociationArrowheadType::None,
                 target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
+                color: MGlobalColor::None,
             },
             NetworkToolStage::AssociationEnd,
             PartialNetworkElement::Association {
@@ -1265,6 +1290,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         line_type: NetworkAssociationLineType::Solid,
                         source_arrowhead: NetworkAssociationArrowheadType::None,
                         target_arrowhead: NetworkAssociationArrowheadType::None,
+                        color: MGlobalColor::None,
                     },
                     "Association (solid)",
                     Some(egui::KeyboardShortcut::new(
@@ -1277,6 +1303,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         line_type: NetworkAssociationLineType::Solid,
                         source_arrowhead: NetworkAssociationArrowheadType::None,
                         target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
+                        color: MGlobalColor::None,
                     },
                     "Association (solid, arrow)",
                     Some(egui::KeyboardShortcut::new(
@@ -1289,6 +1316,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         line_type: NetworkAssociationLineType::Dashed,
                         source_arrowhead: NetworkAssociationArrowheadType::None,
                         target_arrowhead: NetworkAssociationArrowheadType::None,
+                        color: MGlobalColor::None,
                     },
                     "Association (dashed)",
                     None,
@@ -1386,6 +1414,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             line_type,
             source_arrowhead,
             target_arrowhead,
+            color,
         } => {
             let d1 = new_network_user(
                 "dummy",
@@ -1406,6 +1435,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
                 *source_arrowhead,
                 (d2.0.into(), d2.1.into()),
                 *target_arrowhead,
+                *color,
             )
             .1;
             association_view.into()
@@ -1489,6 +1519,7 @@ pub enum NetworkToolStage {
         line_type: NetworkAssociationLineType,
         source_arrowhead: NetworkAssociationArrowheadType,
         target_arrowhead: NetworkAssociationArrowheadType,
+        color: MGlobalColor,
     },
     AssociationEnd,
     ContainerStart {
@@ -1813,6 +1844,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                             NetworkAssociationArrowheadType::None,
                             (element.model(), element.clone()),
                             NetworkAssociationArrowheadType::None,
+                            MGlobalColor::None,
                         )
                         .1;
                         Some((nearest_common_container, edge_view))
@@ -1848,6 +1880,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 line_type,
                 source_arrowhead,
                 target_arrowhead,
+                color,
             } = &self.initial_stage =>
             {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
@@ -1864,6 +1897,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                         *source_arrowhead,
                         (dest.clone(), dest_controller),
                         *target_arrowhead,
+                        *color,
                     )
                     .1;
 
@@ -5047,8 +5081,9 @@ fn new_network_association(
     source_arrowhead: NetworkAssociationArrowheadType,
     target: (NetworkElement, NetworkElementView),
     target_arrowhead: NetworkAssociationArrowheadType,
+    color: MGlobalColor,
 ) -> (ERef<NetworkAssociation>, ERef<LinkViewT>) {
-    let predicate_model = ERef::new(NetworkAssociation::new(
+    let model = ERef::new(NetworkAssociation::new(
         ModelUuid::now_v7(),
         line_type,
         source.0,
@@ -5056,14 +5091,15 @@ fn new_network_association(
         target.0,
         target_arrowhead,
     ));
-    let predicate_view = new_network_association_view(predicate_model.clone(), source.1, target.1);
+    let view = new_network_association_view(model.clone(), source.1, target.1, color);
 
-    (predicate_model, predicate_view)
+    (model, view)
 }
 fn new_network_association_view(
     model: ERef<NetworkAssociation>,
     source: NetworkElementView,
     target: NetworkElementView,
+    color: MGlobalColor,
 ) -> ERef<LinkViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
@@ -5076,6 +5112,7 @@ fn new_network_association_view(
         NetworkAssociationAdapter {
             model: model.clone(),
             temporaries: Default::default(),
+            color,
         },
         vec![Ending::new_p(source, sp[0].clone())],
         vec![Ending::new_p(target, tp[0].clone())],
@@ -5092,6 +5129,7 @@ pub struct NetworkAssociationAdapter {
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
     temporaries: NetworkAssociationTemporaries,
+    color: MGlobalColor,
 }
 
 #[derive(Clone, Default)]
@@ -5121,6 +5159,12 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         self.model.read().uuid.clone()
     }
 
+    fn primary_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors
+            .get(&self.color)
+            .unwrap_or(egui::Color32::BLACK)
+    }
+
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
@@ -5140,7 +5184,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
 
     fn show_properties(
         &mut self,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -5317,10 +5361,20 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
             ));
         }
 
+        ui.label("Color:");
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.color)
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::ColorChange((0, new_color).into()),
+            ));
+        }
+
         PropertiesStatus::Shown
     }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<
             NetworkOrdinalMovement,
@@ -5419,6 +5473,16 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                         NetworkPropChange::CommentChange(model.comment.clone()),
                     ));
                     model.comment = comment.clone();
+                }
+                NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        NetworkPropChange::ColorChange(ColorChangeData {
+                            slot: 0,
+                            color: self.color,
+                        }),
+                    ));
+                    self.color = *color;
                 }
                 _ => {}
             }
@@ -5540,6 +5604,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         Self {
             model,
             temporaries: self.temporaries.clone(),
+            color: self.color,
         }
     }
 

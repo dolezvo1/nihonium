@@ -9,10 +9,10 @@ use crate::{
     common::{
         canvas::{self, Highlight},
         controller::{
-            DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext,
-            EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand,
-            LabelProvider, PropertiesStatus, Queryable, SelectionStatus, SnapManager,
-            TargettingStatus, View,
+            ColorBundle, DeleteKind, Domain, ElementController, ElementControllerGen2,
+            EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
+            InsensitiveCommand, LabelProvider, PropertiesStatus, Queryable, SelectionStatus,
+            SnapManager, TargettingStatus, View,
         },
         entity::{Entity, EntityUuid},
         eref::ERef,
@@ -132,12 +132,13 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
     fn model(&self) -> DomainT::CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
 
-    fn background_color(&self) -> egui::Color32 {
-        egui::Color32::WHITE
-    }
-    fn foreground_color(&self) -> egui::Color32 {
+    fn primary_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::BLACK
     }
+    fn detail_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
+        egui::Color32::WHITE
+    }
+
     fn draw_center_or_get_label(
         &self,
         _sources: &Vec<Ending<DomainT::CommonElementViewT>>,
@@ -189,7 +190,7 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
         Vec::new()
     }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<
             DomainT::OrdinalMovementT,
@@ -333,6 +334,8 @@ where
         canvas: &mut dyn canvas::NHCanvas,
         central_point: (ViewUuid, egui::Pos2),
         arrow_data: &HashMap<(bool, ModelUuid), ArrowData>,
+        primary_color: egui::Color32,
+        detail_color: egui::Color32,
     ) {
         let sources = self.sources.iter().map(|e| {
             let ad = arrow_data
@@ -390,11 +393,9 @@ where
             )
         }
 
-        let fg = self.adapter.foreground_color();
-        let bg = self.adapter.background_color();
         for (ah, ls, fp, iter) in sources
-            .map(|e| a(fg, central_point, &e.0.points, e.1))
-            .chain(destinations.map(|e| a(fg, central_point, &e.0.points, e.1)))
+            .map(|e| a(primary_color, central_point, &e.0.points, e.1))
+            .chain(destinations.map(|e| a(primary_color, central_point, &e.0.points, e.1)))
         {
             let mut iter_peekable = iter.peekable();
             let mut first = true;
@@ -408,7 +409,7 @@ where
                 let (u, v, v_uuid) = (u.1, v.1, v.0);
 
                 if first {
-                    ah.draw_in(canvas, fp, v, (fg, bg), self.highlight);
+                    ah.draw_in(canvas, fp, v, (primary_color, detail_color), self.highlight);
                 }
 
                 canvas.draw_line([u, v], ls, self.highlight);
@@ -655,7 +656,7 @@ where
     fn draw_in(
         &mut self,
         q: &DomainT::QueryableT<'_>,
-        context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         settings: &DomainT::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
@@ -686,7 +687,13 @@ where
                 (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
             ),
         };
-        self.draw_multiconnection(canvas, central_point, ad);
+        self.draw_multiconnection(
+            canvas,
+            central_point,
+            ad,
+            self.adapter.primary_color(&gdc.global_colors),
+            self.adapter.detail_color(&gdc.global_colors),
+        );
 
         match self.adapter.draw_center_or_get_label(
             &self.sources,
@@ -694,7 +701,7 @@ where
             central_point.1,
             self.highlight,
             q,
-            context,
+            gdc,
             settings,
             canvas,
             tool,

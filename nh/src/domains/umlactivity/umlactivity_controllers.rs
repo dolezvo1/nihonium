@@ -7758,7 +7758,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
         PropertiesStatus::Shown
     }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,
@@ -8582,7 +8582,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityNoteLinkAdapter {
         PropertiesStatus::NotShown
     }
     fn apply_change(
-        &self,
+        &mut self,
         _view_uuid: &ViewUuid,
         _command: &InsensitiveCommand<
             UmlActivityOrdinalMovement,

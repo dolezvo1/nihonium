@@ -274,7 +274,8 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
                         .chain(m.targets.iter().map(|e| *e.concept.read().uuid))
                         .collect());
                 };
-                new_archimate_relationship_view(inner.clone(), None, sv, tv).into()
+                new_archimate_relationship_view(inner.clone(), None, sv, tv, MGlobalColor::None)
+                    .into()
             }
         };
 
@@ -628,6 +629,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         (phone.clone(), phone_view.clone().into()),
         (client.clone(), client_view.clone().into()),
+        MGlobalColor::None,
     );
     let (e2, e2_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Assignment,
@@ -636,6 +638,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         (phone.clone(), phone_view.clone().into()),
         (bookb.clone(), bookb_view.clone().into()),
+        MGlobalColor::None,
     );
     let (e3, e3_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Serving,
@@ -644,6 +647,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         (web.clone(), web_view.clone().into()),
         (client.clone(), client_view.clone().into()),
+        MGlobalColor::None,
     );
     let (e4, e4_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Assignment,
@@ -652,6 +656,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         (web.clone(), web_view.clone().into()),
         (booka.clone(), booka_view.clone().into()),
+        MGlobalColor::None,
     );
     let (e5, e5_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Realization,
@@ -660,6 +665,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         (booka.clone(), booka_view.clone().into()),
         (bookb.clone(), bookb_view.clone().into()),
+        MGlobalColor::None,
     );
     let (e6, e6_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Composition,
@@ -668,6 +674,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         (bookingsystem.clone(), bookingsystem_view.clone().into()),
         (web.clone(), web_view.clone().into()),
+        MGlobalColor::None,
     );
     let (e7, e7_view) = new_archimate_relationship(
         ArchiMateRelationshipKind::Realization,
@@ -676,6 +683,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         (bookingsystem.clone(), bookingsystem_view.clone().into()),
         (booka.clone(), booka_view.clone().into()),
+        MGlobalColor::None,
     );
 
     let diagram = ERef::new(ArchiMateDiagram::new(
@@ -848,6 +856,7 @@ impl DiagramSettings for ArchiMateSettings {
                             kind,
                             name,
                             stereotype,
+                            color,
                         } => {
                             columns[1].label("Line type");
                             egui::ComboBox::from_id_salt("line type")
@@ -866,6 +875,17 @@ impl DiagramSettings for ArchiMateSettings {
                             modified |= columns[1]
                                 .labeled_text_edit_multiline("Name", name)
                                 .changed();
+
+                            if let Some(new_color) =
+                                crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    color,
+                                )
+                            {
+                                *color = new_color;
+                                modified = true;
+                            }
                         }
                         ArchiMateToolStage::RelationshipEnd
                         | ArchiMateToolStage::RelationshipAddEnding { .. } => {
@@ -956,6 +976,7 @@ mod buttons {
                 kind: ArchiMateRelationshipKind::AssociationUndirected,
                 name: "".to_owned(),
                 stereotype: "".to_owned(),
+                color: MGlobalColor::None,
             },
             ArchiMateToolStage::RelationshipEnd,
             PartialArchiMateElement::Relationship {
@@ -978,6 +999,7 @@ mod buttons {
                 kind: ArchiMateRelationshipKind::Serving,
                 name: "".to_owned(),
                 stereotype: "".to_owned(),
+                color: MGlobalColor::None,
             },
             ArchiMateToolStage::RelationshipEnd,
             PartialArchiMateElement::Relationship {
@@ -1000,6 +1022,7 @@ mod buttons {
                 kind: ArchiMateRelationshipKind::Specialization,
                 name: "".to_owned(),
                 stereotype: "".to_owned(),
+                color: MGlobalColor::None,
             },
             ArchiMateToolStage::RelationshipEnd,
             PartialArchiMateElement::Relationship {
@@ -1139,6 +1162,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     kind: *e,
                     name: "".to_owned(),
                     stereotype: "".to_owned(),
+                    color: MGlobalColor::None,
                 },
                 e.as_str(),
                 None,
@@ -1309,6 +1333,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
             kind,
             name,
             stereotype,
+            color,
         } => {
             let d1 = new_archimate_concept(
                 "dummy",
@@ -1334,6 +1359,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
                 None,
                 (d1.0.into(), d1.1.into()),
                 (d2.0.into(), d2.1.into()),
+                *color,
             )
             .1;
             association_view.into()
@@ -1391,6 +1417,7 @@ pub enum ArchiMateToolStage {
         kind: ArchiMateRelationshipKind,
         name: String,
         stereotype: String,
+        color: MGlobalColor,
     },
     RelationshipEnd,
     RelationshipAddEnding {
@@ -1651,6 +1678,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                             None,
                             (source_model, source.clone().into()),
                             (target_model, element.clone()),
+                            MGlobalColor::None,
                         )
                         .1;
                         Some((nearest_common_container, edge_view))
@@ -1686,6 +1714,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                 kind,
                 name,
                 stereotype,
+                color,
             } = &self.initial_stage =>
             {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
@@ -1703,6 +1732,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                         None,
                         (source.clone(), source_view),
                         (dest.clone(), dest_view),
+                        *color,
                     )
                     .1;
 
@@ -3678,6 +3708,7 @@ fn new_archimate_relationship(
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (ERef<ArchiMateConcept>, ArchiMateElementView),
     target: (ERef<ArchiMateConcept>, ArchiMateElementView),
+    color: MGlobalColor,
 ) -> (ERef<ArchiMateRelationship>, ERef<RelationshipViewT>) {
     let model = ERef::new(ArchiMateRelationship::new(
         ModelUuid::now_v7(),
@@ -3698,6 +3729,7 @@ fn new_archimate_relationship(
         center_point,
         vec![source.1],
         vec![target.1],
+        color,
     );
 
     (model, view)
@@ -3707,6 +3739,7 @@ fn new_archimate_relationship_view(
     center_point: Option<(ViewUuid, egui::Pos2)>,
     sources: Vec<ArchiMateElementView>,
     targets: Vec<ArchiMateElementView>,
+    color: MGlobalColor,
 ) -> ERef<RelationshipViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         sources.iter().map(|e| (*e.uuid(), e.min_shape())),
@@ -3719,6 +3752,7 @@ fn new_archimate_relationship_view(
         ArchiMateRelationshipAdapter {
             model: model.clone(),
             temporaries: Default::default(),
+            color,
         },
         sources
             .into_iter()
@@ -3743,6 +3777,7 @@ pub struct ArchiMateRelationshipAdapter {
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
     temporaries: ArchiMateRelationshipAdapterTemporaries,
+    color: MGlobalColor,
 }
 
 #[derive(Clone, Default)]
@@ -3768,6 +3803,12 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
+    }
+
+    fn primary_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors
+            .get(&self.color)
+            .unwrap_or(egui::Color32::BLACK)
     }
 
     fn draw_center_or_get_label(
@@ -4029,6 +4070,16 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
             ));
         }
 
+        ui.label("Color:");
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.color)
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                ArchiMatePropChange::ColorChange((0, new_color).into()),
+            ));
+        }
+
         PropertiesStatus::Shown
     }
     fn jettison_ending_data(
@@ -4063,7 +4114,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
     }
 
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<
             ArchiMateOrdinalMovement,
@@ -4141,6 +4192,16 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                         ));
                         e.multiplicity = multiplicity.clone();
                     }
+                }
+                ArchiMatePropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        ArchiMatePropChange::ColorChange(ColorChangeData {
+                            slot: 0,
+                            color: self.color,
+                        }),
+                    ));
+                    self.color = *color;
                 }
                 _ => {}
             }
@@ -4308,6 +4369,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
         Self {
             model,
             temporaries: self.temporaries.clone(),
+            color: self.color,
         }
     }
 

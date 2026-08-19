@@ -2774,7 +2774,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         PropertiesStatus::Shown
     }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<

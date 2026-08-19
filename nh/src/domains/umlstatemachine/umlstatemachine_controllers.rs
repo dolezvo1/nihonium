@@ -7470,7 +7470,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
         PropertiesStatus::Shown
     }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
@@ -8283,7 +8283,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineNoteLinkAd
         PropertiesStatus::NotShown
     }
     fn apply_change(
-        &self,
+        &mut self,
         _view_uuid: &ViewUuid,
         _command: &InsensitiveCommand<
             UmlStateMachineOrdinalMovement,
