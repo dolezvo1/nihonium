@@ -4833,38 +4833,32 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
-                if self
+                for element in self
                     .sections
                     .iter()
-                    .any(|e| !uuids.contains(&e.read().uuid))
+                    .filter(|v| uuids.contains(&v.read().uuid))
                 {
-                    for element in self
-                        .sections
-                        .iter()
-                        .filter(|v| uuids.contains(&v.read().uuid))
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (HORIZONTALS_BUCKET, None)
+                    } else if let Some((b, pos)) = self
+                        .model
+                        .read()
+                        .get_element_pos(&element.read().model_uuid())
                     {
-                        let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
-                            (HORIZONTALS_BUCKET, None)
-                        } else if let Some((b, pos)) = self
-                            .model
-                            .read()
-                            .get_element_pos(&element.read().model_uuid())
-                        {
-                            (b, Some(pos))
-                        } else {
-                            continue;
-                        };
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
 
-                        undo_accumulator.push(InsensitiveCommand::AddDependency {
-                            target: *self.uuid,
-                            bucket: b,
-                            position: pos,
-                            element: UmlSequenceElementView::from(element.clone()).into(),
-                            into_model: false,
-                        });
-                    }
-                    self.sections.retain(|v| !uuids.contains(&v.read().uuid));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: UmlSequenceElementView::from(element.clone()).into(),
+                        into_model: false,
+                    });
                 }
+                self.sections.retain(|v| !uuids.contains(&v.read().uuid));
 
                 recurse!();
             }
@@ -5080,7 +5074,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
+        flattened_views_status.insert(
+            *self.uuid,
+            (self.temporaries.highlight.selected
+                || self
+                    .sections
+                    .iter()
+                    .all(|e| e.read().temporaries.highlight.selected))
+            .into(),
+        );
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
         self.sections.iter().for_each(|s| {
