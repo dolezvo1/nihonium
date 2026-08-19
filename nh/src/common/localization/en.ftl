@@ -121,7 +121,7 @@ nh-modal-colorpicker-nooveridebrackets = [no override]
 nh-modal-colorpicker-notfoundbrackets = [not found]
 nh-modal-colorpicker-nooverride = No override
 nh-modal-colorpicker-localcolor = Local color
-nh-modal-colorpicker-globalcolor = Global color
+nh-modal-colorpicker-globalcolor = Global color (see Project Settings)
 
 nh-window-svgexport = SVG Export Options
 nh-window-svgexport-solidbackground = Solid background

@@ -121,7 +121,7 @@ nh-modal-colorpicker-nooveridebrackets = [beze změn]
 nh-modal-colorpicker-notfoundbrackets = [nenalezeno]
 nh-modal-colorpicker-nooverride = Beze změn
 nh-modal-colorpicker-localcolor = Lokální barva
-nh-modal-colorpicker-globalcolor = Globální barva
+nh-modal-colorpicker-globalcolor = Globální barva (viz Nastavení projektu)
 
 nh-window-svgexport = Možnosti SVG Exportu
 nh-window-svgexport-solidbackground = Pevné pozadí
