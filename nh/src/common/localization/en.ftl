@@ -6,10 +6,10 @@ nh-generic-cancel = Cancel
 nh-generic-dontaskagain = Don't ask again
 nh-generic-unsavedchanges-warning = The current project has unsaved changes.
 nh-generic-unsavedchanges-saveandproceed = Save and proceed
-nh-generic-deletemodel-title = Do you want to delete view or model?
-nh-generic-deletemodel-view = Delete View
-nh-generic-deletemodel-modelif = Delete Model If Only View
-nh-generic-deletemodel-all = Delete All
+nh-generic-deletemodel-title = Do you want to delete view element or model element?
+nh-generic-deletemodel-view = Delete view element
+nh-generic-deletemodel-modelif = Delete model element if there are no other view elements
+nh-generic-deletemodel-all = Delete all
 
 nh-project = Project
 nh-project-newproject = New Project
@@ -90,9 +90,9 @@ nh-tab-projecthierarchy-addnewshareddiagram = Add new diagram with shared model
 
 nh-tab-modelhierarchy = Model Hierarchy
 nh-tab-modelhierarchy-jumpto = Jump to element
-nh-tab-modelhierarchy-createview = Create view
-nh-tab-modelhierarchy-deleteview = Delete view
-nh-tab-modelhierarchy-deletemodel = Delete model
+nh-tab-modelhierarchy-createview = Create view element
+nh-tab-modelhierarchy-deleteview = Delete view element
+nh-tab-modelhierarchy-deletemodel = Delete model element
 
 nh-tab-search = Search
 nh-tab-search-jumptoincurrent = Jump to in current diagram

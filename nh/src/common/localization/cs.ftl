@@ -3,12 +3,12 @@ nh-generic-yes = Ano
 nh-generic-no = Ne
 nh-generic-ok = Budiž
 nh-generic-cancel = Zrušit
-nh-generic-dontaskagain = Znovu se neptej
+nh-generic-dontaskagain = Znovu se neptat
 nh-generic-unsavedchanges-warning = Současný projekt má neuložené změny.
 nh-generic-unsavedchanges-saveandproceed = Uložit a potvrdit
-nh-generic-deletemodel-title = Chcete odstranit pohled, nebo model?
-nh-generic-deletemodel-view = Odstranit pohled
-nh-generic-deletemodel-modelif = Odstranit model pokud je pohled jediný
+nh-generic-deletemodel-title = Chcete odstranit prvek pohledu, nebo modelu?
+nh-generic-deletemodel-view = Odstranit prvek pohledu
+nh-generic-deletemodel-modelif = Odstranit prvek modelu pokud je prvek pohledu jediný
 nh-generic-deletemodel-all = Odstranit vše
 
 nh-project = Projekt
@@ -90,9 +90,9 @@ nh-tab-projecthierarchy-addnewshareddiagram = Přidat nový diagram se sdílený
 
 nh-tab-modelhierarchy = Hierarchie Modelu
 nh-tab-modelhierarchy-jumpto = Skočit k prvku
-nh-tab-modelhierarchy-createview = Vytvořit pohled
-nh-tab-modelhierarchy-deleteview = Odstranit pohled
-nh-tab-modelhierarchy-deletemodel = Odstranit model
+nh-tab-modelhierarchy-createview = Vytvořit prvek pohledu
+nh-tab-modelhierarchy-deleteview = Odstranit prvek pohledu
+nh-tab-modelhierarchy-deletemodel = Odstranit prvek modelu
 
 nh-tab-search = Vyhledávání
 nh-tab-search-jumptoincurrent = Skočit v současném diagramu
