@@ -65,11 +65,6 @@ fn enumerate_elements(
                 enumerate_elements(&e.clone().to_element(), into);
             }
         }
-        UmlStateMachineElement::SimpleState(inner) => {
-            for e in &inner.read().internal_transitions {
-                enumerate_elements(&e.clone().into(), into);
-            }
-        }
         _ => {}
     }
 }
@@ -120,18 +115,6 @@ pub fn transitive_closure(
                         }
                     }
                 }
-                UmlStateMachineElement::SimpleState(inner) => {
-                    let r = inner.read();
-                    if when_deleting.contains(&r.uuid) {
-                        let mut c = Default::default();
-                        enumerate_elements(e, &mut c);
-                        when_deleting.extend(c.into_keys());
-                    } else {
-                        for e in &r.internal_transitions {
-                            walk(&e.clone().into(), when_deleting);
-                        }
-                    }
-                }
                 _ => {}
             }
         }
@@ -163,12 +146,6 @@ pub fn transitive_closure(
                 UmlStateMachineElement::CompositeStateRegion(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(&e.clone().to_element(), when_deleting, also_delete);
-                    }
-                }
-                UmlStateMachineElement::SimpleState(inner) => {
-                    let r = inner.read();
-                    for e in &r.internal_transitions {
-                        walk(&e.clone().into(), when_deleting, also_delete);
                     }
                 }
                 UmlStateMachineElement::InternalTransition(..)
@@ -235,11 +212,6 @@ pub fn top_sort_info(m: &UmlStateMachineElement) -> ModelTopSortInfo {
                     walk(&e.clone().to_element(), required_models, provided_models);
                 }
             }
-            UmlStateMachineElement::SimpleState(inner) => {
-                for e in &inner.read().internal_transitions {
-                    walk(&e.clone().into(), required_models, provided_models);
-                }
-            }
             UmlStateMachineElement::InternalTransition(_)
             | UmlStateMachineElement::InitialPseudostate(_)
             | UmlStateMachineElement::TerminatePseudostate(_)
@@ -283,10 +255,9 @@ pub enum UmlStateMachineElement {
     StateMachine(ERef<UmlStateMachine>),
     #[container_model(passthrough = "eref")]
     CompositeState(ERef<UmlStateMachineCompositeState>),
+    InternalTransition(ERef<UmlStateMachineInternalTransition>),
     #[container_model(passthrough = "eref")]
     CompositeStateRegion(ERef<UmlStateMachineCompositeStateRegion>),
-    SimpleState(ERef<UmlStateMachineSimpleState>),
-    InternalTransition(ERef<UmlStateMachineInternalTransition>),
     InitialPseudostate(ERef<UmlStateMachineInitialPseudostate>),
     TerminatePseudostate(ERef<UmlStateMachineTerminatePseudostate>),
     FinalState(ERef<UmlStateMachineFinalState>),
@@ -300,9 +271,8 @@ impl UmlStateMachineElement {
         match &self {
             UmlStateMachineElement::StateMachine(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::CompositeState(inner) => Some(inner.clone().into()),
-            UmlStateMachineElement::CompositeStateRegion(_) => None,
-            UmlStateMachineElement::SimpleState(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::InternalTransition(_) => None,
+            UmlStateMachineElement::CompositeStateRegion(_) => None,
             UmlStateMachineElement::InitialPseudostate(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::TerminatePseudostate(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::FinalState(inner) => Some(inner.clone().into()),
@@ -316,8 +286,7 @@ impl UmlStateMachineElement {
         match self {
             UmlStateMachineElement::StateMachine(_)
             | UmlStateMachineElement::CompositeState(_)
-            | UmlStateMachineElement::CompositeStateRegion(_)
-            | UmlStateMachineElement::SimpleState(_) => {}
+            | UmlStateMachineElement::CompositeStateRegion(_) => {}
             UmlStateMachineElement::InternalTransition(..)
             | UmlStateMachineElement::InitialPseudostate(..)
             | UmlStateMachineElement::TerminatePseudostate(..)
@@ -346,7 +315,6 @@ pub enum UmlStateMachineStandaloneElement {
     StateMachine(ERef<UmlStateMachine>),
     #[container_model(passthrough = "eref")]
     CompositeState(ERef<UmlStateMachineCompositeState>),
-    SimpleState(ERef<UmlStateMachineSimpleState>),
     InitialPseudostate(ERef<UmlStateMachineInitialPseudostate>),
     TerminatePseudostate(ERef<UmlStateMachineTerminatePseudostate>),
     FinalState(ERef<UmlStateMachineFinalState>),
@@ -360,7 +328,6 @@ impl UmlStateMachineStandaloneElement {
         match self {
             UmlStateMachineStandaloneElement::StateMachine(inner) => inner.into(),
             UmlStateMachineStandaloneElement::CompositeState(inner) => inner.into(),
-            UmlStateMachineStandaloneElement::SimpleState(inner) => inner.into(),
             UmlStateMachineStandaloneElement::InitialPseudostate(inner) => inner.into(),
             UmlStateMachineStandaloneElement::TerminatePseudostate(inner) => inner.into(),
             UmlStateMachineStandaloneElement::FinalState(inner) => inner.into(),
@@ -380,7 +347,6 @@ impl UmlStateMachineStandaloneElement {
             Self::CompositeState(inner) => {
                 inner.read().deep_copy_clone_inner(new_uuid, into).into()
             }
-            Self::SimpleState(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
             Self::InitialPseudostate(inner) => {
                 inner.read().deep_copy_clone_inner(new_uuid, into).into()
             }
@@ -400,7 +366,6 @@ impl UmlStateMachineStandaloneElement {
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlStateMachineNonFinalNode {
     CompositeState(ERef<UmlStateMachineCompositeState>),
-    SimpleState(ERef<UmlStateMachineSimpleState>),
     InitialPseudostate(ERef<UmlStateMachineInitialPseudostate>),
 }
 
@@ -409,7 +374,6 @@ pub enum UmlStateMachineNonFinalNode {
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlStateMachineNonInitialNode {
     CompositeState(ERef<UmlStateMachineCompositeState>),
-    SimpleState(ERef<UmlStateMachineSimpleState>),
     TerminatePseudostate(ERef<UmlStateMachineTerminatePseudostate>),
     FinalState(ERef<UmlStateMachineFinalState>),
 }
@@ -418,7 +382,6 @@ impl UmlStateMachineElement {
     pub fn as_nonfinal(&self) -> Option<UmlStateMachineNonFinalNode> {
         match self {
             UmlStateMachineElement::CompositeState(inner) => Some(inner.clone().into()),
-            UmlStateMachineElement::SimpleState(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::InitialPseudostate(inner) => Some(inner.clone().into()),
             _ => None,
         }
@@ -426,7 +389,6 @@ impl UmlStateMachineElement {
     pub fn as_noninitial(&self) -> Option<UmlStateMachineNonInitialNode> {
         match self {
             UmlStateMachineElement::CompositeState(inner) => Some(inner.clone().into()),
-            UmlStateMachineElement::SimpleState(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::TerminatePseudostate(inner) => Some(inner.clone().into()),
             UmlStateMachineElement::FinalState(inner) => Some(inner.clone().into()),
             _ => None,
@@ -437,7 +399,6 @@ impl UmlStateMachineNonFinalNode {
     pub fn to_element(self) -> UmlStateMachineElement {
         match self {
             UmlStateMachineNonFinalNode::CompositeState(inner) => inner.into(),
-            UmlStateMachineNonFinalNode::SimpleState(inner) => inner.into(),
             UmlStateMachineNonFinalNode::InitialPseudostate(inner) => inner.into(),
         }
     }
@@ -446,7 +407,6 @@ impl UmlStateMachineNonInitialNode {
     pub fn to_element(self) -> UmlStateMachineElement {
         match self {
             UmlStateMachineNonInitialNode::CompositeState(inner) => inner.into(),
-            UmlStateMachineNonInitialNode::SimpleState(inner) => inner.into(),
             UmlStateMachineNonInitialNode::TerminatePseudostate(inner) => inner.into(),
             UmlStateMachineNonInitialNode::FinalState(inner) => inner.into(),
         }
@@ -480,13 +440,6 @@ impl VisitableElement for UmlStateMachineElement {
                 v.open_complex(self);
                 for e in &inner.read().contained_elements {
                     e.clone().to_element().accept(v);
-                }
-                v.close_complex(self);
-            }
-            UmlStateMachineElement::SimpleState(inner) => {
-                v.open_complex(self);
-                for e in &inner.read().internal_transitions {
-                    UmlStateMachineElement::from(e.clone()).accept(v);
                 }
                 v.close_complex(self);
             }
@@ -602,16 +555,14 @@ impl UmlStateMachineDiagram {
                     w.internal_transitions
                         .retain(|e| !uuids.contains(&e.read().uuid));
 
-                    if w.regions.iter().any(|e| !uuids.contains(&e.read().uuid)) {
-                        for (idx, e) in w.regions.iter().enumerate() {
-                            if uuids.contains(&e.read().uuid) {
-                                undo.push((*w.uuid, e.clone().into(), 2, idx.try_into().unwrap()));
-                            } else {
-                                r(&e.clone().into(), uuids, undo);
-                            }
+                    for (idx, e) in w.regions.iter().enumerate() {
+                        if uuids.contains(&e.read().uuid) {
+                            undo.push((*w.uuid, e.clone().into(), 2, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.clone().into(), uuids, undo);
                         }
-                        w.regions.retain(|e| !uuids.contains(&e.read().uuid));
                     }
+                    w.regions.retain(|e| !uuids.contains(&e.read().uuid));
                 }
                 UmlStateMachineElement::CompositeStateRegion(inner) => {
                     let mut w = inner.write();
@@ -628,19 +579,6 @@ impl UmlStateMachineDiagram {
                         }
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-                }
-                UmlStateMachineElement::SimpleState(inner) => {
-                    let mut w = inner.write();
-
-                    for (idx, e) in w.internal_transitions.iter().enumerate() {
-                        if uuids.contains(&e.read().uuid) {
-                            undo.push((*w.uuid, e.clone().into(), 1, idx.try_into().unwrap()));
-                        } else {
-                            r(&e.clone().into(), uuids, undo);
-                        }
-                    }
-                    w.internal_transitions
-                        .retain(|e| !uuids.contains(&e.read().uuid));
                 }
                 _ => {}
             }
@@ -760,9 +698,6 @@ impl DiagramModel for UmlStateMachineDiagram {
                 UmlStateMachineElement::CompositeStateRegion(inner) => {
                     inner.write().insert_element(b, p, element)
                 }
-                UmlStateMachineElement::SimpleState(inner) => {
-                    inner.write().insert_element(b, p, element)
-                }
                 UmlStateMachineElement::InternalTransition(_)
                 | UmlStateMachineElement::InitialPseudostate(_)
                 | UmlStateMachineElement::TerminatePseudostate(_)
@@ -787,7 +722,6 @@ impl DiagramModel for UmlStateMachineDiagram {
                 UmlStateMachineElement::CompositeStateRegion(inner) => {
                     inner.write().remove_element(uuid)
                 }
-                UmlStateMachineElement::SimpleState(inner) => inner.write().remove_element(uuid),
                 UmlStateMachineElement::InternalTransition(_)
                 | UmlStateMachineElement::InitialPseudostate(_)
                 | UmlStateMachineElement::TerminatePseudostate(_)
@@ -1251,134 +1185,6 @@ impl FullTextSearchable for UmlStateMachineCompositeStateRegion {
 
         for e in &self.contained_elements {
             e.full_text_search(acc);
-        }
-    }
-}
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(is_entity)]
-pub struct UmlStateMachineSimpleState {
-    pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
-    #[nh_context_serde(entity)]
-    pub internal_transitions: Vec<ERef<UmlStateMachineInternalTransition>>,
-}
-
-impl UmlStateMachineSimpleState {
-    pub fn new(
-        uuid: ModelUuid,
-        stereotype: String,
-        name: String,
-        internal_transitions: Vec<ERef<UmlStateMachineInternalTransition>>,
-    ) -> Self {
-        Self {
-            uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
-            internal_transitions,
-        }
-    }
-    pub fn deep_copy_clone_inner(
-        &self,
-        new_uuid: ModelUuid,
-        into: &mut HashMap<ModelUuid, UmlStateMachineElement>,
-    ) -> ERef<Self> {
-        let new_model = ERef::new(UmlStateMachineSimpleState {
-            uuid: new_uuid.into(),
-            stereotype: self.stereotype.clone(),
-            name: self.name.clone(),
-            internal_transitions: self
-                .internal_transitions
-                .iter()
-                .map(|e| e.read().deep_copy_clone_inner(ModelUuid::now_v7(), into))
-                .collect(),
-        });
-
-        into.insert(*self.uuid, new_model.clone().into());
-        new_model
-    }
-
-    fn insert_element(
-        &mut self,
-        bucket: BucketNoT,
-        position: Option<PositionNoT>,
-        element: UmlStateMachineElement,
-    ) -> Result<PositionNoT, UmlStateMachineElement> {
-        match bucket {
-            0 | UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET
-                if let UmlStateMachineElement::InternalTransition(element) = element =>
-            {
-                let pos = position
-                    .map(|e| e.try_into().unwrap())
-                    .unwrap_or(self.internal_transitions.len());
-                self.internal_transitions.insert(pos, element);
-                Ok(pos.try_into().unwrap())
-            }
-            _ => Err(element),
-        }
-    }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.internal_transitions.iter().enumerate() {
-            if *e.read().uuid() == *uuid {
-                self.internal_transitions.remove(idx);
-                return Some((
-                    UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET,
-                    idx.try_into().unwrap(),
-                ));
-            }
-        }
-        None
-    }
-}
-
-impl Model for UmlStateMachineSimpleState {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        self.uuid.clone()
-    }
-}
-
-impl Entity for UmlStateMachineSimpleState {
-    fn tagged_uuid(&self) -> EntityUuid {
-        (*self.uuid).into()
-    }
-}
-
-impl ContainerModel for UmlStateMachineSimpleState {
-    type ElementT = UmlStateMachineElement;
-
-    fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
-        for e in &self.internal_transitions {
-            if *e.read().uuid() == *uuid {
-                return Some((e.clone().into(), *self.uuid));
-            }
-        }
-        None
-    }
-
-    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.internal_transitions.iter().enumerate() {
-            if *e.read().uuid() == *uuid {
-                return Some((
-                    UmlStateMachineCompositeState::INTERNAL_TRANSITIONS_BUCKET,
-                    idx.try_into().unwrap(),
-                ));
-            }
-        }
-        None
-    }
-}
-
-impl FullTextSearchable for UmlStateMachineSimpleState {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[&self.uuid.to_string(), &self.stereotype, &self.name],
-        );
-
-        // TODO: I think the user might not expect trivial entities like this to be wholly separate when searching
-        for e in &self.internal_transitions {
-            e.read().full_text_search(acc);
         }
     }
 }
