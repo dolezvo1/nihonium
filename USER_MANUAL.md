@@ -52,3 +52,13 @@ The Properties tab shows available properties of the currently selected element 
 The Outline tab shows all content in the current diagram as well as relative position of the viewport.
 
 Clicking or dragging within the outline tab may be used to quickly change the viewport position.
+
+# My project files cannot be opened anymore
+
+You may find yourself in a situation where your project files no longer can be opened by the program. If you've been consistently using some versioning system (such as git or creating dated copies using "Save As"), you most likely don't have to worry too much. If you're using the web version, you also most likely don't have to worry. If you're using the desktop version and cannot open files created by the same commit version you're currently using, you may start to worry a little.
+
+Since many aspects of Nihonium are is still being actively researched, breaking changes do happen. To soften this blow, Nihonium stores the commit hash of the program version which last saved the project in the project manifest file (look for `format_version`), allowing you to backtrack to last Nihonium version which can be assumed to work with the given project file.
+
+It must be said that there is also a possibility of the project files being corrupted due to a bug occurring when they were being saved, or there may be a bug when opening them. For this reason it is not recommended to use Nihonium without some way of external versioning at the moment.
+
+Regardless of which is actually the case, you can always try opening an issue on GitHub or sending me the files directly, in particular if you believe it is a bug. In case of a breaking change I may also be able to upgrade your the project files to work with the latest version.

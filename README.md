@@ -7,7 +7,7 @@ Nihonium is a small diagramming / CASE modelling platform written in Rust using 
 > [!WARNING]
 > Nihonium is currently in relatively early stages of development. It is recommended to save often and use version control software such as Git in order to prevent all your data being irreversibly lost.
 >
-> Pull Requests are currently not accepted, however feature requests and bug reports are very welcome.
+> Pull Requests are currently not accepted, however feature requests and bug reports are very welcome. See also ["My project files cannot be opened anymore"](USER_MANUAL.md#my-project-files-cannot-be-opened-anymore).
 
 For basic operation instruction as well as advanced tips and tricks see [user manual](USER_MANUAL.md).
 
