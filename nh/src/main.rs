@@ -156,7 +156,7 @@ pub enum NHTab {
     Outline,
 
     Diagram { uuid: ViewUuid },
-    Document { uuid: ViewUuid },
+    Resource { uuid: ViewUuid },
     CustomTab { uuid: uuid::Uuid },
 }
 
@@ -177,7 +177,7 @@ impl NHTab {
             NHTab::Outline => gdc.translate_0("nh-tab-outline"),
 
             NHTab::Diagram { .. } => gdc.translate_0("nh-tab-diagram"),
-            NHTab::Document { .. } => gdc.translate_0("nh-tab-document"),
+            NHTab::Resource { .. } => gdc.translate_0("nh-tab-document"),
             NHTab::CustomTab { .. } => gdc.translate_0("nh-tab-customtab"),
         }
     }
@@ -185,7 +185,7 @@ impl NHTab {
     pub fn is_persistable(&self) -> bool {
         !matches!(
             self,
-            Self::Diagram { .. } | Self::Document { .. } | Self::CustomTab { .. }
+            Self::Diagram { .. } | Self::Resource { .. } | Self::CustomTab { .. }
         )
     }
 }
@@ -244,12 +244,14 @@ impl CustomModal for ErrorModal {
 }
 
 enum FileIOOperation {
-    Open(FileHandle),
-    OpenContent(
+    ProjectOpen(FileHandle),
+    ProjectOpenContent(
         FileHandle,
         Result<Box<dyn FSReadAbstraction + Send>, NHDeserializeError>,
     ),
-    Save(FileHandle),
+    FilesUpload(Vec<FileHandle>),
+    FilesUploadContent(Vec<(FileHandle, Vec<u8>)>),
+    ProjectSave(FileHandle),
     ImageExport(FileHandle, ViewUuid, ERef<dyn DiagramController>),
     Error(String),
 }
@@ -329,7 +331,8 @@ struct NHContext {
     tree_view_state: TreeViewState<ViewUuid>,
     diagram_deserializers: HashMap<String, &'static DeserializeControllerF>,
     new_diagram_no: u32,
-    documents: HashMap<ViewUuid, (String, String)>,
+    resources: HashMap<ViewUuid, (String, Vec<u8>)>,
+    document_buffers: HashMap<ViewUuid, Option<String>>,
     clipboard: Vec<Box<dyn Any>>,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
     custom_modal: Option<Box<dyn CustomModal>>,
@@ -533,7 +536,7 @@ impl TabViewer for NHContext {
                 let c = self.diagram_controllers.get(uuid).unwrap().read();
                 (&*c.view_name(uuid)).into()
             }
-            NHTab::Document { uuid } => self.documents.get(uuid).unwrap().0.clone().into(),
+            NHTab::Resource { uuid } => self.resources.get(uuid).unwrap().0.clone().into(),
             NHTab::CustomTab { uuid } => self
                 .custom_tabs
                 .get(uuid)
@@ -570,7 +573,7 @@ impl TabViewer for NHContext {
             NHTab::Outline => self.show_outline(ui),
 
             NHTab::Diagram { uuid } => self.show_diagram_tab(uuid, ui),
-            NHTab::Document { uuid } => self.show_document_tab(uuid, ui),
+            NHTab::Resource { uuid } => self.show_document_tab(uuid, ui),
             NHTab::CustomTab { uuid } => self.show_custom_tab(uuid, ui),
         }
     }
@@ -604,10 +607,11 @@ fn add_project_element_block(
         .button(gdc.translate_0("nh-project-addnewdocument"))
         .clicked()
     {
-        commands.push(ProjectCommand::AddNewDocument {
+        commands.push(ProjectCommand::AddNewResource {
             into: *target_folder,
             uuid: ViewUuid::now_v7(),
-            content: "New Document".to_owned(),
+            name: "New Document.txt".to_owned(),
+            content: vec![],
         });
     }
 
@@ -617,6 +621,13 @@ fn add_project_element_block(
     {
         commands.push(ProjectCommand::SetInsertionTargetFolder(*target_folder));
         commands.push(ProjectCommand::OpenAndFocusTab(NHTab::NewDiagram, None));
+    }
+
+    if ui
+        .button(gdc.translate_0("nh-project-uploadnewresource"))
+        .clicked()
+    {
+        commands.push(SimpleProjectCommand::UploadNewResource.into());
     }
     ui.separator();
 }
@@ -723,7 +734,7 @@ impl NHContext {
             children,
             &self.drawing_context.global_colors,
             &self.diagram_controllers,
-            &self.documents,
+            &self.resources,
         )
     }
     fn import_project(&mut self, fh: FileHandle) -> Result<(), NHDeserializeError> {
@@ -753,7 +764,7 @@ impl NHContext {
                 let _ = self
                     .file_io_channel
                     .0
-                    .send(FileIOOperation::OpenContent(fh, rr));
+                    .send(FileIOOperation::ProjectOpenContent(fh, rr));
                 Ok(())
             }
             "nhpz" => {
@@ -763,7 +774,7 @@ impl NHContext {
                     let zfsr = ZipFSReader::new(file_contents, "project.nhp", "project")
                         .map(|e| Box::new(e) as Box<dyn FSReadAbstraction + Send>)
                         .map_err(|e| e.into());
-                    let _ = s.send(FileIOOperation::OpenContent(fh, zfsr));
+                    let _ = s.send(FileIOOperation::ProjectOpenContent(fh, zfsr));
                 });
                 Ok(())
             }
@@ -778,7 +789,7 @@ impl NHContext {
         let project_file_str = str::from_utf8(&project_file_bytes)?;
         let pdto: common::project_serde::NHProjectSerialization =
             toml::from_str(project_file_str).map_err(|e| (e, None))?;
-        let (hierarchy, top_level_views, documents) =
+        let (hierarchy, top_level_views, resources) =
             pdto.deserialize_all(ra, &self.diagram_deserializers)?;
 
         // All good, clear and set fields
@@ -798,7 +809,7 @@ impl NHContext {
                 .refresh_all_buffers(&mut self.drawing_context.model_labels);
         }
         self.diagram_controllers = top_level_views;
-        self.documents = documents;
+        self.resources = resources;
         self.drawing_context.global_colors = pdto.global_colors();
 
         Ok(())
@@ -815,7 +826,7 @@ impl NHContext {
         self.project_hierarchy =
             HierarchyNode::Folder(ViewUuid::nil(), "New Project".to_owned().into(), vec![]);
         self.new_diagram_no = 1;
-        self.documents.clear();
+        self.resources.clear();
         self.custom_tabs.clear();
         self.drawing_context.global_colors = ColorBundle::new();
 
@@ -905,7 +916,7 @@ impl NHContext {
             builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>,
             gdc: &GlobalDrawingContext,
             hn: &HierarchyNode,
-            docs: &HashMap<ViewUuid, (String, String)>,
+            resources: &HashMap<ViewUuid, (String, Vec<u8>)>,
             cma: &mut Option<ContextMenuAction>,
             commands: &mut Vec<ProjectCommand>,
             target_folder: &ViewUuid,
@@ -973,7 +984,7 @@ impl NHContext {
                     }));
 
                     for c in children {
-                        hierarchy(builder, gdc, c, docs, cma, commands, uuid);
+                        hierarchy(builder, gdc, c, resources, cma, commands, uuid);
                     }
 
                     builder.close_dir();
@@ -1041,19 +1052,16 @@ impl NHContext {
                             }),
                     );
                 }
-                HierarchyNode::Document(uuid) => {
+                HierarchyNode::Resource(uuid) => {
                     builder.node(
                         NodeBuilder::leaf(*uuid)
-                            .label(&docs.get(uuid).unwrap().0)
+                            .label(&resources.get(uuid).unwrap().0)
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-open"))
-                                    .clicked()
-                                {
+                                if ui.button(gdc.translate_0("nh-edit")).clicked() {
                                     commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Document { uuid: *uuid },
+                                        NHTab::Resource { uuid: *uuid },
                                         None,
                                     ));
                                     ui.close();
@@ -1110,7 +1118,7 @@ impl NHContext {
                             builder,
                             &self.drawing_context,
                             &self.project_hierarchy,
-                            &self.documents,
+                            &self.resources,
                             &mut context_menu_action,
                             &mut commands,
                             &ViewUuid::nil(),
@@ -1128,11 +1136,11 @@ impl NHContext {
                                         NHTab::Diagram { uuid: *selected },
                                         None,
                                     ));
-                                } else if let Some((HierarchyNode::Document(..), _)) =
+                                } else if let Some((HierarchyNode::Resource(..), _)) =
                                     self.project_hierarchy.get(selected)
                                 {
                                     commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Document { uuid: *selected },
+                                        NHTab::Resource { uuid: *selected },
                                         None,
                                     ));
                                 }
@@ -1147,11 +1155,11 @@ impl NHContext {
                                         NHTab::Diagram { uuid: *selected },
                                         Some(dnde.position),
                                     ));
-                                } else if let Some((HierarchyNode::Document(..), _)) =
+                                } else if let Some((HierarchyNode::Resource(..), _)) =
                                     self.project_hierarchy.get(selected)
                                 {
                                     commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Document { uuid: *selected },
+                                        NHTab::Resource { uuid: *selected },
                                         Some(dnde.position),
                                     ));
                                 }
@@ -1228,8 +1236,8 @@ impl NHContext {
                     let f = |e: &HierarchyNode| match e {
                         HierarchyNode::Folder(_, name, _) => (**name).clone(),
                         HierarchyNode::Diagram(uuid, c) => (*c.read().view_name(uuid)).clone(),
-                        HierarchyNode::Document(view_uuid) => {
-                            self.documents.get(view_uuid).map(|e| e.0.clone()).unwrap()
+                        HierarchyNode::Resource(view_uuid) => {
+                            self.resources.get(view_uuid).map(|e| e.0.clone()).unwrap()
                         }
                     };
                     let original_name = if view_uuid.is_nil() {
@@ -1253,6 +1261,66 @@ impl NHContext {
                             ui: &mut egui::Ui,
                             commands: &mut Vec<ProjectCommand>,
                         ) -> CustomModalResult {
+                            fn validate_filename(name: &str) -> Option<&'static str> {
+                                if name.is_empty() {
+                                    return Some("A filename is required.");
+                                }
+
+                                if name == "." || name == ".." {
+                                    return Some("'.' and '..' are reserved names.");
+                                }
+
+                                if name.ends_with(' ') || name.ends_with('.') {
+                                    return Some("A filename cannot end with a space or period.");
+                                }
+
+                                if name.chars().any(|c| {
+                                    matches!(
+                                        c,
+                                        '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                                    )
+                                }) {
+                                    return Some(
+                                        "The characters < > : \" / \\ | ? * are not allowed.",
+                                    );
+                                }
+
+                                let stem = std::path::Path::new(name)
+                                    .file_stem()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or(name);
+
+                                if matches!(
+                                    stem.to_ascii_uppercase().as_str(),
+                                    "CON"
+                                        | "PRN"
+                                        | "AUX"
+                                        | "NUL"
+                                        | "COM1"
+                                        | "COM2"
+                                        | "COM3"
+                                        | "COM4"
+                                        | "COM5"
+                                        | "COM6"
+                                        | "COM7"
+                                        | "COM8"
+                                        | "COM9"
+                                        | "LPT1"
+                                        | "LPT2"
+                                        | "LPT3"
+                                        | "LPT4"
+                                        | "LPT5"
+                                        | "LPT6"
+                                        | "LPT7"
+                                        | "LPT8"
+                                        | "LPT9"
+                                ) {
+                                    return Some("That name is reserved on Windows.");
+                                }
+
+                                None
+                            }
+
                             ui.label(gdc.translate_0("nh-tab-projecthierarchy-newname"));
                             let r = ui.text_edit_singleline(&mut self.name_buffer);
                             if self.first_frame {
@@ -1260,9 +1328,27 @@ impl NHContext {
                                 self.first_frame = false;
                             }
 
+                            let validation = validate_filename(&self.name_buffer);
+                            if let Some(error) = validation {
+                                ui.label(egui::RichText::new(error).color(egui::Color32::RED));
+                            } else {
+                                ui.label(
+                                    egui::RichText::new(
+                                        "Allowed: letters, numbers, spaces, -, _, and .",
+                                    )
+                                    .color(egui::Color32::GRAY),
+                                );
+                            }
+
                             let mut result = CustomModalResult::KeepOpen;
                             ui.horizontal(|ui| {
-                                if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
+                                if ui
+                                    .add_enabled(
+                                        validation.is_none(),
+                                        egui::Button::new(gdc.translate_0("nh-generic-ok")),
+                                    )
+                                    .clicked()
+                                {
                                     commands.push(ProjectCommand::RenameElement(
                                         self.view_uuid,
                                         self.name_buffer.clone(),
@@ -2834,12 +2920,25 @@ impl NHContext {
     }
 
     fn show_document_tab(&mut self, uuid: &ViewUuid, ui: &mut egui::Ui) {
-        let c = self.documents.get_mut(uuid).unwrap();
-        if ui
-            .add_sized(ui.available_size(), egui::TextEdit::multiline(&mut c.1))
-            .changed()
+        let res = self.resources.get_mut(uuid).unwrap();
+        let buffer = self
+            .document_buffers
+            .entry(*uuid)
+            .or_insert_with(|| String::from_utf8(res.1.clone()).ok());
+
+        if buffer.is_none() {
+            ui.label("This resource is probably not a valid text document. Try a lossy conversion to UTF-8?");
+            if ui.button("Force to UTF-8").clicked() {
+                *buffer = Some(String::from_utf8_lossy(&res.1).to_string());
+            }
+        }
+
+        if let Some(buffer) = buffer
+            && ui
+                .add_sized(ui.available_size(), egui::TextEdit::multiline(buffer))
+                .changed()
         {
-            c.0 = c.1.lines().next().unwrap_or("empty document").to_owned();
+            res.1 = buffer.clone().into_bytes();
             self.set_has_unsaved_changes(true);
         }
     }
@@ -3100,7 +3199,8 @@ impl NHApp {
             tree_view_state: TreeViewState::default(),
             diagram_deserializers,
             new_diagram_no: 1,
-            documents: HashMap::new(),
+            resources: HashMap::new(),
+            document_buffers: HashMap::new(),
             clipboard: Vec::new(),
             custom_tabs: HashMap::new(),
             custom_modal: None,
@@ -3339,13 +3439,13 @@ impl eframe::App for NHApp {
                 }
             }
             match e {
-                FileIOOperation::Open(fh) => {
+                FileIOOperation::ProjectOpen(fh) => {
                     if let Err(e) = self.context.import_project(fh) {
                         self.context.custom_modal =
                             Some(ErrorModal::new_box(format!("Error opening: {:?}", e)))
                     }
                 }
-                FileIOOperation::OpenContent(fh, r) => match r {
+                FileIOOperation::ProjectOpenContent(fh, r) => match r {
                     Err(e) => {
                         self.context.custom_modal =
                             Some(ErrorModal::new_box(format!("Error opening: {:?}", e)))
@@ -3362,7 +3462,30 @@ impl eframe::App for NHApp {
                         }
                     },
                 },
-                FileIOOperation::Save(fh) => {
+                FileIOOperation::FilesUpload(fhs) => {
+                    let s = self.context.file_io_channel.0.clone();
+                    execute(async move {
+                        let mut data = Vec::new();
+                        for e in fhs {
+                            let content = e.read().await;
+                            data.push((e, content));
+                        }
+                        let _ = s.send(FileIOOperation::FilesUploadContent(data));
+                    });
+                }
+                FileIOOperation::FilesUploadContent(data) => {
+                    for e in data {
+                        self.context
+                            .unprocessed_commands
+                            .push(ProjectCommand::AddNewResource {
+                                into: ViewUuid::nil(),
+                                uuid: ViewUuid::now_v7(),
+                                name: e.0.file_name(),
+                                content: e.1,
+                            });
+                    }
+                }
+                FileIOOperation::ProjectSave(fh) => {
                     let file_path = get_project_path(&fh);
                     match self.context.export_project(fh) {
                         Err(e) => {
@@ -4603,13 +4726,23 @@ impl eframe::App for NHApp {
                             execute(async move {
                                 let file = dialog.pick_file().await;
                                 if let Some(file) = file {
-                                    let _ = s.send(FileIOOperation::Open(file));
+                                    let _ = s.send(FileIOOperation::ProjectOpen(file));
                                 }
                             });
                         } else {
                             self.context.confirm_modal_reason =
                                 Some(SimpleProjectCommand::OpenProject(b));
                         }
+                    }
+                    SimpleProjectCommand::UploadNewResource => {
+                        let dialog = rfd::AsyncFileDialog::new();
+                        let s = self.context.file_io_channel.0.clone();
+                        execute(async move {
+                            let files = dialog.pick_files().await;
+                            if let Some(file) = files {
+                                let _ = s.send(FileIOOperation::FilesUpload(file));
+                            }
+                        });
                     }
                     SimpleProjectCommand::SaveProject | SimpleProjectCommand::SaveProjectAs => {
                         let mut dialog = rfd::AsyncFileDialog::new();
@@ -4651,7 +4784,7 @@ impl eframe::App for NHApp {
                         execute(async move {
                             let file = dialog.save_file().await;
                             if let Some(file) = file {
-                                let _ = s.send(FileIOOperation::Save(file));
+                                let _ = s.send(FileIOOperation::ProjectSave(file));
                             }
                         });
                     }
@@ -4678,7 +4811,7 @@ impl eframe::App for NHApp {
                         e: &mut HierarchyNode,
                         searched_uuid: ViewUuid,
                         new_name: &str,
-                        docs: &mut HashMap<ViewUuid, (String, String)>,
+                        docs: &mut HashMap<ViewUuid, (String, Vec<u8>)>,
                     ) -> bool {
                         match e {
                             HierarchyNode::Folder(view_uuid, name, children) => {
@@ -4705,18 +4838,11 @@ impl eframe::App for NHApp {
                                     false
                                 }
                             }
-                            HierarchyNode::Document(view_uuid) => {
+                            HierarchyNode::Resource(view_uuid) => {
                                 if searched_uuid == *view_uuid
                                     && let Some(e) = docs.get_mut(view_uuid)
                                 {
                                     e.0 = new_name.to_owned();
-                                    let mut lines: Vec<&str> = e.1.lines().collect();
-                                    if !lines.is_empty() {
-                                        lines[0] = new_name;
-                                    } else {
-                                        lines.push(new_name);
-                                    }
-                                    e.1 = lines.join("\n");
                                     true
                                 } else {
                                     false
@@ -4729,7 +4855,7 @@ impl eframe::App for NHApp {
                         &mut self.context.project_hierarchy,
                         view_uuid,
                         &new_name,
-                        &mut self.context.documents,
+                        &mut self.context.resources,
                     ) {
                         if view_uuid.is_nil() {
                             self.context.project_meta.name = new_name;
@@ -4758,23 +4884,19 @@ impl eframe::App for NHApp {
                 ProjectCommand::DeleteDiagram(view_uuid) => {
                     self.delete_diagram(view_uuid);
                 }
-                ProjectCommand::AddNewDocument {
+                ProjectCommand::AddNewResource {
                     into,
                     uuid,
+                    name,
                     content,
                 } => {
-                    let first_line = content
-                        .lines()
-                        .next()
-                        .unwrap_or("empty document")
-                        .to_owned();
-                    self.context.documents.insert(uuid, (first_line, content));
+                    self.context.resources.insert(uuid, (name, content));
                     let _ = self.context.project_hierarchy.insert(
                         &into,
                         egui_ltreeview::DirPosition::Last,
-                        HierarchyNode::Document(uuid),
+                        HierarchyNode::Resource(uuid),
                     );
-                    push_tab_to_best!(self, NHTab::Document { uuid });
+                    push_tab_to_best!(self, NHTab::Resource { uuid });
                     self.context.set_has_unsaved_changes(true);
                 }
                 ProjectCommand::DuplicateDocument(_uuid) => {
@@ -4782,8 +4904,8 @@ impl eframe::App for NHApp {
                 }
                 ProjectCommand::DeleteDocument(uuid) => {
                     self.context.project_hierarchy.remove(&uuid);
-                    self.context.documents.remove(&uuid);
-                    if let Some(snt) = self.tree.find_tab(&NHTab::Document { uuid }) {
+                    self.context.resources.remove(&uuid);
+                    if let Some(snt) = self.tree.find_tab(&NHTab::Resource { uuid }) {
                         self.tree.remove_tab(snt);
                     }
                     self.context.set_has_unsaved_changes(true);

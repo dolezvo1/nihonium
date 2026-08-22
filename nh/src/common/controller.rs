@@ -163,10 +163,11 @@ pub enum ProjectCommand {
     },
     DeleteDiagram(ViewUuid),
 
-    AddNewDocument {
+    AddNewResource {
         into: ViewUuid,
         uuid: ViewUuid,
-        content: String,
+        name: String,
+        content: Vec<u8>,
     },
     DuplicateDocument(ViewUuid),
     DeleteDocument(ViewUuid),
@@ -183,6 +184,7 @@ pub enum SimpleProjectCommand {
     FocusedDiagramCommand(DiagramCommand),
     SpecificDiagramCommand(ViewUuid, DiagramCommand),
     OpenProject(bool),
+    UploadNewResource,
     SaveProject,
     SaveProjectAs,
     CloseProject(bool),
@@ -237,7 +239,7 @@ pub enum HierarchyNode {
         /*children:*/ Vec<HierarchyNode>,
     ),
     Diagram(ViewUuid, ERef<dyn DiagramController>),
-    Document(ViewUuid),
+    Resource(ViewUuid),
 }
 
 impl HierarchyNode {
@@ -245,7 +247,7 @@ impl HierarchyNode {
         match self {
             Self::Folder(uuid, ..) => *uuid,
             Self::Diagram(uuid, ..) => *uuid,
-            Self::Document(uuid) => *uuid,
+            Self::Resource(uuid) => *uuid,
         }
     }
 
@@ -261,7 +263,7 @@ impl HierarchyNode {
                     }
                 }
             }
-            Self::Diagram(..) | Self::Document(..) => {}
+            Self::Diagram(..) | Self::Resource(..) => {}
         }
         None
     }
@@ -280,7 +282,7 @@ impl HierarchyNode {
                     None
                 }
             }
-            Self::Diagram(..) | Self::Document(..) => None,
+            Self::Diagram(..) | Self::Resource(..) => None,
         }
     }
     pub fn insert(
@@ -321,7 +323,7 @@ impl HierarchyNode {
                     value
                 }
             }
-            Self::Diagram(..) | Self::Document(..) => Err(value),
+            Self::Diagram(..) | Self::Resource(..) => Err(value),
         }
     }
     pub fn for_each(&self, f: &mut impl FnMut(&Self)) {
@@ -330,7 +332,7 @@ impl HierarchyNode {
             Self::Folder(.., children) => {
                 children.iter().for_each(|e| e.for_each(f));
             }
-            Self::Diagram(..) | Self::Document(..) => {}
+            Self::Diagram(..) | Self::Resource(..) => {}
         }
     }
 }

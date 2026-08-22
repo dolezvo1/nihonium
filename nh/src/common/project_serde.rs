@@ -43,7 +43,7 @@ impl<'a> FSRawWriter<'a> {
     ) -> Result<Self, std::io::Error> {
         std::fs::DirBuilder::new()
             .recursive(true)
-            .create(root.join(sources_folder).join("documents"))?;
+            .create(root.join(sources_folder).join("resources"))?;
         std::fs::DirBuilder::new()
             .recursive(true)
             .create(root.join(sources_folder).join("models"))?;
@@ -205,7 +205,7 @@ enum NHProjectHierarchyNodeSerialization {
     Diagram {
         uuid: ViewUuid,
     },
-    Document {
+    Resource {
         uuid: ViewUuid,
         name: String,
     },
@@ -250,11 +250,11 @@ impl NHProjectSerialization {
         hierarchy: &Vec<HierarchyNode>,
         global_colors: &ColorBundle,
         diagram_controllers: &HashMap<ViewUuid, ERef<dyn DiagramController>>,
-        documents: &HashMap<ViewUuid, (String, String)>,
+        resources: &HashMap<ViewUuid, (String, Vec<u8>)>,
     ) -> Result<(), NHSerializeError> {
         fn ph(
             e: &HierarchyNode,
-            d: &HashMap<ViewUuid, (String, String)>,
+            d: &HashMap<ViewUuid, (String, Vec<u8>)>,
         ) -> NHProjectHierarchyNodeSerialization {
             match e {
                 HierarchyNode::Folder(uuid, name, children) => {
@@ -267,7 +267,7 @@ impl NHProjectSerialization {
                 HierarchyNode::Diagram(uuid, _c) => {
                     NHProjectHierarchyNodeSerialization::Diagram { uuid: *uuid }
                 }
-                HierarchyNode::Document(uuid) => NHProjectHierarchyNodeSerialization::Document {
+                HierarchyNode::Resource(uuid) => NHProjectHierarchyNodeSerialization::Resource {
                     uuid: *uuid,
                     name: d.get(uuid).unwrap().0.clone(),
                 },
@@ -283,11 +283,9 @@ impl NHProjectSerialization {
         }
         NHSerializer::write_all(serializer, wa)?;
 
-        for (key, (_, content)) in documents.iter() {
-            wa.write_source_file(
-                &format!("documents/{}.nhd", key.to_string()),
-                content.as_bytes(),
-            )?;
+        for (key, (name, content)) in resources.iter() {
+            let path = format_resource_path(key, name);
+            wa.write_source_file(&path, &content)?;
         }
 
         fn ch(e: &ColorHierarchyNode, gc: &ColorBundle) -> ColorHierarchyNodeDTO {
@@ -313,7 +311,7 @@ impl NHProjectSerialization {
             project_meta: project_meta.clone(),
             sources_root: sources_root.to_owned(),
             new_diagram_no_counter,
-            hierarchy: hierarchy.iter().map(|e| ph(e, documents)).collect(),
+            hierarchy: hierarchy.iter().map(|e| ph(e, resources)).collect(),
             controllers: {
                 let mut controllers: Vec<_> = unique_diagram_controllers
                     .into_iter()
@@ -377,7 +375,7 @@ impl NHProjectSerialization {
         (
             Vec<HierarchyNode>,
             HashMap<ViewUuid, ERef<dyn DiagramController>>,
-            HashMap<ViewUuid, (String, String)>,
+            HashMap<ViewUuid, (String, Vec<u8>)>,
         ),
         NHDeserializeError,
     > {
@@ -399,7 +397,7 @@ impl NHProjectSerialization {
                 NHProjectHierarchyNodeSerialization::Diagram { uuid, .. } => {
                     Ok(d.load_sources(EntityUuid::View(*uuid))?)
                 }
-                NHProjectHierarchyNodeSerialization::Document { .. } => Ok(()),
+                NHProjectHierarchyNodeSerialization::Resource { .. } => Ok(()),
             }
         }
 
@@ -429,7 +427,7 @@ impl NHProjectSerialization {
             e: &NHProjectHierarchyNodeSerialization,
             d: &mut NHDeserializer,
             tlc: &HashMap<ViewUuid, ERef<dyn DiagramController + 'static>>,
-            docs: &mut HashMap<ViewUuid, (String, String)>,
+            resources: &mut HashMap<ViewUuid, (String, Vec<u8>)>,
             cds: &HashMap<String, &'static DeserializeControllerF>,
         ) -> Result<HierarchyNode, NHDeserializeError> {
             match e {
@@ -442,7 +440,7 @@ impl NHProjectSerialization {
                     Arc::new((*name).clone()),
                     hierarchy
                         .iter()
-                        .map(|e| h(e, d, tlc, docs, cds))
+                        .map(|e| h(e, d, tlc, resources, cds))
                         .collect::<Result<Vec<_>, NHDeserializeError>>()?,
                 )),
                 NHProjectHierarchyNodeSerialization::Diagram { uuid } => {
@@ -451,31 +449,39 @@ impl NHProjectSerialization {
                         .ok_or_else(|| format!("controller for '{:?}' not found", uuid))?;
                     Ok(HierarchyNode::Diagram(*uuid, c.clone()))
                 }
-                NHProjectHierarchyNodeSerialization::Document { uuid, name } => {
-                    let path = format!("documents/{}.nhd", uuid.to_string());
+                NHProjectHierarchyNodeSerialization::Resource { uuid, name } => {
+                    let path = format_resource_path(uuid, name);
                     let bytes = d.ra.read_source_file(&path)?;
-                    let content = str::from_utf8(&bytes)?.to_owned();
-                    docs.insert(*uuid, (name.clone(), content));
-                    Ok(HierarchyNode::Document(*uuid))
+                    resources.insert(*uuid, (name.clone(), bytes));
+                    Ok(HierarchyNode::Resource(*uuid))
                 }
             }
         }
 
         let mut hierarchy = Vec::new();
-        let mut documents = HashMap::new();
+        let mut resources = HashMap::new();
 
         for e in &self.hierarchy {
             hierarchy.push(h(
                 e,
                 &mut deserializer,
                 &top_level_controllers,
-                &mut documents,
+                &mut resources,
                 diagram_deserializers,
             )?);
         }
 
-        Ok((hierarchy, top_level_controllers, documents))
+        Ok((hierarchy, top_level_controllers, resources))
     }
+}
+
+fn format_resource_path(uuid: &ViewUuid, name: &str) -> String {
+    let mut p = format!("resources/{}", uuid.to_string());
+    if let Some(e) = Path::new(&name).extension().and_then(|e| e.to_str()) {
+        p.push('.');
+        p.push_str(&e);
+    }
+    p
 }
 
 pub struct NHSerializer {

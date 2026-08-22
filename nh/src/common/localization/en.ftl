@@ -18,6 +18,7 @@ nh-project-openproject-confirm = Are you sure you want to open a different proje
 nh-project-recentprojects = Recent Projects
 nh-project-addnewdocument = Add New Document
 nh-project-addnewdiagram = Add New Diagram
+nh-project-uploadnewresource = Upload New Resource
 nh-project-save = Save Project
 nh-project-saveas = Save Project as
 nh-project-closeproject = Close Project
