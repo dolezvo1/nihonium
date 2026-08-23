@@ -5,6 +5,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
@@ -141,6 +142,13 @@ fn main() {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
+pub enum ResourceTabMode {
+    Preview,
+    EditAndPreview,
+    Edit,
+}
+
+#[derive(Debug, Hash, Eq, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub enum NHTab {
     NewDiagram,
     RecentlyUsed,
@@ -155,9 +163,16 @@ pub enum NHTab {
     ProjectSettings,
     Outline,
 
-    Diagram { uuid: ViewUuid },
-    Resource { uuid: ViewUuid },
-    CustomTab { uuid: uuid::Uuid },
+    Diagram {
+        uuid: ViewUuid,
+    },
+    Resource {
+        uuid: ViewUuid,
+        mode: ResourceTabMode,
+    },
+    CustomTab {
+        uuid: uuid::Uuid,
+    },
 }
 
 impl NHTab {
@@ -333,6 +348,7 @@ struct NHContext {
     new_diagram_no: u32,
     resources: HashMap<ViewUuid, (String, Vec<u8>)>,
     document_buffers: HashMap<ViewUuid, Option<String>>,
+    image_data: HashMap<ViewUuid, (Cow<'static, str>, egui::load::Bytes)>,
     clipboard: Vec<Box<dyn Any>>,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
     custom_modal: Option<Box<dyn CustomModal>>,
@@ -536,7 +552,7 @@ impl TabViewer for NHContext {
                 let c = self.diagram_controllers.get(uuid).unwrap().read();
                 (&*c.view_name(uuid)).into()
             }
-            NHTab::Resource { uuid } => self.resources.get(uuid).unwrap().0.clone().into(),
+            NHTab::Resource { uuid, .. } => self.resources.get(uuid).unwrap().0.clone().into(),
             NHTab::CustomTab { uuid } => self
                 .custom_tabs
                 .get(uuid)
@@ -573,7 +589,26 @@ impl TabViewer for NHContext {
             NHTab::Outline => self.show_outline(ui),
 
             NHTab::Diagram { uuid } => self.show_diagram_tab(uuid, ui),
-            NHTab::Resource { uuid } => self.show_document_tab(uuid, ui),
+            NHTab::Resource { uuid, mode } => match mode {
+                ResourceTabMode::Preview => {
+                    if let Some(new_mode) = self.show_resource_preview_tab(uuid, ui) {
+                        *mode = new_mode;
+                    }
+                }
+                ResourceTabMode::EditAndPreview => {
+                    ui.columns(2, |columns| {
+                        if let Some(new_mode) = self.show_resource_edit_tab(uuid, &mut columns[0]) {
+                            *mode = new_mode;
+                        }
+                        self.show_resource_preview_tab(uuid, &mut columns[1]);
+                    });
+                }
+                ResourceTabMode::Edit => {
+                    if let Some(new_mode) = self.show_resource_edit_tab(uuid, ui) {
+                        *mode = new_mode;
+                    }
+                }
+            },
             NHTab::CustomTab { uuid } => self.show_custom_tab(uuid, ui),
         }
     }
@@ -586,6 +621,42 @@ impl TabViewer for NHContext {
                         .push(ProjectCommand::OpenAndFocusTab(NHTab::Settings, None));
                     // TODO: open relevant collapsible headers
                 }
+            }
+            NHTab::Resource { uuid, mode } => {
+                let res = self.resources.get(uuid).unwrap();
+                let is_previewable = is_previewable_resource(&res.0);
+
+                if ui
+                    .add_enabled(
+                        is_previewable,
+                        egui::RadioButton::new(*mode == ResourceTabMode::Preview, "Preview"),
+                    )
+                    .clicked()
+                {
+                    *mode = ResourceTabMode::Preview;
+                }
+                if ui
+                    .add_enabled(
+                        is_previewable,
+                        egui::RadioButton::new(
+                            *mode == ResourceTabMode::EditAndPreview,
+                            "Edit and Preview",
+                        ),
+                    )
+                    .clicked()
+                {
+                    *mode = ResourceTabMode::EditAndPreview;
+                }
+                if ui
+                    .add(egui::RadioButton::new(
+                        *mode == ResourceTabMode::Edit,
+                        "Edit",
+                    ))
+                    .clicked()
+                {
+                    *mode = ResourceTabMode::Edit;
+                }
+                ui.separator();
             }
             _ => {}
         }
@@ -649,6 +720,18 @@ fn execute<F: Future<Output = ()> + Send + 'static>(f: F) {
 #[cfg(target_arch = "wasm32")]
 fn execute<F: Future<Output = ()> + 'static>(f: F) {
     wasm_bindgen_futures::spawn_local(f);
+}
+
+fn is_previewable_resource(name: &str) -> bool {
+    let ext = std::path::Path::new(name)
+        .extension()
+        .and_then(|e| e.to_str());
+    ext.is_some_and(|e| {
+        e.eq_ignore_ascii_case("svg")
+            || e.eq_ignore_ascii_case("jpg")
+            || e.eq_ignore_ascii_case("jpeg")
+            || e.eq_ignore_ascii_case("png")
+    })
 }
 
 impl NHContext {
@@ -1053,55 +1136,69 @@ impl NHContext {
                     );
                 }
                 HierarchyNode::Resource(uuid) => {
-                    builder.node(
-                        NodeBuilder::leaf(*uuid)
-                            .label(&resources.get(uuid).unwrap().0)
-                            .context_menu(|ui| {
-                                ui.set_min_width(MIN_MENU_WIDTH);
+                    let r = resources.get(uuid).unwrap();
+                    builder.node(NodeBuilder::leaf(*uuid).label(&r.0).context_menu(|ui| {
+                        ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if ui.button(gdc.translate_0("nh-edit")).clicked() {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Resource { uuid: *uuid },
-                                        None,
-                                    ));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
-                                    ui.close();
-                                }
+                        if is_previewable_resource(&r.0)
+                            && ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-open"))
+                                .clicked()
+                        {
+                            commands.push(ProjectCommand::OpenAndFocusTab(
+                                NHTab::Resource {
+                                    uuid: *uuid,
+                                    mode: ResourceTabMode::Preview,
+                                },
+                                None,
+                            ));
+                            ui.close();
+                        }
+                        if ui.button(gdc.translate_0("nh-edit")).clicked() {
+                            commands.push(ProjectCommand::OpenAndFocusTab(
+                                NHTab::Resource {
+                                    uuid: *uuid,
+                                    mode: ResourceTabMode::Edit,
+                                },
+                                None,
+                            ));
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
+                            .clicked()
+                        {
+                            *cma = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
+                            ui.close();
+                        }
 
-                                add_project_element_block(gdc, ui, commands, target_folder);
+                        add_project_element_block(gdc, ui, commands, target_folder);
 
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-duplicate"))
-                                    .clicked()
-                                {
-                                    commands.push(ProjectCommand::DuplicateDocument(*uuid));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::RenameElement(*uuid));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
-                                    .clicked()
-                                {
-                                    commands.push(ProjectCommand::DeleteDocument(*uuid));
-                                    ui.close();
-                                }
-                            }),
-                    );
+                        if ui
+                            .button(gdc.translate_0("nh-tab-projecthierarchy-duplicate"))
+                            .clicked()
+                        {
+                            commands.push(ProjectCommand::DuplicateDocument(*uuid));
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
+                            .clicked()
+                        {
+                            *cma = Some(ContextMenuAction::RenameElement(*uuid));
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
+                            .clicked()
+                        {
+                            commands.push(ProjectCommand::DeleteDocument(*uuid));
+                            ui.close();
+                        }
+                    }));
                 }
             }
         }
@@ -1125,44 +1222,40 @@ impl NHContext {
                         );
                     });
 
+                macro_rules! node_to_tab {
+                    ($node:expr) => {
+                        match self.project_hierarchy.get($node) {
+                            Some((HierarchyNode::Diagram(..), _)) => {
+                                Some(NHTab::Diagram { uuid: *$node })
+                            }
+                            Some((HierarchyNode::Resource(..), _)) => {
+                                let r = self.resources.get($node).unwrap();
+                                Some(NHTab::Resource {
+                                    uuid: *$node,
+                                    mode: match is_previewable_resource(&r.0) {
+                                        true => ResourceTabMode::Preview,
+                                        false => ResourceTabMode::Edit,
+                                    },
+                                })
+                            }
+                            _ => None,
+                        }
+                    };
+                }
+
                 for action in actions.into_iter() {
                     match action {
                         egui_ltreeview::Action::Activate(a) => {
-                            for selected in &a.selected {
-                                if let Some((HierarchyNode::Diagram(..), _)) =
-                                    self.project_hierarchy.get(selected)
-                                {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Diagram { uuid: *selected },
-                                        None,
-                                    ));
-                                } else if let Some((HierarchyNode::Resource(..), _)) =
-                                    self.project_hierarchy.get(selected)
-                                {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Resource { uuid: *selected },
-                                        None,
-                                    ));
-                                }
+                            for tab in a.selected.iter().flat_map(|e| node_to_tab!(e)) {
+                                commands.push(ProjectCommand::OpenAndFocusTab(tab, None));
                             }
                         }
                         egui_ltreeview::Action::MoveExternal(dnde) => {
-                            for selected in &dnde.source {
-                                if let Some((HierarchyNode::Diagram(..), _)) =
-                                    self.project_hierarchy.get(selected)
-                                {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Diagram { uuid: *selected },
-                                        Some(dnde.position),
-                                    ));
-                                } else if let Some((HierarchyNode::Resource(..), _)) =
-                                    self.project_hierarchy.get(selected)
-                                {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Resource { uuid: *selected },
-                                        Some(dnde.position),
-                                    ));
-                                }
+                            for tab in dnde.source.iter().flat_map(|e| node_to_tab!(e)) {
+                                commands.push(ProjectCommand::OpenAndFocusTab(
+                                    tab,
+                                    Some(dnde.position),
+                                ));
                             }
                         }
                         egui_ltreeview::Action::Move(dnd) => {
@@ -2919,7 +3012,43 @@ impl NHContext {
         );
     }
 
-    fn show_document_tab(&mut self, uuid: &ViewUuid, ui: &mut egui::Ui) {
+    fn show_resource_preview_tab(
+        &mut self,
+        uuid: &ViewUuid,
+        ui: &mut egui::Ui,
+    ) -> Option<ResourceTabMode> {
+        let res = self.resources.get_mut(uuid).unwrap();
+        let img_data = self.image_data.entry(*uuid).or_insert_with(|| {
+            let version: u64 = {
+                let mut hasher = std::hash::DefaultHasher::new();
+                res.1.hash(&mut hasher);
+                hasher.finish()
+            };
+            let mut uri = format!("bytes://{}_{version:016x}", uuid.to_string());
+            if let Some(ext) = std::path::Path::new(&res.0)
+                .extension()
+                .and_then(|e| e.to_str())
+            {
+                uri.push('.');
+                uri.push_str(&ext);
+            }
+            (uri.into(), egui::load::Bytes::Shared(res.1.to_vec().into()))
+        });
+
+        ui.add(
+            egui::Image::from_bytes(img_data.0.clone(), img_data.1.clone())
+                .max_width(500.0)
+                .max_height(500.0),
+        );
+
+        None
+    }
+
+    fn show_resource_edit_tab(
+        &mut self,
+        uuid: &ViewUuid,
+        ui: &mut egui::Ui,
+    ) -> Option<ResourceTabMode> {
         let res = self.resources.get_mut(uuid).unwrap();
         let buffer = self
             .document_buffers
@@ -2931,6 +3060,9 @@ impl NHContext {
             if ui.button("Force to UTF-8").clicked() {
                 *buffer = Some(String::from_utf8_lossy(&res.1).to_string());
             }
+            if is_previewable_resource(&res.0) && ui.button("Try previewing").clicked() {
+                return Some(ResourceTabMode::Preview);
+            }
         }
 
         if let Some(buffer) = buffer
@@ -2939,8 +3071,11 @@ impl NHContext {
                 .changed()
         {
             res.1 = buffer.clone().into_bytes();
+            self.image_data.remove(uuid);
             self.set_has_unsaved_changes(true);
         }
+
+        None
     }
 
     fn show_custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut egui::Ui) {
@@ -3058,6 +3193,8 @@ struct NHStoredApp {
 
 impl NHApp {
     fn load_or_new(cc: &eframe::CreationContext) -> Self {
+        egui_extras::install_image_loaders(&cc.egui_ctx);
+
         if let Some(value) = cc
             .storage
             .and_then(|e| eframe::get_value::<NHStoredApp>(e, eframe::APP_KEY))
@@ -3201,6 +3338,7 @@ impl NHApp {
             new_diagram_no: 1,
             resources: HashMap::new(),
             document_buffers: HashMap::new(),
+            image_data: HashMap::new(),
             clipboard: Vec::new(),
             custom_tabs: HashMap::new(),
             custom_modal: None,
@@ -4896,18 +5034,24 @@ impl eframe::App for NHApp {
                         egui_ltreeview::DirPosition::Last,
                         HierarchyNode::Resource(uuid),
                     );
-                    push_tab_to_best!(self, NHTab::Resource { uuid });
+                    push_tab_to_best!(
+                        self,
+                        NHTab::Resource {
+                            uuid,
+                            mode: ResourceTabMode::Edit
+                        }
+                    );
                     self.context.set_has_unsaved_changes(true);
                 }
                 ProjectCommand::DuplicateDocument(_uuid) => {
                     // TODO:
                 }
-                ProjectCommand::DeleteDocument(uuid) => {
-                    self.context.project_hierarchy.remove(&uuid);
-                    self.context.resources.remove(&uuid);
-                    if let Some(snt) = self.tree.find_tab(&NHTab::Resource { uuid }) {
-                        self.tree.remove_tab(snt);
-                    }
+                ProjectCommand::DeleteDocument(needle_uuid) => {
+                    self.context.project_hierarchy.remove(&needle_uuid);
+                    self.context.resources.remove(&needle_uuid);
+                    self.tree.retain_tabs(
+                        |e| !matches!(e, NHTab::Resource { uuid, .. } if *uuid == needle_uuid),
+                    );
                     self.context.set_has_unsaved_changes(true);
                 }
             }
