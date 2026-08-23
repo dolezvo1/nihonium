@@ -933,6 +933,12 @@ pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
 pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
 pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
+#[derive(Clone, Debug)]
+pub struct ImageData {
+    pub uri: std::borrow::Cow<'static, str>,
+    pub bytes: egui::load::Bytes,
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum HeaderLocation {
     Horizontal,
@@ -995,6 +1001,7 @@ pub trait NHCanvas {
         font_size: f32,
         text_color: egui::Color32,
     );
+    fn draw_image(&mut self, rect: egui::Rect, image: &ImageData);
 
     fn open_header(
         &mut self,
@@ -1414,6 +1421,48 @@ impl NHCanvas for UiCanvas {
         }
     }
 
+    fn draw_image(&mut self, rect: egui::Rect, image: &ImageData) {
+        let translated_rect = if rect == egui::Rect::EVERYTHING {
+            egui::Rect::EVERYTHING
+        } else {
+            (rect * self.camera_scale)
+                .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
+        };
+
+        if image.uri.ends_with(".svg") {
+            // TODO: rasterize the SVG, then egui::Painter::image?
+        } else {
+            let texture_id = self
+                .main_area_painter
+                .ctx()
+                .tex_manager()
+                .read()
+                .allocated()
+                .find(|e| e.1.name == image.uri)
+                .map(|e| *e.0);
+            let texture_id = texture_id.unwrap_or_else(|| {
+                let image_buffer = image::load_from_memory(&image.bytes).unwrap().to_rgba8();
+                let size = [
+                    image_buffer.width() as usize,
+                    image_buffer.height() as usize,
+                ];
+                let color_image =
+                    egui::ColorImage::from_rgba_unmultiplied(size, image_buffer.as_raw());
+                self.main_area_painter
+                    .ctx()
+                    .load_texture(image.uri.clone(), color_image, egui::TextureOptions::LINEAR)
+                    .id()
+            });
+
+            self.main_area_painter.image(
+                texture_id,
+                translated_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+    }
+
     fn open_header(
         &mut self,
         text: &str,
@@ -1603,6 +1652,10 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         }
     }
 
+    fn draw_image(&mut self, rect: egui::Rect, _image: &ImageData) {
+        self.bounds = self.bounds.union(rect);
+    }
+
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -1638,6 +1691,14 @@ pub struct SVGCanvas<'a> {
     highlight_colors: [egui::Color32; 4],
     painter: &'a egui::Painter,
     element_buffer: Vec<String>,
+}
+
+fn html_entities(text: &str) -> String {
+    text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("'", "&apos;")
+        .replace("\"", "&quot;")
 }
 
 impl<'a> SVGCanvas<'a> {
@@ -1822,6 +1883,28 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         ));
     }
 
+    fn draw_image(&mut self, rect: egui::Rect, image: &ImageData) {
+        let mime_type = if image.uri.ends_with(".svg") {
+            "svg+xml"
+        } else {
+            std::path::Path::new(&*image.uri)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap()
+        };
+
+        use base64::prelude::*;
+        self.element_buffer.push(format!(
+            r#"<image x="{}" y="{}" width="{}" height="{}" href="data:image/{};base64,{}"/>"#,
+            rect.min.x + self.camera_offset.x,
+            rect.min.y + self.camera_offset.y,
+            rect.width(),
+            rect.height(),
+            mime_type,
+            BASE64_STANDARD.encode(&image.bytes),
+        ));
+    }
+
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -1854,12 +1937,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
             egui::Color32::TRANSPARENT,
         );
 
-        let escaped = text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("'", "&apos;")
-            .replace("\"", "&quot;");
+        let escaped = html_entities(text);
         let escaped_lines: Vec<_> = escaped.split("\n").collect();
         let initial_dx = (1.0 - escaped_lines.len() as f32) / 2.0;
         let mut tspans = String::new();

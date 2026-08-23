@@ -19,6 +19,7 @@ image = { version = "0.25", features = ["jpeg", "png"] }
 egui_dock = { version = "0.20", features = [ "serde" ] }
 egui_ltreeview = "0.8"
 rfd = "0.17"
+base64 = "0.23"
 serde = { version = "1.0", features = [ "derive", "rc" ] }
 toml = "1.1"
 uuid = { version = "1.23", features = [ "std", "v7", "serde" ] }

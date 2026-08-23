@@ -5,7 +5,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
@@ -347,7 +347,6 @@ struct NHContext {
     diagram_deserializers: HashMap<String, &'static DeserializeControllerF>,
     new_diagram_no: u32,
     document_buffers: HashMap<ViewUuid, Option<String>>,
-    image_data: HashMap<ViewUuid, (Cow<'static, str>, egui::load::Bytes)>,
     clipboard: Vec<Box<dyn Any>>,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
     custom_modal: Option<Box<dyn CustomModal>>,
@@ -917,7 +916,7 @@ impl NHContext {
         self.new_diagram_no = 1;
         self.drawing_context.raw_resources.clear();
         self.document_buffers.clear();
-        self.image_data.clear();
+        self.drawing_context.image_data.write().unwrap().clear();
         self.custom_tabs.clear();
         self.drawing_context.global_colors = ColorBundle::new();
 
@@ -3028,26 +3027,10 @@ impl NHContext {
         uuid: &ViewUuid,
         ui: &mut egui::Ui,
     ) -> Option<ResourceTabMode> {
-        let res = self.drawing_context.raw_resources.get_mut(uuid).unwrap();
-        let img_data = self.image_data.entry(*uuid).or_insert_with(|| {
-            let version: u64 = {
-                let mut hasher = std::hash::DefaultHasher::new();
-                res.1.hash(&mut hasher);
-                hasher.finish()
-            };
-            let mut uri = format!("bytes://{}_{version:016x}", uuid.to_string());
-            if let Some(ext) = std::path::Path::new(&res.0)
-                .extension()
-                .and_then(|e| e.to_str())
-            {
-                uri.push('.');
-                uri.push_str(&ext);
-            }
-            (uri.into(), egui::load::Bytes::Shared(res.1.to_vec().into()))
-        });
+        let img_data = self.drawing_context.get_image_data(uuid).unwrap();
 
         ui.add(
-            egui::Image::from_bytes(img_data.0.clone(), img_data.1.clone())
+            egui::Image::from_bytes(img_data.uri.clone(), img_data.bytes.clone())
                 .max_width(500.0)
                 .max_height(500.0),
         );
@@ -3082,7 +3065,11 @@ impl NHContext {
                 .changed()
         {
             res.1 = buffer.clone().into_bytes();
-            self.image_data.remove(uuid);
+            self.drawing_context
+                .image_data
+                .write()
+                .unwrap()
+                .remove(uuid);
             self.set_has_unsaved_changes(true);
         }
 
@@ -3348,7 +3335,6 @@ impl NHApp {
             diagram_deserializers,
             new_diagram_no: 1,
             document_buffers: HashMap::new(),
-            image_data: HashMap::new(),
             clipboard: Vec::new(),
             custom_tabs: HashMap::new(),
             custom_modal: None,
@@ -3371,6 +3357,7 @@ impl NHApp {
                 tool_palette_item_height: NHContext::DEFAULT_TOOL_ITEM_HEIGHT,
                 model_labels: LabelProvider::new(),
                 raw_resources: HashMap::new(),
+                image_data: HashMap::new().into(),
             },
 
             new_diagram_data: diagram_type_creation_data,
