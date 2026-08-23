@@ -712,6 +712,7 @@ pub struct GlobalDrawingContext {
     pub shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
     pub tool_palette_item_height: u32,
     pub model_labels: LabelProvider,
+    pub raw_resources: HashMap<ViewUuid, (String, Vec<u8>)>,
 }
 
 impl GlobalDrawingContext {

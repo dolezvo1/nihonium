@@ -9,14 +9,13 @@ use crate::{
     common::{
         controller::{GlobalDrawingContext, ProjectCommand},
         eref::ERef,
+        uuid::ViewUuid,
     },
 };
 
 pub struct SparqlQueriesTab {
     model: ERef<RdfDiagram>,
-    selected_query: Option<uuid::Uuid>,
-    query_name_buffer: String,
-    query_value_buffer: String,
+    selected_query: Option<ViewUuid>,
     debug_message: Option<String>,
     query_results: Option<Vec<Vec<Option<ResultTerm>>>>,
 }
@@ -26,39 +25,15 @@ impl SparqlQueriesTab {
         Self {
             model,
             selected_query: None,
-            query_name_buffer: "".to_owned(),
-            query_value_buffer: "".to_owned(),
             debug_message: None,
             query_results: None,
         }
     }
 
-    fn save(&mut self) {
-        let mut model = self.model.write();
+    fn execute(&mut self, query: &str) {
+        let model = self.model.read();
 
-        if let Some(q) = self
-            .selected_query
-            .as_ref()
-            .and_then(|uuid| model.stored_queries.get_mut(uuid))
-        {
-            q.0 = self.query_name_buffer.clone();
-            q.1 = self.query_value_buffer.clone();
-        } else {
-            let uuid = uuid::Uuid::now_v7();
-            model.stored_queries.insert(
-                uuid,
-                (
-                    self.query_name_buffer.to_owned(),
-                    self.query_value_buffer.to_owned(),
-                ),
-            );
-            self.selected_query = Some(uuid);
-        }
-    }
-    fn execute(&mut self) {
-        let model = self.model.write();
-
-        match SparqlQuery::parse(&self.query_value_buffer) {
+        match SparqlQuery::parse(query) {
             Err(e) => {
                 self.debug_message = Some(format!("{:?}", e));
             }
@@ -86,11 +61,11 @@ impl CustomTab for SparqlQueriesTab {
 
     fn show(
         &mut self,
-        _gdc: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
+        commands: &mut Vec<ProjectCommand>,
     ) {
-        let mut model = self.model.write();
+        let model = self.model.read();
 
         ui.label("Select diagram");
         egui::ComboBox::from_id_salt("Select diagram")
@@ -103,38 +78,35 @@ impl CustomTab for SparqlQueriesTab {
         ui.label("Select query");
         ui.horizontal(|ui| {
             egui::ComboBox::from_id_salt("Select query")
-                .selected_text(if let Some(uuid) = &self.selected_query {
-                    model.stored_queries.get(uuid).unwrap().0.clone()
-                } else {
-                    "".to_owned()
-                })
+                .selected_text(
+                    self.selected_query
+                        .and_then(|e| gdc.raw_resources.get(&e))
+                        .map(|e| e.0.clone())
+                        .unwrap_or_else(|| "".to_owned()),
+                )
                 .show_ui(ui, |ui| {
-                    for (k, q) in &model.stored_queries {
-                        if ui
-                            .selectable_value(&mut self.selected_query, Some(*k), q.0.clone())
-                            .clicked()
-                        {
-                            self.query_name_buffer = q.0.clone();
-                            self.query_value_buffer = q.1.clone();
-                        }
+                    for (k, q) in gdc
+                        .raw_resources
+                        .iter()
+                        .filter(|e| e.1.0.ends_with(".sparql"))
+                    {
+                        ui.selectable_value(&mut self.selected_query, Some(*k), q.0.clone());
                     }
                 });
 
             if ui.button("Add new").clicked() {
-                let uuid = uuid::Uuid::now_v7();
-                model
-                    .stored_queries
-                    .insert(uuid, ("".to_owned(), "".to_owned()));
+                let uuid = ViewUuid::now_v7();
+                commands.push(ProjectCommand::AddNewResource {
+                    into: ViewUuid::nil(),
+                    uuid,
+                    name: "all_triples.sparql".to_owned(),
+                    content: "SELECT ?s ?p ?o WHERE { ?s ?p ?o }".as_bytes().to_vec(),
+                });
                 self.selected_query = Some(uuid);
             }
 
             if self.selected_query.is_none() {
                 ui.disable();
-            }
-
-            if ui.button("Delete").clicked() {
-                model.stored_queries.remove(&self.selected_query.unwrap());
-                self.selected_query = None;
             }
         });
 
@@ -142,34 +114,16 @@ impl CustomTab for SparqlQueriesTab {
             ui.disable();
         }
 
-        ui.label("Query name:");
-        let _r2 = ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::singleline(&mut self.query_name_buffer),
-        );
-
-        ui.label("Query:");
-        let _r3 = ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.query_value_buffer),
-        );
-
         drop(model);
 
-        ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
-                self.save();
-            }
-
-            if ui.button("Save & Execute").clicked() {
-                self.save();
-                self.execute();
-            }
-
-            if ui.button("Execute").clicked() {
-                self.execute();
-            }
-        });
+        if let query = self.selected_query.and_then(|e| gdc.raw_resources.get(&e))
+            && ui
+                .add_enabled(query.is_some(), egui::Button::new("Execute"))
+                .clicked()
+            && let Some(query) = query.and_then(|e| str::from_utf8(&e.1).ok())
+        {
+            self.execute(query);
+        }
 
         if let Some(m) = &self.debug_message {
             ui.colored_label(egui::Color32::RED, m);

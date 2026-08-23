@@ -158,11 +158,6 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
         name: d.name.clone(),
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),
-        stored_queries: d
-            .stored_queries
-            .iter()
-            .map(|e| (uuid::Uuid::now_v7(), e.1.clone()))
-            .collect(),
     };
     (ERef::new(new_diagram), all_models)
 }
@@ -285,7 +280,6 @@ pub struct RdfDiagram {
     pub name: Arc<String>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<RdfElement>,
-    pub stored_queries: HashMap<uuid::Uuid, (String, String)>,
 
     pub comment: Arc<String>,
 }
@@ -296,17 +290,6 @@ impl RdfDiagram {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
             contained_elements,
-            stored_queries: {
-                let mut hm = HashMap::new();
-                hm.insert(
-                    uuid::Uuid::now_v7(),
-                    (
-                        "all".to_owned(),
-                        "SELECT ?s ?p ?o WHERE { ?s ?p ?o }".to_owned(),
-                    ),
-                );
-                hm
-            },
             comment: Arc::new("".to_owned()),
         }
     }

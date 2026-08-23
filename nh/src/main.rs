@@ -346,7 +346,6 @@ struct NHContext {
     tree_view_state: TreeViewState<ViewUuid>,
     diagram_deserializers: HashMap<String, &'static DeserializeControllerF>,
     new_diagram_no: u32,
-    resources: HashMap<ViewUuid, (String, Vec<u8>)>,
     document_buffers: HashMap<ViewUuid, Option<String>>,
     image_data: HashMap<ViewUuid, (Cow<'static, str>, egui::load::Bytes)>,
     clipboard: Vec<Box<dyn Any>>,
@@ -552,7 +551,14 @@ impl TabViewer for NHContext {
                 let c = self.diagram_controllers.get(uuid).unwrap().read();
                 (&*c.view_name(uuid)).into()
             }
-            NHTab::Resource { uuid, .. } => self.resources.get(uuid).unwrap().0.clone().into(),
+            NHTab::Resource { uuid, .. } => self
+                .drawing_context
+                .raw_resources
+                .get(uuid)
+                .unwrap()
+                .0
+                .clone()
+                .into(),
             NHTab::CustomTab { uuid } => self
                 .custom_tabs
                 .get(uuid)
@@ -623,7 +629,7 @@ impl TabViewer for NHContext {
                 }
             }
             NHTab::Resource { uuid, mode } => {
-                let res = self.resources.get(uuid).unwrap();
+                let res = self.drawing_context.raw_resources.get(uuid).unwrap();
                 let is_previewable = is_previewable_resource(&res.0);
 
                 if ui
@@ -817,7 +823,7 @@ impl NHContext {
             children,
             &self.drawing_context.global_colors,
             &self.diagram_controllers,
-            &self.resources,
+            &self.drawing_context.raw_resources,
         )
     }
     fn import_project(&mut self, fh: FileHandle) -> Result<(), NHDeserializeError> {
@@ -892,7 +898,7 @@ impl NHContext {
                 .refresh_all_buffers(&mut self.drawing_context.model_labels);
         }
         self.diagram_controllers = top_level_views;
-        self.resources = resources;
+        self.drawing_context.raw_resources = resources;
         self.drawing_context.global_colors = pdto.global_colors();
 
         Ok(())
@@ -909,7 +915,9 @@ impl NHContext {
         self.project_hierarchy =
             HierarchyNode::Folder(ViewUuid::nil(), "New Project".to_owned().into(), vec![]);
         self.new_diagram_no = 1;
-        self.resources.clear();
+        self.drawing_context.raw_resources.clear();
+        self.document_buffers.clear();
+        self.image_data.clear();
         self.custom_tabs.clear();
         self.drawing_context.global_colors = ColorBundle::new();
 
@@ -1215,7 +1223,7 @@ impl NHContext {
                             builder,
                             &self.drawing_context,
                             &self.project_hierarchy,
-                            &self.resources,
+                            &self.drawing_context.raw_resources,
                             &mut context_menu_action,
                             &mut commands,
                             &ViewUuid::nil(),
@@ -1229,7 +1237,7 @@ impl NHContext {
                                 Some(NHTab::Diagram { uuid: *$node })
                             }
                             Some((HierarchyNode::Resource(..), _)) => {
-                                let r = self.resources.get($node).unwrap();
+                                let r = self.drawing_context.raw_resources.get($node).unwrap();
                                 Some(NHTab::Resource {
                                     uuid: *$node,
                                     mode: match is_previewable_resource(&r.0) {
@@ -1329,9 +1337,12 @@ impl NHContext {
                     let f = |e: &HierarchyNode| match e {
                         HierarchyNode::Folder(_, name, _) => (**name).clone(),
                         HierarchyNode::Diagram(uuid, c) => (*c.read().view_name(uuid)).clone(),
-                        HierarchyNode::Resource(view_uuid) => {
-                            self.resources.get(view_uuid).map(|e| e.0.clone()).unwrap()
-                        }
+                        HierarchyNode::Resource(view_uuid) => self
+                            .drawing_context
+                            .raw_resources
+                            .get(view_uuid)
+                            .map(|e| e.0.clone())
+                            .unwrap(),
                     };
                     let original_name = if view_uuid.is_nil() {
                         f(&self.project_hierarchy)
@@ -3017,7 +3028,7 @@ impl NHContext {
         uuid: &ViewUuid,
         ui: &mut egui::Ui,
     ) -> Option<ResourceTabMode> {
-        let res = self.resources.get_mut(uuid).unwrap();
+        let res = self.drawing_context.raw_resources.get_mut(uuid).unwrap();
         let img_data = self.image_data.entry(*uuid).or_insert_with(|| {
             let version: u64 = {
                 let mut hasher = std::hash::DefaultHasher::new();
@@ -3049,7 +3060,7 @@ impl NHContext {
         uuid: &ViewUuid,
         ui: &mut egui::Ui,
     ) -> Option<ResourceTabMode> {
-        let res = self.resources.get_mut(uuid).unwrap();
+        let res = self.drawing_context.raw_resources.get_mut(uuid).unwrap();
         let buffer = self
             .document_buffers
             .entry(*uuid)
@@ -3336,7 +3347,6 @@ impl NHApp {
             tree_view_state: TreeViewState::default(),
             diagram_deserializers,
             new_diagram_no: 1,
-            resources: HashMap::new(),
             document_buffers: HashMap::new(),
             image_data: HashMap::new(),
             clipboard: Vec::new(),
@@ -3360,6 +3370,7 @@ impl NHApp {
                 shortcuts,
                 tool_palette_item_height: NHContext::DEFAULT_TOOL_ITEM_HEIGHT,
                 model_labels: LabelProvider::new(),
+                raw_resources: HashMap::new(),
             },
 
             new_diagram_data: diagram_type_creation_data,
@@ -4993,7 +5004,7 @@ impl eframe::App for NHApp {
                         &mut self.context.project_hierarchy,
                         view_uuid,
                         &new_name,
-                        &mut self.context.resources,
+                        &mut self.context.drawing_context.raw_resources,
                     ) {
                         if view_uuid.is_nil() {
                             self.context.project_meta.name = new_name;
@@ -5028,7 +5039,10 @@ impl eframe::App for NHApp {
                     name,
                     content,
                 } => {
-                    self.context.resources.insert(uuid, (name, content));
+                    self.context
+                        .drawing_context
+                        .raw_resources
+                        .insert(uuid, (name, content));
                     let _ = self.context.project_hierarchy.insert(
                         &into,
                         egui_ltreeview::DirPosition::Last,
@@ -5048,7 +5062,10 @@ impl eframe::App for NHApp {
                 }
                 ProjectCommand::DeleteDocument(needle_uuid) => {
                     self.context.project_hierarchy.remove(&needle_uuid);
-                    self.context.resources.remove(&needle_uuid);
+                    self.context
+                        .drawing_context
+                        .raw_resources
+                        .remove(&needle_uuid);
                     self.tree.retain_tabs(
                         |e| !matches!(e, NHTab::Resource { uuid, .. } if *uuid == needle_uuid),
                     );
