@@ -742,28 +742,29 @@ impl GlobalDrawingContext {
             e.1.0.ends_with(".svg") || e.1.0.ends_with(".png") || e.1.0.ends_with(".jpg")
         })
     }
+    pub fn create_resource_uri(uuid: &ViewUuid, filename: &str, bytes: &[u8]) -> String {
+        let version: u64 = {
+            let mut hasher = std::hash::DefaultHasher::new();
+            bytes.hash(&mut hasher);
+            hasher.finish()
+        };
+        let mut uri = format!("bytes://{}_{version:016x}", uuid.to_string());
+        if let Some(ext) = std::path::Path::new(&filename)
+            .extension()
+            .and_then(|e| e.to_str())
+        {
+            uri.push('.');
+            uri.push_str(&ext);
+        }
+        uri
+    }
     pub fn get_image_data(&self, uuid: &ViewUuid) -> Option<ImageData> {
         let res = self.raw_resources.get(uuid)?;
         let mut w = self.image_data.write().unwrap();
-        let e = w.entry(*uuid).or_insert_with(|| {
-            let version: u64 = {
-                let mut hasher = std::hash::DefaultHasher::new();
-                res.1.hash(&mut hasher);
-                hasher.finish()
-            };
-            let mut uri = format!("bytes://{}_{version:016x}", uuid.to_string());
-            if let Some(ext) = std::path::Path::new(&res.0)
-                .extension()
-                .and_then(|e| e.to_str())
-            {
-                uri.push('.');
-                uri.push_str(&ext);
-            }
-
-            ImageData {
-                uri: uri.into(),
-                bytes: egui::load::Bytes::Shared(res.1.to_vec().into()),
-            }
+        let e = w.entry(*uuid).or_insert_with(|| ImageData {
+            texture_handle: Arc::new(RwLock::new(None)),
+            uri: Self::create_resource_uri(uuid, &res.0, &res.1).into(),
+            bytes: egui::load::Bytes::Shared(res.1.to_vec().into()),
         });
 
         Some(e.clone())

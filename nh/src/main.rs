@@ -3065,11 +3065,19 @@ impl NHContext {
                 .changed()
         {
             res.1 = buffer.clone().into_bytes();
-            self.drawing_context
+            if let Some(img) = self
+                .drawing_context
                 .image_data
                 .write()
                 .unwrap()
-                .remove(uuid);
+                .get_mut(uuid)
+            {
+                img.uri = GlobalDrawingContext::create_resource_uri(uuid, &res.0, &res.1).into();
+                img.bytes = egui::load::Bytes::Shared(res.1.clone().into());
+                if let Some(e) = img.texture_handle.write().unwrap().as_mut() {
+                    e.1 = true;
+                }
+            }
             self.set_has_unsaved_changes(true);
         }
 

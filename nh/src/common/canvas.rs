@@ -2,6 +2,7 @@ use eframe::egui;
 
 use std::io::Write;
 use std::ops::{BitAnd, BitOr};
+use std::sync::{Arc, RwLock};
 
 /// Shortest distance between a point and a line segment specified by two points
 /// ```rust
@@ -933,8 +934,9 @@ pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
 pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
 pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ImageData {
+    pub texture_handle: Arc<RwLock<Option<(egui::epaint::TextureHandle, bool)>>>,
     pub uri: std::borrow::Cow<'static, str>,
     pub bytes: egui::load::Bytes,
 }
@@ -1429,23 +1431,14 @@ impl NHCanvas for UiCanvas {
                 .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
         };
 
-        let texture_id = self
-            .main_area_painter
-            .ctx()
-            .tex_manager()
-            .read()
-            .allocated()
-            .find(|e| e.1.name == image.uri)
-            .map(|e| *e.0);
-
-        let texture_id = texture_id.unwrap_or_else(|| {
-            let color_image = if image.uri.ends_with(".svg") {
+        fn create_image(uri: &str, bytes: &[u8]) -> egui::ColorImage {
+            if uri.ends_with(".svg") {
                 const TEXTURE_SIZE: egui::Vec2 = egui::Vec2::new(256.0, 256.0);
                 let mut pixmap =
                     resvg::tiny_skia::Pixmap::new(TEXTURE_SIZE.x as u32, TEXTURE_SIZE.y as u32)
                         .unwrap();
                 if let Ok(rtree) =
-                    resvg::usvg::Tree::from_data(&image.bytes, &resvg::usvg::Options::default())
+                    resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
                 {
                     let source_size = egui::Vec2::new(rtree.size().width(), rtree.size().height());
                     resvg::render(
@@ -1462,18 +1455,33 @@ impl NHCanvas for UiCanvas {
                     pixmap.data(),
                 )
             } else {
-                let image_buffer = image::load_from_memory(&image.bytes).unwrap().to_rgba8();
+                let image_buffer = image::load_from_memory(bytes).unwrap().to_rgba8();
                 let size = [
                     image_buffer.width() as usize,
                     image_buffer.height() as usize,
                 ];
                 egui::ColorImage::from_rgba_unmultiplied(size, image_buffer.as_raw())
-            };
-            self.main_area_painter
-                .ctx()
-                .load_texture(image.uri.clone(), color_image, egui::TextureOptions::LINEAR)
-                .id()
-        });
+            }
+        }
+
+        let texture_id = if let Some(th) = image.texture_handle.write().unwrap().as_mut() {
+            if th.1 {
+                let color_image = create_image(&image.uri, &image.bytes);
+                th.0.set(color_image, egui::TextureOptions::LINEAR);
+                th.1 = false;
+            }
+            th.0.id()
+        } else {
+            let color_image = create_image(&image.uri, &image.bytes);
+            let th = self.main_area_painter.ctx().load_texture(
+                image.uri.clone(),
+                color_image,
+                egui::TextureOptions::LINEAR,
+            );
+            let tid = th.id();
+            *image.texture_handle.write().unwrap() = Some((th, false));
+            tid
+        };
 
         self.main_area_painter.image(
             texture_id,
@@ -1672,10 +1680,6 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         }
     }
 
-    fn draw_image(&mut self, rect: egui::Rect, _image: &ImageData) {
-        self.bounds = self.bounds.union(rect);
-    }
-
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -1700,6 +1704,10 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         _text_color: egui::Color32,
     ) {
         let rect = self.measure_text(position, anchor, text, font_size);
+        self.bounds = self.bounds.union(rect);
+    }
+
+    fn draw_image(&mut self, rect: egui::Rect, _image: &ImageData) {
         self.bounds = self.bounds.union(rect);
     }
 }
@@ -1903,28 +1911,6 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         ));
     }
 
-    fn draw_image(&mut self, rect: egui::Rect, image: &ImageData) {
-        let mime_type = if image.uri.ends_with(".svg") {
-            "svg+xml"
-        } else {
-            std::path::Path::new(&*image.uri)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap()
-        };
-
-        use base64::prelude::*;
-        self.element_buffer.push(format!(
-            r#"<image x="{}" y="{}" width="{}" height="{}" href="data:image/{};base64,{}"/>"#,
-            rect.min.x + self.camera_offset.x,
-            rect.min.y + self.camera_offset.y,
-            rect.width(),
-            rect.height(),
-            mime_type,
-            BASE64_STANDARD.encode(&image.bytes),
-        ));
-    }
-
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -1981,5 +1967,27 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         }
         self.element_buffer.push(format!(r#"<text x="{}" y="{}" font-size="{}" fill="{}" text-anchor="middle" dominant-baseline="middle">{}</text>
 "#, rect.center().x + self.camera_offset.x, rect.center().y + self.camera_offset.y, font_size, text_color.to_hex(), tspans));
+    }
+
+    fn draw_image(&mut self, rect: egui::Rect, image: &ImageData) {
+        let mime_type = if image.uri.ends_with(".svg") {
+            "svg+xml"
+        } else {
+            std::path::Path::new(&*image.uri)
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap()
+        };
+
+        use base64::prelude::*;
+        self.element_buffer.push(format!(
+            r#"<image x="{}" y="{}" width="{}" height="{}" href="data:image/{};base64,{}"/>"#,
+            rect.min.x + self.camera_offset.x,
+            rect.min.y + self.camera_offset.y,
+            rect.width(),
+            rect.height(),
+            mime_type,
+            BASE64_STANDARD.encode(&image.bytes),
+        ));
     }
 }
