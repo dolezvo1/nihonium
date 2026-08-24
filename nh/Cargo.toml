@@ -16,6 +16,7 @@ derive_more = { version = "2.1", features = [ "from", "try_into", "not" ] }
 eframe = { version = "0.35", features = [ "persistence" ] }
 egui_extras = { version = "0.35", features = [ "serde", "image", "svg", "svg_text" ] }
 image = { version = "0.25", features = ["jpeg", "png"] }
+resvg = "0.48"
 egui_dock = { version = "0.20", features = [ "serde" ] }
 egui_ltreeview = "0.8"
 rfd = "0.17"

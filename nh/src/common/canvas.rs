@@ -1429,38 +1429,58 @@ impl NHCanvas for UiCanvas {
                 .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
         };
 
-        if image.uri.ends_with(".svg") {
-            // TODO: rasterize the SVG, then egui::Painter::image?
-        } else {
-            let texture_id = self
-                .main_area_painter
-                .ctx()
-                .tex_manager()
-                .read()
-                .allocated()
-                .find(|e| e.1.name == image.uri)
-                .map(|e| *e.0);
-            let texture_id = texture_id.unwrap_or_else(|| {
+        let texture_id = self
+            .main_area_painter
+            .ctx()
+            .tex_manager()
+            .read()
+            .allocated()
+            .find(|e| e.1.name == image.uri)
+            .map(|e| *e.0);
+
+        let texture_id = texture_id.unwrap_or_else(|| {
+            let color_image = if image.uri.ends_with(".svg") {
+                const TEXTURE_SIZE: egui::Vec2 = egui::Vec2::new(256.0, 256.0);
+                let mut pixmap =
+                    resvg::tiny_skia::Pixmap::new(TEXTURE_SIZE.x as u32, TEXTURE_SIZE.y as u32)
+                        .unwrap();
+                if let Ok(rtree) =
+                    resvg::usvg::Tree::from_data(&image.bytes, &resvg::usvg::Options::default())
+                {
+                    let source_size = egui::Vec2::new(rtree.size().width(), rtree.size().height());
+                    resvg::render(
+                        &rtree,
+                        resvg::usvg::Transform::from_scale(
+                            TEXTURE_SIZE.x as f32 / source_size.x,
+                            TEXTURE_SIZE.y as f32 / source_size.y,
+                        ),
+                        &mut pixmap.as_mut(),
+                    );
+                }
+                egui::ColorImage::from_rgba_premultiplied(
+                    [TEXTURE_SIZE.x as usize, TEXTURE_SIZE.y as usize],
+                    pixmap.data(),
+                )
+            } else {
                 let image_buffer = image::load_from_memory(&image.bytes).unwrap().to_rgba8();
                 let size = [
                     image_buffer.width() as usize,
                     image_buffer.height() as usize,
                 ];
-                let color_image =
-                    egui::ColorImage::from_rgba_unmultiplied(size, image_buffer.as_raw());
-                self.main_area_painter
-                    .ctx()
-                    .load_texture(image.uri.clone(), color_image, egui::TextureOptions::LINEAR)
-                    .id()
-            });
+                egui::ColorImage::from_rgba_unmultiplied(size, image_buffer.as_raw())
+            };
+            self.main_area_painter
+                .ctx()
+                .load_texture(image.uri.clone(), color_image, egui::TextureOptions::LINEAR)
+                .id()
+        });
 
-            self.main_area_painter.image(
-                texture_id,
-                translated_rect,
-                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                egui::Color32::WHITE,
-            );
-        }
+        self.main_area_painter.image(
+            texture_id,
+            translated_rect,
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
     }
 
     fn open_header(
