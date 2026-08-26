@@ -9,13 +9,13 @@ use crate::{
     common::{
         controller::{GlobalDrawingContext, ProjectCommand},
         eref::ERef,
-        uuid::ViewUuid,
+        uuid::{FolderUuid, ResourceUuid},
     },
 };
 
 pub struct SparqlQueriesTab {
     model: ERef<RdfDiagram>,
-    selected_query: Option<ViewUuid>,
+    selected_query: Option<ResourceUuid>,
     debug_message: Option<String>,
     query_results: Option<Vec<Vec<Option<ResultTerm>>>>,
 }
@@ -95,9 +95,9 @@ impl CustomTab for SparqlQueriesTab {
                 });
 
             if ui.button("Add new").clicked() {
-                let uuid = ViewUuid::now_v7();
+                let uuid = ResourceUuid::now_v7();
                 commands.push(ProjectCommand::AddNewResource {
-                    into: ViewUuid::nil(),
+                    into: FolderUuid::nil(),
                     uuid,
                     name: "all_triples.sparql".to_owned(),
                     content: "SELECT ?s ?p ?o WHERE { ?s ?p ?o }".as_bytes().to_vec(),

@@ -16,7 +16,7 @@ use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
-use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
+use crate::common::uuid::{ControllerUuid, ModelUuid, ResourceUuid, ViewUuid};
 use crate::common::views::multiconnection_view::{
     self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView,
     VertexInformation,
@@ -77,7 +77,7 @@ pub enum NetworkPropChange {
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
-    CustomImageChange(Option<ViewUuid>),
+    CustomImageChange(Option<ResourceUuid>),
     CommentChange(Arc<String>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
@@ -2228,7 +2228,7 @@ pub struct NetworkNodeView {
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
-    custom_image: UFOption<ViewUuid>,
+    custom_image: UFOption<ResourceUuid>,
 }
 
 impl Entity for NetworkNodeView {
@@ -3436,7 +3436,7 @@ pub struct NetworkUserView {
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
-    custom_image: UFOption<ViewUuid>,
+    custom_image: UFOption<ResourceUuid>,
 }
 
 impl Entity for NetworkUserView {
@@ -4122,7 +4122,7 @@ pub struct NetworkFileView {
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
-    custom_image: UFOption<ViewUuid>,
+    custom_image: UFOption<ResourceUuid>,
 }
 
 impl Entity for NetworkFileView {
@@ -4698,7 +4698,7 @@ pub struct NetworkLocationView {
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
-    custom_image: UFOption<ViewUuid>,
+    custom_image: UFOption<ResourceUuid>,
 }
 
 impl Entity for NetworkLocationView {

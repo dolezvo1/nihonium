@@ -64,3 +64,23 @@ pub struct ControllerUuid {
 }
 
 impl_uuid!(ControllerUuid);
+
+#[derive(
+    Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct ResourceUuid {
+    inner: uuid::Uuid,
+}
+
+impl_uuid!(ResourceUuid);
+
+#[derive(
+    Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct FolderUuid {
+    inner: uuid::Uuid,
+}
+
+impl_uuid!(FolderUuid);

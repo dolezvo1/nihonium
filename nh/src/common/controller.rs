@@ -11,7 +11,7 @@ use crate::common::model::{
 };
 use crate::common::search::FullTextSearchable;
 use crate::common::ui_ext::UiExt;
-use crate::common::uuid::ControllerUuid;
+use crate::common::uuid::{ControllerUuid, FolderUuid, ResourceUuid};
 use crate::common::views::ordered_views::OrderedViewRefs;
 use crate::{CustomModal, CustomTab, NHTab};
 use eframe::egui;
@@ -151,27 +151,27 @@ impl Default for SnapManager {
 #[derive(Clone)]
 pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
-    RenameElement(ViewUuid, String),
+    RenameElement(EntityUuid, String),
 
-    SetInsertionTargetFolder(ViewUuid),
+    SetInsertionTargetFolder(FolderUuid),
     OpenAndFocusTab(NHTab, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetNewDiagramNumber(u32),
     AddNewDiagram {
-        parent: ViewUuid,
+        parent: FolderUuid,
         view_uuid: ViewUuid,
         diagram: ERef<dyn DiagramController>,
     },
     DeleteDiagram(ViewUuid),
 
     AddNewResource {
-        into: ViewUuid,
-        uuid: ViewUuid,
+        into: FolderUuid,
+        uuid: ResourceUuid,
         name: String,
         content: Vec<u8>,
     },
-    DuplicateDocument(ViewUuid),
-    DeleteDocument(ViewUuid),
+    DuplicateResource(ResourceUuid),
+    DeleteResource(ResourceUuid),
 }
 
 impl From<SimpleProjectCommand> for ProjectCommand {
@@ -235,24 +235,24 @@ pub enum Arrangement {
 
 pub enum HierarchyNode {
     Folder(
-        ViewUuid,
+        FolderUuid,
         /*name:*/ Arc<String>,
         /*children:*/ Vec<HierarchyNode>,
     ),
     Diagram(ViewUuid, ERef<dyn DiagramController>),
-    Resource(ViewUuid),
+    Resource(ResourceUuid),
 }
 
 impl HierarchyNode {
-    pub fn uuid(&self) -> ViewUuid {
+    pub fn uuid(&self) -> EntityUuid {
         match self {
-            Self::Folder(uuid, ..) => *uuid,
-            Self::Diagram(uuid, ..) => *uuid,
-            Self::Resource(uuid) => *uuid,
+            Self::Folder(uuid, ..) => uuid.clone().into(),
+            Self::Diagram(uuid, ..) => uuid.clone().into(),
+            Self::Resource(uuid) => uuid.clone().into(),
         }
     }
 
-    pub fn get(&self, id: &ViewUuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
+    pub fn get(&self, id: &EntityUuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
         match self {
             Self::Folder(.., children) => {
                 for c in children {
@@ -268,7 +268,7 @@ impl HierarchyNode {
         }
         None
     }
-    pub fn remove(&mut self, id: &ViewUuid) -> Option<HierarchyNode> {
+    pub fn remove(&mut self, id: &EntityUuid) -> Option<HierarchyNode> {
         match self {
             Self::Folder(.., children) => {
                 if let Some(index) = children.iter().position(|e| e.uuid() == *id) {
@@ -288,8 +288,8 @@ impl HierarchyNode {
     }
     pub fn insert(
         &mut self,
-        id: &ViewUuid,
-        position: DirPosition<ViewUuid>,
+        id: &EntityUuid,
+        position: DirPosition<EntityUuid>,
         value: HierarchyNode,
     ) -> Result<(), HierarchyNode> {
         let self_uuid = self.uuid();
@@ -713,8 +713,8 @@ pub struct GlobalDrawingContext {
     pub shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
     pub tool_palette_item_height: u32,
     pub model_labels: LabelProvider,
-    pub raw_resources: HashMap<ViewUuid, (String, Vec<u8>)>,
-    pub image_data: RwLock<HashMap<ViewUuid, ImageData>>,
+    pub raw_resources: HashMap<ResourceUuid, (String, Vec<u8>)>,
+    pub image_data: RwLock<HashMap<ResourceUuid, ImageData>>,
 }
 
 impl GlobalDrawingContext {
@@ -737,12 +737,12 @@ impl GlobalDrawingContext {
         )
     }
 
-    pub fn iter_images(&self) -> impl Iterator<Item = (&ViewUuid, &(String, Vec<u8>))> {
+    pub fn iter_images(&self) -> impl Iterator<Item = (&ResourceUuid, &(String, Vec<u8>))> {
         self.raw_resources.iter().filter(|e| {
             e.1.0.ends_with(".svg") || e.1.0.ends_with(".png") || e.1.0.ends_with(".jpg")
         })
     }
-    pub fn create_resource_uri(uuid: &ViewUuid, filename: &str, bytes: &[u8]) -> String {
+    pub fn create_resource_uri(uuid: &ResourceUuid, filename: &str, bytes: &[u8]) -> String {
         let version: u64 = {
             let mut hasher = std::hash::DefaultHasher::new();
             bytes.hash(&mut hasher);
@@ -758,7 +758,7 @@ impl GlobalDrawingContext {
         }
         uri
     }
-    pub fn get_image_data(&self, uuid: &ViewUuid) -> Option<ImageData> {
+    pub fn get_image_data(&self, uuid: &ResourceUuid) -> Option<ImageData> {
         let res = self.raw_resources.get(uuid)?;
         let mut w = self.image_data.write().unwrap();
         let e = w.entry(*uuid).or_insert_with(|| ImageData {
@@ -4562,7 +4562,9 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                         .get(&model_uuid)
                         .cloned(),
                     EntityUuid::View(view_uuid) => Some(view_uuid),
-                    EntityUuid::Controller(_) => return vec![],
+                    EntityUuid::Controller(_) | EntityUuid::Resource(_) | EntityUuid::Folder(_) => {
+                        return vec![];
+                    }
                 };
                 if let Some(view_uuid) = view_uuid {
                     return vec![InsensitiveCommand::HighlightSpecific(
@@ -4580,7 +4582,9 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                         .get(&model_uuid)
                         .cloned(),
                     EntityUuid::View(view_uuid) => Some(view_uuid),
-                    EntityUuid::Controller(_) => return vec![],
+                    EntityUuid::Controller(_) | EntityUuid::Resource(_) | EntityUuid::Folder(_) => {
+                        return vec![];
+                    }
                 };
                 if let Some((v, _)) =
                     view_uuid.and_then(|e| self.temporaries.flattened_views.get(&e))

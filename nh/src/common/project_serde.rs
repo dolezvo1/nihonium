@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
-use crate::common::uuid::ControllerUuid;
+use crate::common::uuid::{ControllerUuid, FolderUuid, ResourceUuid};
 use crate::{ProjectMeta, egui};
 use serde::{Deserialize, Serialize};
 
@@ -198,7 +198,7 @@ impl FSReadAbstraction for ZipFSReader<'_> {
 #[serde(tag = "type")]
 enum NHProjectHierarchyNodeSerialization {
     Folder {
-        uuid: ViewUuid,
+        uuid: FolderUuid,
         name: String,
         hierarchy: Vec<NHProjectHierarchyNodeSerialization>,
     },
@@ -206,7 +206,7 @@ enum NHProjectHierarchyNodeSerialization {
         uuid: ViewUuid,
     },
     Resource {
-        uuid: ViewUuid,
+        uuid: ResourceUuid,
         name: String,
     },
 }
@@ -250,11 +250,11 @@ impl NHProjectSerialization {
         hierarchy: &Vec<HierarchyNode>,
         global_colors: &ColorBundle,
         diagram_controllers: &HashMap<ViewUuid, ERef<dyn DiagramController>>,
-        resources: &HashMap<ViewUuid, (String, Vec<u8>)>,
+        resources: &HashMap<ResourceUuid, (String, Vec<u8>)>,
     ) -> Result<(), NHSerializeError> {
         fn ph(
             e: &HierarchyNode,
-            d: &HashMap<ViewUuid, (String, Vec<u8>)>,
+            d: &HashMap<ResourceUuid, (String, Vec<u8>)>,
         ) -> NHProjectHierarchyNodeSerialization {
             match e {
                 HierarchyNode::Folder(uuid, name, children) => {
@@ -375,7 +375,7 @@ impl NHProjectSerialization {
         (
             Vec<HierarchyNode>,
             HashMap<ViewUuid, ERef<dyn DiagramController>>,
-            HashMap<ViewUuid, (String, Vec<u8>)>,
+            HashMap<ResourceUuid, (String, Vec<u8>)>,
         ),
         NHDeserializeError,
     > {
@@ -427,7 +427,7 @@ impl NHProjectSerialization {
             e: &NHProjectHierarchyNodeSerialization,
             d: &mut NHDeserializer,
             tlc: &HashMap<ViewUuid, ERef<dyn DiagramController + 'static>>,
-            resources: &mut HashMap<ViewUuid, (String, Vec<u8>)>,
+            resources: &mut HashMap<ResourceUuid, (String, Vec<u8>)>,
             cds: &HashMap<String, &'static DeserializeControllerF>,
         ) -> Result<HierarchyNode, NHDeserializeError> {
             match e {
@@ -475,7 +475,7 @@ impl NHProjectSerialization {
     }
 }
 
-fn format_resource_path(uuid: &ViewUuid, name: &str) -> String {
+fn format_resource_path(uuid: &ResourceUuid, name: &str) -> String {
     let mut p = format!("resources/{}", uuid.to_string());
     if let Some(e) = Path::new(&name).extension().and_then(|e| e.to_str()) {
         p.push('.');
@@ -554,6 +554,7 @@ impl NHSerializer {
                         toml::to_string(&subset)?,
                     )
                 }
+                _ => unreachable!(),
             };
 
             wa.write_source_file(&filename, subset.as_bytes())?;
@@ -725,6 +726,7 @@ impl<'a> NHDeserializer<'a> {
                         self.source_controllers.insert(get_controller_uuid(&t)?, t);
                     }
                 }
+                EntityUuid::Resource(_) | EntityUuid::Folder(_) => {}
             }
         }
         Ok(())
@@ -843,6 +845,12 @@ where
             EntityUuid::Model(uuid) => deserializer.get_entity(&uuid),
             EntityUuid::View(uuid) => deserializer.get_entity(&uuid),
             EntityUuid::Controller(uuid) => deserializer.get_entity(&uuid),
+            EntityUuid::Resource(_) | EntityUuid::Folder(_) => {
+                Err(NHDeserializeError::StructureError(format!(
+                    "requested deserialization of undeserializable entity {:?}",
+                    uuid
+                )))
+            }
         }
     }
 }

@@ -35,11 +35,13 @@ use crate::common::controller::{
     UnintendedDeleteBehavior,
 };
 use crate::common::diagram_settings::{DiagramSettings, ShowSettingsResult};
+use crate::common::entity::EntityUuid;
 use crate::common::eref::ERef;
 use crate::common::project_serde::{
     FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter,
 };
 use crate::common::ui_ext::UiExt;
+use crate::common::uuid::{FolderUuid, ResourceUuid};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
 macro_rules! labeled_widget {
@@ -167,7 +169,7 @@ pub enum NHTab {
         uuid: ViewUuid,
     },
     Resource {
-        uuid: ViewUuid,
+        uuid: ResourceUuid,
         mode: ResourceTabMode,
     },
     CustomTab {
@@ -343,10 +345,10 @@ struct NHContext {
     pub diagram_controllers: HashMap<ViewUuid, ERef<dyn DiagramController>>,
     project_meta: ProjectMeta,
     project_hierarchy: HierarchyNode,
-    tree_view_state: TreeViewState<ViewUuid>,
+    tree_view_state: TreeViewState<EntityUuid>,
     diagram_deserializers: HashMap<String, &'static DeserializeControllerF>,
     new_diagram_no: u32,
-    document_buffers: HashMap<ViewUuid, Option<String>>,
+    document_buffers: HashMap<ResourceUuid, Option<String>>,
     clipboard: Vec<Box<dyn Any>>,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
     custom_modal: Option<Box<dyn CustomModal>>,
@@ -369,7 +371,7 @@ struct NHContext {
     new_diagram_selected_kind: usize,
     new_diagram_selected_constructor: usize,
     new_diagram_name: String,
-    new_diagram_target_folder: ViewUuid,
+    new_diagram_target_folder: FolderUuid,
 
     unprocessed_commands: Vec<ProjectCommand>,
     affected_models: HashSet<ModelUuid>,
@@ -679,7 +681,7 @@ fn add_project_element_block(
     gdc: &GlobalDrawingContext,
     ui: &mut egui::Ui,
     commands: &mut Vec<ProjectCommand>,
-    target_folder: &ViewUuid,
+    target_folder: &FolderUuid,
 ) {
     if ui
         .button(gdc.translate_0("nh-project-addnewdocument"))
@@ -687,7 +689,7 @@ fn add_project_element_block(
     {
         commands.push(ProjectCommand::AddNewResource {
             into: *target_folder,
-            uuid: ViewUuid::now_v7(),
+            uuid: ResourceUuid::now_v7(),
             name: "New Document.txt".to_owned(),
             content: vec![],
         });
@@ -914,7 +916,7 @@ impl NHContext {
             author: "".to_owned(),
         };
         self.project_hierarchy =
-            HierarchyNode::Folder(ViewUuid::nil(), "New Project".to_owned().into(), vec![]);
+            HierarchyNode::Folder(FolderUuid::nil(), "New Project".to_owned().into(), vec![]);
         self.new_diagram_no = 1;
         self.drawing_context.raw_resources.clear();
         self.document_buffers.clear();
@@ -963,14 +965,16 @@ impl NHContext {
         }
 
         enum ContextMenuAction {
-            NewFolder(ViewUuid),
+            NewFolder {
+                target: FolderUuid,
+            },
             CollapseAt(
                 /*collapse:*/ Option<bool>,
                 /*recurse:*/ bool,
-                ViewUuid,
+                FolderUuid,
             ),
-            RenameElement(ViewUuid),
-            DeleteFolder(ViewUuid),
+            RenameElement(EntityUuid),
+            DeleteFolder(FolderUuid),
         }
 
         let mut context_menu_action = None;
@@ -980,7 +984,9 @@ impl NHContext {
                 .button(translate!("nh-tab-projecthierarchy-newfolder"))
                 .clicked()
             {
-                context_menu_action = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
+                context_menu_action = Some(ContextMenuAction::NewFolder {
+                    target: FolderUuid::nil(),
+                });
             }
             if ui
                 .button(translate!("nh-tab-projecthierarchy-collapseall"))
@@ -989,7 +995,7 @@ impl NHContext {
                 context_menu_action = Some(ContextMenuAction::CollapseAt(
                     Some(true),
                     true,
-                    ViewUuid::nil(),
+                    FolderUuid::nil(),
                 ));
             }
             if ui
@@ -999,81 +1005,103 @@ impl NHContext {
                 context_menu_action = Some(ContextMenuAction::CollapseAt(
                     Some(false),
                     true,
-                    ViewUuid::nil(),
+                    FolderUuid::nil(),
                 ));
             }
         });
 
         fn hierarchy(
-            builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>,
+            builder: &mut egui_ltreeview::TreeViewBuilder<EntityUuid>,
             gdc: &GlobalDrawingContext,
             hn: &HierarchyNode,
-            resources: &HashMap<ViewUuid, (String, Vec<u8>)>,
+            resources: &HashMap<ResourceUuid, (String, Vec<u8>)>,
             cma: &mut Option<ContextMenuAction>,
             commands: &mut Vec<ProjectCommand>,
-            target_folder: &ViewUuid,
+            target_folder: &FolderUuid,
         ) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
-                    builder.node(NodeBuilder::dir(*uuid).label(&**name).context_menu(|ui| {
-                        ui.set_min_width(MIN_MENU_WIDTH);
+                    builder.node(
+                        NodeBuilder::dir(uuid.clone().into())
+                            .label(&**name)
+                            .context_menu(|ui| {
+                                ui.set_min_width(MIN_MENU_WIDTH);
 
-                        if uuid.is_nil() && ui.button(gdc.translate_0("nh-edit")).clicked() {
-                            commands.push(ProjectCommand::OpenAndFocusTab(
-                                NHTab::ProjectSettings,
-                                None,
-                            ));
-                        }
+                                if uuid.is_nil() && ui.button(gdc.translate_0("nh-edit")).clicked()
+                                {
+                                    commands.push(ProjectCommand::OpenAndFocusTab(
+                                        NHTab::ProjectSettings,
+                                        None,
+                                    ));
+                                }
 
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-togglecollapse"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::CollapseAt(None, false, *uuid));
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::NewFolder(*uuid));
-                            ui.close();
-                        }
+                                if ui
+                                    .button(
+                                        gdc.translate_0("nh-tab-projecthierarchy-togglecollapse"),
+                                    )
+                                    .clicked()
+                                {
+                                    *cma = Some(ContextMenuAction::CollapseAt(None, false, *uuid));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
+                                    .clicked()
+                                {
+                                    *cma = Some(ContextMenuAction::NewFolder { target: *uuid });
+                                    ui.close();
+                                }
 
-                        add_project_element_block(gdc, ui, commands, uuid);
+                                add_project_element_block(gdc, ui, commands, uuid);
 
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-collapsechildren"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::CollapseAt(Some(true), true, *uuid));
-                            ui.close();
-                        }
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-uncollapsechildren"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::CollapseAt(Some(false), true, *uuid));
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::RenameElement(*uuid));
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::DeleteFolder(*uuid));
-                            ui.close();
-                        }
-                    }));
+                                if ui
+                                    .button(
+                                        gdc.translate_0("nh-tab-projecthierarchy-collapsechildren"),
+                                    )
+                                    .clicked()
+                                {
+                                    *cma = Some(ContextMenuAction::CollapseAt(
+                                        Some(true),
+                                        true,
+                                        *uuid,
+                                    ));
+                                    ui.close();
+                                }
+                                if ui
+                                    .button(
+                                        gdc.translate_0(
+                                            "nh-tab-projecthierarchy-uncollapsechildren",
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    *cma = Some(ContextMenuAction::CollapseAt(
+                                        Some(false),
+                                        true,
+                                        *uuid,
+                                    ));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
+                                    .clicked()
+                                {
+                                    *cma =
+                                        Some(ContextMenuAction::RenameElement(uuid.clone().into()));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
+                                    .clicked()
+                                {
+                                    *cma = Some(ContextMenuAction::DeleteFolder(*uuid));
+                                    ui.close();
+                                }
+                            }),
+                    );
 
                     for c in children {
                         hierarchy(builder, gdc, c, resources, cma, commands, uuid);
@@ -1084,7 +1112,7 @@ impl NHContext {
                 HierarchyNode::Diagram(uuid, c) => {
                     let view_name = c.read().view_name(uuid);
                     builder.node(
-                        NodeBuilder::leaf(*uuid)
+                        NodeBuilder::leaf(uuid.clone().into())
                             .label(&*view_name)
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
@@ -1104,7 +1132,9 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
                                     .clicked()
                                 {
-                                    *cma = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
+                                    *cma = Some(ContextMenuAction::NewFolder {
+                                        target: *target_folder,
+                                    });
                                     ui.close();
                                 }
 
@@ -1115,7 +1145,7 @@ impl NHContext {
                                 {
                                     let new_c = new_c.unwrap_or_else(|| c.clone());
                                     commands.push(ProjectCommand::AddNewDiagram {
-                                        parent: ViewUuid::nil(),
+                                        parent: FolderUuid::nil(),
                                         view_uuid: new_uuid,
                                         diagram: new_c,
                                     });
@@ -1130,7 +1160,8 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
                                     .clicked()
                                 {
-                                    *cma = Some(ContextMenuAction::RenameElement(*uuid));
+                                    *cma =
+                                        Some(ContextMenuAction::RenameElement(uuid.clone().into()));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -1146,68 +1177,75 @@ impl NHContext {
                 }
                 HierarchyNode::Resource(uuid) => {
                     let r = resources.get(uuid).unwrap();
-                    builder.node(NodeBuilder::leaf(*uuid).label(&r.0).context_menu(|ui| {
-                        ui.set_min_width(MIN_MENU_WIDTH);
+                    builder.node(
+                        NodeBuilder::leaf(uuid.clone().into())
+                            .label(&r.0)
+                            .context_menu(|ui| {
+                                ui.set_min_width(MIN_MENU_WIDTH);
 
-                        if is_previewable_resource(&r.0)
-                            && ui
-                                .button(gdc.translate_0("nh-tab-projecthierarchy-open"))
-                                .clicked()
-                        {
-                            commands.push(ProjectCommand::OpenAndFocusTab(
-                                NHTab::Resource {
-                                    uuid: *uuid,
-                                    mode: ResourceTabMode::Preview,
-                                },
-                                None,
-                            ));
-                            ui.close();
-                        }
-                        if ui.button(gdc.translate_0("nh-edit")).clicked() {
-                            commands.push(ProjectCommand::OpenAndFocusTab(
-                                NHTab::Resource {
-                                    uuid: *uuid,
-                                    mode: ResourceTabMode::Edit,
-                                },
-                                None,
-                            ));
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
-                            ui.close();
-                        }
+                                if is_previewable_resource(&r.0)
+                                    && ui
+                                        .button(gdc.translate_0("nh-tab-projecthierarchy-open"))
+                                        .clicked()
+                                {
+                                    commands.push(ProjectCommand::OpenAndFocusTab(
+                                        NHTab::Resource {
+                                            uuid: *uuid,
+                                            mode: ResourceTabMode::Preview,
+                                        },
+                                        None,
+                                    ));
+                                    ui.close();
+                                }
+                                if ui.button(gdc.translate_0("nh-edit")).clicked() {
+                                    commands.push(ProjectCommand::OpenAndFocusTab(
+                                        NHTab::Resource {
+                                            uuid: *uuid,
+                                            mode: ResourceTabMode::Edit,
+                                        },
+                                        None,
+                                    ));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
+                                    .clicked()
+                                {
+                                    *cma = Some(ContextMenuAction::NewFolder {
+                                        target: *target_folder,
+                                    });
+                                    ui.close();
+                                }
 
-                        add_project_element_block(gdc, ui, commands, target_folder);
+                                add_project_element_block(gdc, ui, commands, target_folder);
 
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-duplicate"))
-                            .clicked()
-                        {
-                            commands.push(ProjectCommand::DuplicateDocument(*uuid));
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
-                            .clicked()
-                        {
-                            *cma = Some(ContextMenuAction::RenameElement(*uuid));
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
-                            .clicked()
-                        {
-                            commands.push(ProjectCommand::DeleteDocument(*uuid));
-                            ui.close();
-                        }
-                    }));
+                                if ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-duplicate"))
+                                    .clicked()
+                                {
+                                    commands.push(ProjectCommand::DuplicateResource(*uuid));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
+                                    .clicked()
+                                {
+                                    *cma =
+                                        Some(ContextMenuAction::RenameElement(uuid.clone().into()));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
+                                    .clicked()
+                                {
+                                    commands.push(ProjectCommand::DeleteResource(*uuid));
+                                    ui.close();
+                                }
+                            }),
+                    );
                 }
             }
         }
@@ -1227,20 +1265,23 @@ impl NHContext {
                             &self.drawing_context.raw_resources,
                             &mut context_menu_action,
                             &mut commands,
-                            &ViewUuid::nil(),
+                            &FolderUuid::nil(),
                         );
                     });
 
                 macro_rules! node_to_tab {
                     ($node:expr) => {
-                        match self.project_hierarchy.get($node) {
-                            Some((HierarchyNode::Diagram(..), _)) => {
-                                Some(NHTab::Diagram { uuid: *$node })
+                        match ($node, self.project_hierarchy.get($node)) {
+                            (EntityUuid::View(uuid), Some((HierarchyNode::Diagram(..), _))) => {
+                                Some(NHTab::Diagram { uuid: *uuid })
                             }
-                            Some((HierarchyNode::Resource(..), _)) => {
-                                let r = self.drawing_context.raw_resources.get($node).unwrap();
+                            (
+                                EntityUuid::Resource(uuid),
+                                Some((HierarchyNode::Resource(..), _)),
+                            ) => {
+                                let r = self.drawing_context.raw_resources.get(uuid).unwrap();
                                 Some(NHTab::Resource {
-                                    uuid: *$node,
+                                    uuid: *uuid,
                                     mode: match is_previewable_resource(&r.0) {
                                         true => ResourceTabMode::Preview,
                                         false => ResourceTabMode::Edit,
@@ -1268,11 +1309,7 @@ impl NHContext {
                             }
                         }
                         egui_ltreeview::Action::Move(dnd) => {
-                            let target_is_folder = dnd.target.is_nil()
-                                || matches!(
-                                    self.project_hierarchy.get(&dnd.target),
-                                    Some((HierarchyNode::Folder(..), _))
-                                );
+                            let target_is_folder = matches!(&dnd.target, EntityUuid::Folder(_));
 
                             for source_id in &dnd.source {
                                 if let Some((_source_node, source_node_parent)) =
@@ -1296,19 +1333,19 @@ impl NHContext {
 
         if let Some(c) = context_menu_action {
             match c {
-                ContextMenuAction::NewFolder(view_uuid) => {
+                ContextMenuAction::NewFolder { target: uuid } => {
                     let _ = self.project_hierarchy.insert(
-                        &view_uuid,
+                        &uuid.into(),
                         egui_ltreeview::DirPosition::Last,
                         HierarchyNode::Folder(
-                            ViewUuid::now_v7(),
+                            FolderUuid::now_v7(),
                             Arc::new("New folder".into()),
                             vec![],
                         ),
                     );
                     self.set_has_unsaved_changes(true);
                 }
-                ContextMenuAction::CollapseAt(collapse, recurse, view_uuid) => {
+                ContextMenuAction::CollapseAt(collapse, recurse, target) => {
                     let mut f = |e: &HierarchyNode| {
                         if recurse {
                             e.for_each(&mut |e| {
@@ -1328,13 +1365,13 @@ impl NHContext {
                             );
                         }
                     };
-                    if view_uuid.is_nil() {
+                    if target.is_nil() {
                         f(&self.project_hierarchy);
-                    } else if let Some(e) = self.project_hierarchy.get(&view_uuid) {
+                    } else if let Some(e) = self.project_hierarchy.get(&target.into()) {
                         f(e.0);
                     }
                 }
-                ContextMenuAction::RenameElement(view_uuid) => 'a: {
+                ContextMenuAction::RenameElement(uuid) => 'a: {
                     let f = |e: &HierarchyNode| match e {
                         HierarchyNode::Folder(_, name, _) => (**name).clone(),
                         HierarchyNode::Diagram(uuid, c) => (*c.read().view_name(uuid)).clone(),
@@ -1345,9 +1382,11 @@ impl NHContext {
                             .map(|e| e.0.clone())
                             .unwrap(),
                     };
-                    let original_name = if view_uuid.is_nil() {
+                    let original_name = if let EntityUuid::Folder(uuid) = uuid
+                        && uuid.is_nil()
+                    {
                         f(&self.project_hierarchy)
-                    } else if let Some(e) = self.project_hierarchy.get(&view_uuid) {
+                    } else if let Some(e) = self.project_hierarchy.get(&uuid) {
                         f(e.0)
                     } else {
                         break 'a;
@@ -1355,7 +1394,7 @@ impl NHContext {
 
                     struct ViewRenameModal {
                         first_frame: bool,
-                        view_uuid: ViewUuid,
+                        view_uuid: EntityUuid,
                         name_buffer: String,
                     }
 
@@ -1471,12 +1510,12 @@ impl NHContext {
 
                     self.custom_modal = Some(Box::new(ViewRenameModal {
                         first_frame: true,
-                        view_uuid,
+                        view_uuid: uuid,
                         name_buffer: original_name,
                     }));
                 }
-                ContextMenuAction::DeleteFolder(view_uuid) => {
-                    if self.project_hierarchy.remove(&view_uuid).is_some() {
+                ContextMenuAction::DeleteFolder(target) => {
+                    if self.project_hierarchy.remove(&target.into()).is_some() {
                         self.set_has_unsaved_changes(true);
                     }
                 }
@@ -2042,7 +2081,7 @@ impl NHContext {
                     );
                     if let HierarchyNode::Folder(_, name, _) = self
                         .project_hierarchy
-                        .get(&self.new_diagram_target_folder)
+                        .get(&self.new_diagram_target_folder.into())
                         .map(|e| e.0)
                         .unwrap_or(&self.project_hierarchy)
                     {
@@ -2067,7 +2106,7 @@ impl NHContext {
                                     is_root: bool,
                                     is_last: bool,
                                     e: &HierarchyNode,
-                                    t: &mut ViewUuid,
+                                    t: &mut FolderUuid,
                                 ) {
                                     if let HierarchyNode::Folder(view_uuid, name, children) = e {
                                         ui.selectable_value(
@@ -2102,6 +2141,7 @@ impl NHContext {
                                 }
 
                                 let mut prefix = String::new();
+
                                 h(
                                     ui,
                                     &mut prefix,
@@ -3026,7 +3066,7 @@ impl NHContext {
 
     fn show_resource_preview_tab(
         &mut self,
-        uuid: &ViewUuid,
+        uuid: &ResourceUuid,
         ui: &mut egui::Ui,
     ) -> Option<ResourceTabMode> {
         let img_data = self.drawing_context.get_image_data(uuid).unwrap();
@@ -3042,7 +3082,7 @@ impl NHContext {
 
     fn show_resource_edit_tab(
         &mut self,
-        uuid: &ViewUuid,
+        uuid: &ResourceUuid,
         ui: &mut egui::Ui,
     ) -> Option<ResourceTabMode> {
         let res = self.drawing_context.raw_resources.get_mut(uuid).unwrap();
@@ -3340,7 +3380,7 @@ impl NHApp {
                 author: "".to_owned(),
             },
             project_hierarchy: HierarchyNode::Folder(
-                ViewUuid::nil(),
+                FolderUuid::nil(),
                 Arc::new("New Project".to_owned()),
                 vec![],
             ),
@@ -3377,7 +3417,7 @@ impl NHApp {
             new_diagram_selected_kind: 0,
             new_diagram_selected_constructor: 0,
             new_diagram_name: String::new(),
-            new_diagram_target_folder: ViewUuid::nil(),
+            new_diagram_target_folder: FolderUuid::nil(),
 
             unprocessed_commands: Vec::new(),
             affected_models: HashSet::new(),
@@ -3480,7 +3520,7 @@ impl NHApp {
 
     fn add_diagram(
         &mut self,
-        parent: ViewUuid,
+        parent: FolderUuid,
         view_uuid: ViewUuid,
         controller: ERef<dyn DiagramController>,
     ) {
@@ -3489,7 +3529,7 @@ impl NHApp {
             .refresh_all_buffers(&mut self.context.drawing_context.model_labels);
 
         if let Err(e) = self.context.project_hierarchy.insert(
-            &parent,
+            &parent.into(),
             egui_ltreeview::DirPosition::Last,
             HierarchyNode::Diagram(view_uuid, controller.clone()),
         ) {
@@ -3505,7 +3545,7 @@ impl NHApp {
     }
 
     fn delete_diagram(&mut self, view_uuid: ViewUuid) {
-        self.context.project_hierarchy.remove(&view_uuid);
+        self.context.project_hierarchy.remove(&view_uuid.into());
         self.context.diagram_controllers.remove(&view_uuid);
         self.context
             .last_focused_diagram
@@ -3627,8 +3667,8 @@ impl eframe::App for NHApp {
                         self.context
                             .unprocessed_commands
                             .push(ProjectCommand::AddNewResource {
-                                into: ViewUuid::nil(),
-                                uuid: ViewUuid::now_v7(),
+                                into: FolderUuid::nil(),
+                                uuid: ResourceUuid::now_v7(),
                                 name: e.0.file_name(),
                                 content: e.1,
                             });
@@ -3997,7 +4037,7 @@ impl eframe::App for NHApp {
                         &self.context.drawing_context,
                         ui,
                         &mut commands,
-                        &ViewUuid::nil(),
+                        &FolderUuid::nil(),
                     );
 
                     #[cfg(not(target_arch = "wasm32"))]
@@ -4955,30 +4995,30 @@ impl eframe::App for NHApp {
                         }
                     }
                 },
-                ProjectCommand::RenameElement(view_uuid, new_name) => {
+                ProjectCommand::RenameElement(uuid, new_name) => {
                     fn h(
                         e: &mut HierarchyNode,
-                        searched_uuid: ViewUuid,
+                        searched_uuid: EntityUuid,
                         new_name: &str,
-                        docs: &mut HashMap<ViewUuid, (String, Vec<u8>)>,
+                        resources: &mut HashMap<ResourceUuid, (String, Vec<u8>)>,
                     ) -> bool {
                         match e {
-                            HierarchyNode::Folder(view_uuid, name, children) => {
+                            HierarchyNode::Folder(uuid, name, children) => {
                                 let mut any_changed = false;
 
-                                if searched_uuid == *view_uuid {
+                                if searched_uuid == uuid.clone().into() {
                                     *name = new_name.to_owned().into();
                                     any_changed = true;
                                 }
 
                                 for e in children.iter_mut() {
-                                    any_changed |= h(e, searched_uuid, new_name, docs);
+                                    any_changed |= h(e, searched_uuid, new_name, resources);
                                 }
 
                                 any_changed
                             }
                             HierarchyNode::Diagram(uuid, inner) => {
-                                if searched_uuid == *uuid {
+                                if searched_uuid == uuid.clone().into() {
                                     inner
                                         .write()
                                         .set_view_name(uuid, new_name.to_owned().into());
@@ -4987,9 +5027,9 @@ impl eframe::App for NHApp {
                                     false
                                 }
                             }
-                            HierarchyNode::Resource(view_uuid) => {
-                                if searched_uuid == *view_uuid
-                                    && let Some(e) = docs.get_mut(view_uuid)
+                            HierarchyNode::Resource(uuid) => {
+                                if searched_uuid == uuid.clone().into()
+                                    && let Some(e) = resources.get_mut(uuid)
                                 {
                                     e.0 = new_name.to_owned();
                                     true
@@ -5002,11 +5042,13 @@ impl eframe::App for NHApp {
 
                     if h(
                         &mut self.context.project_hierarchy,
-                        view_uuid,
+                        uuid,
                         &new_name,
                         &mut self.context.drawing_context.raw_resources,
                     ) {
-                        if view_uuid.is_nil() {
+                        if let EntityUuid::Folder(uuid) = uuid
+                            && uuid.is_nil()
+                        {
                             self.context.project_meta.name = new_name;
                         }
                         self.context.set_has_unsaved_changes(true);
@@ -5044,7 +5086,7 @@ impl eframe::App for NHApp {
                         .raw_resources
                         .insert(uuid, (name, content));
                     let _ = self.context.project_hierarchy.insert(
-                        &into,
+                        &into.into(),
                         egui_ltreeview::DirPosition::Last,
                         HierarchyNode::Resource(uuid),
                     );
@@ -5057,11 +5099,11 @@ impl eframe::App for NHApp {
                     );
                     self.context.set_has_unsaved_changes(true);
                 }
-                ProjectCommand::DuplicateDocument(_uuid) => {
+                ProjectCommand::DuplicateResource(_uuid) => {
                     // TODO:
                 }
-                ProjectCommand::DeleteDocument(needle_uuid) => {
-                    self.context.project_hierarchy.remove(&needle_uuid);
+                ProjectCommand::DeleteResource(needle_uuid) => {
+                    self.context.project_hierarchy.remove(&needle_uuid.into());
                     self.context
                         .drawing_context
                         .raw_resources
