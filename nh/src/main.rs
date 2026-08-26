@@ -602,9 +602,11 @@ impl TabViewer for NHContext {
                 }
                 ResourceTabMode::EditAndPreview => {
                     ui.columns(2, |columns| {
-                        if let Some(new_mode) = self.show_resource_edit_tab(uuid, &mut columns[0]) {
-                            *mode = new_mode;
-                        }
+                        egui::ScrollArea::vertical().show(&mut columns[0], |ui| {
+                            if let Some(new_mode) = self.show_resource_edit_tab(uuid, ui) {
+                                *mode = new_mode;
+                            }
+                        });
                         self.show_resource_preview_tab(uuid, &mut columns[1]);
                     });
                 }
@@ -3061,7 +3063,10 @@ impl NHContext {
 
         if let Some(buffer) = buffer
             && ui
-                .add_sized(ui.available_size(), egui::TextEdit::multiline(buffer))
+                .add_sized(
+                    ui.available_size(),
+                    egui::TextEdit::multiline(buffer).code_editor(),
+                )
                 .changed()
         {
             res.1 = buffer.clone().into_bytes();
