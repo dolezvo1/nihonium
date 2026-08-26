@@ -5099,8 +5099,42 @@ impl eframe::App for NHApp {
                     );
                     self.context.set_has_unsaved_changes(true);
                 }
-                ProjectCommand::DuplicateResource(_uuid) => {
-                    // TODO:
+                ProjectCommand::DuplicateResource(old_uuid) => {
+                    let Some((name, content)) = self
+                        .context
+                        .drawing_context
+                        .raw_resources
+                        .get(&old_uuid)
+                        .cloned()
+                    else {
+                        continue;
+                    };
+                    let Some(parent) = self
+                        .context
+                        .project_hierarchy
+                        .get(&old_uuid.into())
+                        .map(|e| e.1.uuid())
+                    else {
+                        continue;
+                    };
+                    let new_uuid = ResourceUuid::now_v7();
+                    self.context
+                        .drawing_context
+                        .raw_resources
+                        .insert(new_uuid, (name, content));
+                    let _ = self.context.project_hierarchy.insert(
+                        &parent,
+                        egui_ltreeview::DirPosition::After(old_uuid.into()),
+                        HierarchyNode::Resource(new_uuid),
+                    );
+                    push_tab_to_best!(
+                        self,
+                        NHTab::Resource {
+                            uuid: new_uuid,
+                            mode: ResourceTabMode::Edit
+                        }
+                    );
+                    self.context.set_has_unsaved_changes(true);
                 }
                 ProjectCommand::DeleteResource(needle_uuid) => {
                     self.context.project_hierarchy.remove(&needle_uuid.into());
