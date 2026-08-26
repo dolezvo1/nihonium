@@ -77,7 +77,7 @@ pub enum NetworkPropChange {
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
-    CustomImageChange(Option<ResourceUuid>),
+    CustomImageChange(UFOption<ResourceUuid>),
     CommentChange(Arc<String>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
@@ -2174,6 +2174,39 @@ fn handle_element_button_click(
     None
 }
 
+fn pick_custom_image(
+    gdc: &GlobalDrawingContext,
+    ui: &mut egui::Ui,
+    current_image: &UFOption<ResourceUuid>,
+) -> Option<UFOption<ResourceUuid>> {
+    let mut result = None;
+    egui::ComboBox::from_id_salt("custom image")
+        .selected_text(
+            current_image
+                .as_ref()
+                .and_then(|e| gdc.raw_resources.get(&e))
+                .map(|e| e.0.clone())
+                .unwrap_or_else(|| "None".to_owned()),
+        )
+        .show_ui(ui, |ui| {
+            if ui
+                .selectable_label(!current_image.is_some(), "None")
+                .clicked()
+            {
+                result = Some(UFOption::None);
+            }
+            for (k, img) in gdc.iter_images() {
+                if ui
+                    .selectable_label(*current_image == UFOption::Some(*k), img.0.clone())
+                    .clicked()
+                {
+                    result = Some(UFOption::Some(*k));
+                };
+            }
+        });
+    result
+}
+
 fn new_network_node(
     name: &str,
     kind: NetworkNodeKind,
@@ -2346,32 +2379,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             ));
         }
         ui.label("Custom image:");
-        let mut custom_image_buffer = self.custom_image.clone();
-        egui::ComboBox::from_id_salt("custom image")
-            .selected_text(
-                self.custom_image
-                    .as_ref()
-                    .and_then(|e| gdc.raw_resources.get(&e))
-                    .map(|e| e.0.clone())
-                    .unwrap_or_else(|| "".to_owned()),
-            )
-            .show_ui(ui, |ui| {
-                for (k, img) in gdc.iter_images() {
-                    if ui
-                        .selectable_value(
-                            &mut custom_image_buffer,
-                            UFOption::Some(*k),
-                            img.0.clone(),
-                        )
-                        .clicked()
-                    {
-                        commands.push(InsensitiveCommand::PropertyChange(
-                            q.selected_views(),
-                            NetworkPropChange::CustomImageChange(Some(*k)),
-                        ));
-                    };
-                }
-            });
+        if let Some(e) = pick_custom_image(gdc, ui, &self.custom_image) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::CustomImageChange(e),
+            ));
+        }
 
         PropertiesStatus::Shown
     }
@@ -3315,9 +3328,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         NetworkPropChange::CustomImageChange(ci) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::CustomImageChange(self.custom_image.into()),
+                                NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone().into();
+                            self.custom_image = ci.clone();
                         }
                         _ => {}
                     }
@@ -3554,32 +3567,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             ));
         }
         ui.label("Custom image:");
-        let mut custom_image_buffer = self.custom_image.clone();
-        egui::ComboBox::from_id_salt("custom image")
-            .selected_text(
-                self.custom_image
-                    .as_ref()
-                    .and_then(|e| gdc.raw_resources.get(&e))
-                    .map(|e| e.0.clone())
-                    .unwrap_or_else(|| "".to_owned()),
-            )
-            .show_ui(ui, |ui| {
-                for (k, img) in gdc.iter_images() {
-                    if ui
-                        .selectable_value(
-                            &mut custom_image_buffer,
-                            UFOption::Some(*k),
-                            img.0.clone(),
-                        )
-                        .clicked()
-                    {
-                        commands.push(InsensitiveCommand::PropertyChange(
-                            q.selected_views(),
-                            NetworkPropChange::CustomImageChange(Some(*k)),
-                        ));
-                    };
-                }
-            });
+        if let Some(e) = pick_custom_image(gdc, ui, &self.custom_image) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::CustomImageChange(e),
+            ));
+        }
 
         PropertiesStatus::Shown
     }
@@ -4001,9 +3994,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         NetworkPropChange::CustomImageChange(ci) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::CustomImageChange(self.custom_image.into()),
+                                NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone().into();
+                            self.custom_image = ci.clone();
                         }
                         _ => {}
                     }
@@ -4240,32 +4233,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             ));
         }
         ui.label("Custom image:");
-        let mut custom_image_buffer = self.custom_image.clone();
-        egui::ComboBox::from_id_salt("custom image")
-            .selected_text(
-                self.custom_image
-                    .as_ref()
-                    .and_then(|e| gdc.raw_resources.get(&e))
-                    .map(|e| e.0.clone())
-                    .unwrap_or_else(|| "".to_owned()),
-            )
-            .show_ui(ui, |ui| {
-                for (k, img) in gdc.iter_images() {
-                    if ui
-                        .selectable_value(
-                            &mut custom_image_buffer,
-                            UFOption::Some(*k),
-                            img.0.clone(),
-                        )
-                        .clicked()
-                    {
-                        commands.push(InsensitiveCommand::PropertyChange(
-                            q.selected_views(),
-                            NetworkPropChange::CustomImageChange(Some(*k)),
-                        ));
-                    };
-                }
-            });
+        if let Some(e) = pick_custom_image(gdc, ui, &self.custom_image) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::CustomImageChange(e),
+            ));
+        }
 
         PropertiesStatus::Shown
     }
@@ -4577,9 +4550,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                         NetworkPropChange::CustomImageChange(ci) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::CustomImageChange(self.custom_image.into()),
+                                NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone().into();
+                            self.custom_image = ci.clone();
                         }
                         _ => {}
                     }
@@ -4807,32 +4780,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         });
 
         ui.label("Custom image:");
-        let mut custom_image_buffer = self.custom_image.clone();
-        egui::ComboBox::from_id_salt("custom image")
-            .selected_text(
-                self.custom_image
-                    .as_ref()
-                    .and_then(|e| gdc.raw_resources.get(&e))
-                    .map(|e| e.0.clone())
-                    .unwrap_or_else(|| "".to_owned()),
-            )
-            .show_ui(ui, |ui| {
-                for (k, img) in gdc.iter_images() {
-                    if ui
-                        .selectable_value(
-                            &mut custom_image_buffer,
-                            UFOption::Some(*k),
-                            img.0.clone(),
-                        )
-                        .clicked()
-                    {
-                        commands.push(InsensitiveCommand::PropertyChange(
-                            q.selected_views(),
-                            NetworkPropChange::CustomImageChange(Some(*k)),
-                        ));
-                    };
-                }
-            });
+        if let Some(e) = pick_custom_image(gdc, ui, &self.custom_image) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::CustomImageChange(e),
+            ));
+        }
 
         PropertiesStatus::Shown
     }
@@ -5214,9 +5167,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
                         NetworkPropChange::CustomImageChange(ci) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::CustomImageChange(self.custom_image.into()),
+                                NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone().into();
+                            self.custom_image = ci.clone();
                         }
                         _ => {}
                     }
