@@ -1437,9 +1437,9 @@ impl NHCanvas for UiCanvas {
                 let mut pixmap =
                     resvg::tiny_skia::Pixmap::new(TEXTURE_SIZE.x as u32, TEXTURE_SIZE.y as u32)
                         .unwrap();
-                if let Ok(rtree) =
-                    resvg::usvg::Tree::from_data(bytes, &resvg::usvg::Options::default())
-                {
+                let mut options = resvg::usvg::Options::default();
+                options.fontdb_mut().load_system_fonts();
+                if let Ok(rtree) = resvg::usvg::Tree::from_data(bytes, &options) {
                     let source_size = egui::Vec2::new(rtree.size().width(), rtree.size().height());
                     resvg::render(
                         &rtree,
