@@ -82,7 +82,7 @@ fn derive_enum(
 
     let output = quote! {
         impl #impl_generics crate::common::search::FullTextSearchable for #ident #type_generics #where_clause {
-            fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+            fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
                 match self {
                     #(#arms_search),*
                 }
@@ -134,7 +134,7 @@ fn derive_struct(
 
     let output = quote! {
         impl #impl_generics crate::common::search::FullTextSearchable for #ident #type_generics #where_clause {
-            fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+            fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
                 acc.check_element(
                     *self.uuid,
                     &[

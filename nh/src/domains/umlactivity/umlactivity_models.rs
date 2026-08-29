@@ -798,7 +798,7 @@ impl DiagramModel for UmlActivityDiagram {
 }
 
 impl FullTextSearchable for UmlActivityDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -930,7 +930,7 @@ impl ContainerModel for UmlActivity {
 }
 
 impl FullTextSearchable for UmlActivity {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[
@@ -1060,7 +1060,7 @@ impl ContainerModel for UmlActivityInterruptibleRegion {
 }
 
 impl FullTextSearchable for UmlActivityInterruptibleRegion {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.stereotype, &self.name],
@@ -1194,7 +1194,7 @@ impl ContainerModel for UmlActivityPartition {
 }
 
 impl FullTextSearchable for UmlActivityPartition {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(*self.uuid, &[&self.uuid.to_string()]);
 
         for e in &self.sections {
@@ -1315,7 +1315,7 @@ impl ContainerModel for UmlActivityPartitionSection {
 }
 
 impl FullTextSearchable for UmlActivityPartitionSection {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.stereotype, &self.name],

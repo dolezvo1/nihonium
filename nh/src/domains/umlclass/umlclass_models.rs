@@ -770,7 +770,7 @@ impl DiagramModel for UmlClassDiagram {
 }
 
 impl FullTextSearchable for UmlClassDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -916,7 +916,7 @@ impl ContainerModel for UmlClassPackage {
 }
 
 impl FullTextSearchable for UmlClassPackage {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[
@@ -1404,7 +1404,7 @@ impl ContainerModel for UmlClass {
 }
 
 impl FullTextSearchable for UmlClass {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[

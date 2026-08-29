@@ -417,7 +417,7 @@ impl DiagramModel for ArchiMateDiagram {
 }
 
 impl FullTextSearchable for ArchiMateDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -836,7 +836,7 @@ impl ContainerModel for ArchiMateConcept {
 }
 
 impl FullTextSearchable for ArchiMateConcept {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[

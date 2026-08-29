@@ -735,7 +735,7 @@ impl DiagramModel for UmlStateMachineDiagram {
 }
 
 impl FullTextSearchable for UmlStateMachineDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -867,7 +867,7 @@ impl ContainerModel for UmlStateMachine {
 }
 
 impl FullTextSearchable for UmlStateMachine {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[
@@ -1062,7 +1062,7 @@ impl ContainerModel for UmlStateMachineCompositeState {
 }
 
 impl FullTextSearchable for UmlStateMachineCompositeState {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.stereotype, &self.name],
@@ -1180,7 +1180,7 @@ impl ContainerModel for UmlStateMachineCompositeStateRegion {
 }
 
 impl FullTextSearchable for UmlStateMachineCompositeStateRegion {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(*self.uuid, &[&self.uuid.to_string()]);
 
         for e in &self.contained_elements {

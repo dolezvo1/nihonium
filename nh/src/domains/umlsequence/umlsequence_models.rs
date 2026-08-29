@@ -806,7 +806,7 @@ impl DiagramModel for UmlSequenceDiagramBoard {
 }
 
 impl FullTextSearchable for UmlSequenceDiagramBoard {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -1026,7 +1026,7 @@ impl ContainerModel for UmlSequenceDiagram {
 }
 
 impl FullTextSearchable for UmlSequenceDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -1469,7 +1469,7 @@ impl ContainerModel for UmlSequenceCombinedFragment {
 }
 
 impl FullTextSearchable for UmlSequenceCombinedFragment {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[
@@ -1611,7 +1611,7 @@ impl ContainerModel for UmlSequenceCombinedFragmentSection {
 }
 
 impl FullTextSearchable for UmlSequenceCombinedFragmentSection {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(*self.uuid, &[&self.uuid.to_string(), &self.guard]);
 
         for e in &self.horizontal_elements {

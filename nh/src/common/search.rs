@@ -1,21 +1,21 @@
-use crate::common::uuid::{ModelUuid, ViewUuid};
+use crate::common::uuid::{ModelUuid, ResourceUuid, ViewUuid};
 
 pub mod ast;
 pub mod parser;
 
 pub trait FullTextSearchable {
-    fn full_text_search(&self, acc: &mut Searcher);
+    fn full_text_search(&self, acc: &mut ModelSearcher);
 }
 
-pub struct Searcher {
-    expr: ast::Expr,
+pub struct ModelSearcher<'a> {
+    expr: &'a ast::Expr,
     current_component: ModelUuid,
     current_found_matches: Vec<ModelUuid>,
     completed_components: Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>,
 }
 
-impl Searcher {
-    pub fn new(expr: ast::Expr) -> Self {
+impl<'a> ModelSearcher<'a> {
+    pub fn new(expr: &'a ast::Expr) -> Self {
         Self {
             expr,
             current_component: ModelUuid::nil(),
@@ -36,7 +36,7 @@ impl Searcher {
     }
 
     pub fn check_element(&mut self, uuid: ModelUuid, fields: &[&str]) {
-        if check(&self.expr, fields) {
+        if check_model(&self.expr, fields) {
             self.current_found_matches.push(uuid);
         }
     }
@@ -46,11 +46,44 @@ impl Searcher {
     }
 }
 
-fn check(expr: &ast::Expr, fields: &[&str]) -> bool {
+fn check_model(expr: &ast::Expr, fields: &[&str]) -> bool {
     match expr {
         ast::Expr::Literal(s) => fields.iter().any(|e| e.contains(s)),
-        ast::Expr::Not(expr) => !check(expr, fields),
-        ast::Expr::Or(lhs, rhs) => check(lhs, fields) || check(rhs, fields),
-        ast::Expr::And(lhs, rhs) => check(lhs, fields) && check(rhs, fields),
+        ast::Expr::Not(expr) => !check_model(expr, fields),
+        ast::Expr::Or(lhs, rhs) => check_model(lhs, fields) || check_model(rhs, fields),
+        ast::Expr::And(lhs, rhs) => check_model(lhs, fields) && check_model(rhs, fields),
+    }
+}
+
+pub struct ResourceSearcher<'a> {
+    expr: &'a ast::Expr,
+    found_matches: Vec<(ResourceUuid, Vec<(usize, String)>)>,
+}
+
+impl<'a> ResourceSearcher<'a> {
+    pub fn new(expr: &'a ast::Expr) -> Self {
+        Self {
+            expr,
+            found_matches: Vec::new(),
+        }
+    }
+
+    pub fn check_resource(&mut self, uuid: ResourceUuid, contents: &str) {
+        if check_resource(&self.expr, contents) {
+            self.found_matches.push((uuid, Vec::new()));
+        }
+    }
+
+    pub fn results(self) -> Vec<(ResourceUuid, Vec<(usize, String)>)> {
+        self.found_matches
+    }
+}
+
+fn check_resource(expr: &ast::Expr, contents: &str) -> bool {
+    match expr {
+        ast::Expr::Literal(s) => contents.contains(s),
+        ast::Expr::Not(expr) => !check_resource(expr, contents),
+        ast::Expr::Or(lhs, rhs) => check_resource(lhs, contents) || check_resource(rhs, contents),
+        ast::Expr::And(lhs, rhs) => check_resource(lhs, contents) && check_resource(rhs, contents),
     }
 }

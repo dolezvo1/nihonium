@@ -601,7 +601,7 @@ impl DiagramModel for DemoOfdDiagram {
 }
 
 impl FullTextSearchable for DemoOfdDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -725,7 +725,7 @@ impl ContainerModel for DemoOfdPackage {
 }
 
 impl FullTextSearchable for DemoOfdPackage {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -930,7 +930,7 @@ impl ContainerModel for DemoOfdEventType {
 }
 
 impl FullTextSearchable for DemoOfdEventType {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[

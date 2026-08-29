@@ -410,7 +410,7 @@ impl DiagramModel for DemoCsdDiagram {
 }
 
 impl FullTextSearchable for DemoCsdDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -535,7 +535,7 @@ impl ContainerModel for DemoCsdPackage {
 }
 
 impl FullTextSearchable for DemoCsdPackage {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -676,7 +676,7 @@ impl ContainerModel for DemoCsdTransactor {
 }
 
 impl FullTextSearchable for DemoCsdTransactor {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[
@@ -869,7 +869,7 @@ impl Model for DemoCsdLink {
 }
 
 impl FullTextSearchable for DemoCsdLink {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.multiplicity, &self.comment],

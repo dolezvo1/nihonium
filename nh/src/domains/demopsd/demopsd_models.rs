@@ -502,7 +502,7 @@ impl DiagramModel for DemoPsdDiagram {
 }
 
 impl FullTextSearchable for DemoPsdDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -626,7 +626,7 @@ impl ContainerModel for DemoPsdPackage {
 }
 
 impl FullTextSearchable for DemoPsdPackage {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -908,7 +908,7 @@ impl ContainerModel for DemoPsdTransaction {
 }
 
 impl FullTextSearchable for DemoPsdTransaction {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],

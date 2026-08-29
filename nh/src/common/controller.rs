@@ -1121,7 +1121,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         uuid: &ViewUuid,
     ) -> Option<(ViewUuid, Option<ERef<dyn DiagramController>>)>;
 
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher);
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher);
 }
 
 pub trait ElementController<CommonElementT>: View {
@@ -2812,7 +2812,7 @@ where
         None
     }
 
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.open_component(*self.model_uuid());
         self.adapter.model().read().full_text_search(acc);
         acc.close_component(self.views.keys().cloned().collect());

@@ -487,7 +487,7 @@ impl DiagramModel for RdfDiagram {
 }
 
 impl FullTextSearchable for RdfDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -603,7 +603,7 @@ impl ContainerModel for RdfGraph {
 }
 
 impl FullTextSearchable for RdfGraph {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.iri, &self.comment],

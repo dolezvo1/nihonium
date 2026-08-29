@@ -397,7 +397,8 @@ struct NHContext {
 
     search_query: String,
     search_error: String,
-    search_results: Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>,
+    model_search_results: Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>,
+    resource_search_results: Vec<(ResourceUuid, Vec<(usize, String)>)>,
 
     show_close_buttons: bool,
     show_add_buttons: bool,
@@ -1551,7 +1552,8 @@ impl NHContext {
             .changed()
         {
             if self.search_query.is_empty() {
-                self.search_results.clear();
+                self.model_search_results.clear();
+                self.resource_search_results.clear();
                 return;
             }
 
@@ -1563,7 +1565,9 @@ impl NHContext {
                 }
                 Ok(r) => {
                     self.search_error.clear();
-                    let mut acc = crate::common::search::Searcher::new(r);
+
+                    // Search models
+                    let mut acc = crate::common::search::ModelSearcher::new(&r);
 
                     let mut searched_controllers = HashSet::new();
                     for e in &self.diagram_controllers {
@@ -1574,7 +1578,18 @@ impl NHContext {
                         }
                     }
 
-                    self.search_results = acc.results();
+                    self.model_search_results = acc.results();
+
+                    // Search resources
+                    let mut acc = crate::common::search::ResourceSearcher::new(&r);
+
+                    for e in &self.drawing_context.raw_resources {
+                        if let Ok(as_str) = str::from_utf8(&e.1.1) {
+                            acc.check_resource(*e.0, as_str);
+                        }
+                    }
+
+                    self.resource_search_results = acc.results();
                 }
             }
         }
@@ -1609,82 +1624,110 @@ impl NHContext {
         }
 
         egui_ltreeview::TreeView::new(egui::Id::new("search results")).show(ui, |builder| {
-            for (component, sr, diagrams) in &self.search_results {
-                builder.dir(
-                    *component,
-                    &*self.drawing_context.model_labels.get(component),
-                );
-                for e in sr {
-                    builder.node(
-                        egui_ltreeview::NodeBuilder::leaf(*e)
-                            .label(&*self.drawing_context.model_labels.get(e))
-                            .context_menu(|ui| {
-                                ui.set_min_width(MIN_MENU_WIDTH);
-
-                                if let Some(lfd) = &self.last_focused_diagram
-                                    && diagrams.contains(lfd)
-                                    && ui
-                                        .button(
-                                            self.drawing_context
-                                                .translate_0("nh-tab-search-jumptoincurrent"),
-                                        )
-                                        .clicked()
-                                {
-                                    focus_element_in!(lfd, e);
-                                }
-                                ui.menu_button(
-                                    self.drawing_context.translate_0("nh-tab-search-jumptoin"),
-                                    |ui| {
-                                        ui.set_min_width(MIN_MENU_WIDTH);
-
-                                        for d in diagrams {
-                                            if ui
-                                                .button(
-                                                    &*self
-                                                        .diagram_controllers
-                                                        .get(d)
-                                                        .unwrap()
-                                                        .read()
-                                                        .view_name(d),
-                                                )
-                                                .clicked()
-                                            {
-                                                focus_element_in!(d, e);
-                                            }
-                                        }
-                                    },
-                                );
-                                ui.menu_button(
-                                    self.drawing_context
-                                        .translate_0("nh-tab-search-createviewin"),
-                                    |ui| {
-                                        ui.set_min_width(MIN_MENU_WIDTH);
-
-                                        for d in diagrams {
-                                            if ui
-                                                .button(
-                                                    &*self
-                                                        .diagram_controllers
-                                                        .get(d)
-                                                        .unwrap()
-                                                        .read()
-                                                        .view_name(d),
-                                                )
-                                                .clicked()
-                                            {
-                                                self.unprocessed_commands.push(
-                                                    SimpleProjectCommand::SpecificDiagramCommand(
-                                                        *d,
-                                                        DiagramCommand::CreateViewFor(*e),
-                                                    )
-                                                    .into(),
-                                                );
-                                            }
-                                        }
-                                    },
-                                );
-                            }),
+            if !self.model_search_results.is_empty() {
+                builder.dir(EntityUuid::Folder(uuid::uuid!("00000000-0000-0000-0000-000000000001").into()), format!("Models ({})", self.model_search_results.iter().map(|e| e.1.len()).sum::<usize>()));
+                for (component, sr, diagrams) in &self.model_search_results {
+                    builder.dir(
+                        EntityUuid::from(*component),
+                        &*self.drawing_context.model_labels.get(component),
                     );
+                    for e in sr {
+                        builder.node(
+                            egui_ltreeview::NodeBuilder::leaf(e.clone().into())
+                                .label(&*self.drawing_context.model_labels.get(e))
+                                .context_menu(|ui| {
+                                    ui.set_min_width(MIN_MENU_WIDTH);
+
+                                    if let Some(lfd) = &self.last_focused_diagram
+                                        && diagrams.contains(lfd)
+                                        && ui
+                                            .button(
+                                                self.drawing_context
+                                                    .translate_0("nh-tab-search-jumptoincurrent"),
+                                            )
+                                            .clicked()
+                                    {
+                                        focus_element_in!(lfd, e);
+                                    }
+                                    ui.menu_button(
+                                        self.drawing_context.translate_0("nh-tab-search-jumptoin"),
+                                        |ui| {
+                                            ui.set_min_width(MIN_MENU_WIDTH);
+
+                                            for d in diagrams {
+                                                if ui
+                                                    .button(
+                                                        &*self
+                                                            .diagram_controllers
+                                                            .get(d)
+                                                            .unwrap()
+                                                            .read()
+                                                            .view_name(d),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    focus_element_in!(d, e);
+                                                }
+                                            }
+                                        },
+                                    );
+                                    ui.menu_button(
+                                        self.drawing_context
+                                            .translate_0("nh-tab-search-createviewin"),
+                                        |ui| {
+                                            ui.set_min_width(MIN_MENU_WIDTH);
+
+                                            for d in diagrams {
+                                                if ui
+                                                    .button(
+                                                        &*self
+                                                            .diagram_controllers
+                                                            .get(d)
+                                                            .unwrap()
+                                                            .read()
+                                                            .view_name(d),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    self.unprocessed_commands.push(
+                                                        SimpleProjectCommand::SpecificDiagramCommand(
+                                                            *d,
+                                                            DiagramCommand::CreateViewFor(*e),
+                                                        )
+                                                        .into(),
+                                                    );
+                                                }
+                                            }
+                                        },
+                                    );
+                                }),
+                        );
+                    }
+
+                    builder.close_dir();
+                }
+                builder.close_dir();
+            }
+            if !self.resource_search_results.is_empty() {
+                builder.dir(EntityUuid::Folder(uuid::uuid!("00000000-0000-0000-0000-000000000002").into()), format!("Resources ({})", self.resource_search_results.len()));
+                for (resource, hits) in &self.resource_search_results {
+                    if let Some((name, _)) = self.drawing_context.raw_resources.get(resource) {
+                        builder.node(
+                            egui_ltreeview::NodeBuilder::leaf(EntityUuid::Resource(*resource))
+                                .label(name)
+                                .context_menu(|ui| {
+                                    ui.set_min_width(MIN_MENU_WIDTH);
+
+                                    if ui.button("Edit resource").clicked() {
+                                        self.unprocessed_commands
+                                        .push(ProjectCommand::OpenAndFocusTab(
+                                            NHTab::Resource { uuid: *resource, mode: ResourceTabMode::Edit },
+                                            None,
+                                        ));
+                                    }
+                                })
+                        );
+                    }
                 }
                 builder.close_dir();
             }
@@ -3436,7 +3479,8 @@ impl NHApp {
 
             search_query: "".to_owned(),
             search_error: "".to_owned(),
-            search_results: Vec::new(),
+            model_search_results: Vec::new(),
+            resource_search_results: Vec::new(),
 
             show_window_close: true,
             show_window_collapse: true,

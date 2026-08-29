@@ -445,7 +445,7 @@ impl DiagramModel for NetworkDiagram {
 }
 
 impl FullTextSearchable for NetworkDiagram {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
@@ -561,7 +561,7 @@ impl ContainerModel for NetworkContainer {
 }
 
 impl FullTextSearchable for NetworkContainer {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+    fn full_text_search(&self, acc: &mut crate::common::search::ModelSearcher) {
         acc.check_element(
             *self.uuid,
             &[&self.uuid.to_string(), &self.name, &self.comment],
