@@ -1,4 +1,17 @@
-use crate::common::uuid::{ModelUuid, ResourceUuid, ViewUuid};
+use std::collections::HashMap;
+
+use crate::{
+    NHTab, ResourceTabMode,
+    common::{
+        controller::{
+            DiagramCommand, DiagramController, GlobalDrawingContext, ProjectCommand,
+            SimpleProjectCommand,
+        },
+        entity::EntityUuid,
+        eref::ERef,
+        uuid::{ModelUuid, ResourceUuid, ViewUuid},
+    },
+};
 
 pub mod ast;
 pub mod parser;
@@ -41,8 +54,8 @@ impl<'a> ModelSearcher<'a> {
         }
     }
 
-    pub fn results(self) -> Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)> {
-        self.completed_components
+    pub fn results(self) -> ModelSearchResults {
+        self.completed_components.into()
     }
 }
 
@@ -52,6 +65,134 @@ fn check_model(expr: &ast::Expr, fields: &[&str]) -> bool {
         ast::Expr::Not(expr) => !check_model(expr, fields),
         ast::Expr::Or(lhs, rhs) => check_model(lhs, fields) || check_model(rhs, fields),
         ast::Expr::And(lhs, rhs) => check_model(lhs, fields) && check_model(rhs, fields),
+    }
+}
+
+#[derive(Default)]
+pub struct ModelSearchResults {
+    results: Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>,
+}
+
+impl From<Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>> for ModelSearchResults {
+    fn from(value: Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>) -> Self {
+        Self { results: value }
+    }
+}
+
+impl ModelSearchResults {
+    pub fn show(
+        &self,
+        builder: &mut egui_ltreeview::TreeViewBuilder<'_, EntityUuid>,
+        gdc: &GlobalDrawingContext,
+        last_focused_diagram: &Option<ViewUuid>,
+        diagram_controllers: &HashMap<ViewUuid, ERef<dyn DiagramController>>,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        macro_rules! focus_element_in {
+            ($diagram:expr, $element:expr) => {
+                commands.push(ProjectCommand::OpenAndFocusTab(
+                    NHTab::Diagram { uuid: *$diagram },
+                    None,
+                ));
+                commands.extend_from_slice(
+                    &[
+                        DiagramCommand::HighlightAllElements(
+                            false,
+                            crate::common::canvas::Highlight::SELECTED,
+                        ),
+                        DiagramCommand::HighlightElement(
+                            (*$element).into(),
+                            true,
+                            crate::common::canvas::Highlight::SELECTED,
+                        ),
+                        DiagramCommand::PanToElement((*$element).into(), true),
+                    ]
+                    .map(|e| SimpleProjectCommand::SpecificDiagramCommand(*$diagram, e).into()),
+                );
+            };
+        }
+
+        if !self.results.is_empty() {
+            builder.dir(
+                EntityUuid::Folder(uuid::uuid!("00000000-0000-0000-0000-000000000001").into()),
+                format!(
+                    "Models ({})",
+                    self.results.iter().map(|e| e.1.len()).sum::<usize>()
+                ),
+            );
+            for (component, sr, diagrams) in &self.results {
+                builder.dir(
+                    EntityUuid::from(*component),
+                    &*gdc.model_labels.get(component),
+                );
+                for e in sr {
+                    builder.node(
+                        egui_ltreeview::NodeBuilder::leaf(e.clone().into())
+                            .label(&*gdc.model_labels.get(e))
+                            .context_menu(|ui| {
+                                ui.set_min_width(crate::MIN_MENU_WIDTH);
+
+                                if let Some(lfd) = last_focused_diagram
+                                    && diagrams.contains(lfd)
+                                    && ui
+                                        .button(gdc.translate_0("nh-tab-search-jumptoincurrent"))
+                                        .clicked()
+                                {
+                                    focus_element_in!(lfd, e);
+                                }
+                                ui.menu_button(gdc.translate_0("nh-tab-search-jumptoin"), |ui| {
+                                    ui.set_min_width(crate::MIN_MENU_WIDTH);
+
+                                    for d in diagrams {
+                                        if ui
+                                            .button(
+                                                &*diagram_controllers
+                                                    .get(d)
+                                                    .unwrap()
+                                                    .read()
+                                                    .view_name(d),
+                                            )
+                                            .clicked()
+                                        {
+                                            focus_element_in!(d, e);
+                                        }
+                                    }
+                                });
+                                ui.menu_button(
+                                    gdc.translate_0("nh-tab-search-createviewin"),
+                                    |ui| {
+                                        ui.set_min_width(crate::MIN_MENU_WIDTH);
+
+                                        for d in diagrams {
+                                            if ui
+                                                .button(
+                                                    &*diagram_controllers
+                                                        .get(d)
+                                                        .unwrap()
+                                                        .read()
+                                                        .view_name(d),
+                                                )
+                                                .clicked()
+                                            {
+                                                commands.push(
+                                                    SimpleProjectCommand::SpecificDiagramCommand(
+                                                        *d,
+                                                        DiagramCommand::CreateViewFor(*e),
+                                                    )
+                                                    .into(),
+                                                );
+                                            }
+                                        }
+                                    },
+                                );
+                            }),
+                    );
+                }
+
+                builder.close_dir();
+            }
+            builder.close_dir();
+        }
     }
 }
 
@@ -74,8 +215,8 @@ impl<'a> ResourceSearcher<'a> {
         }
     }
 
-    pub fn results(self) -> Vec<(ResourceUuid, Vec<(usize, String)>)> {
-        self.found_matches
+    pub fn results(self) -> ResourceSearchResults {
+        self.found_matches.into()
     }
 }
 
@@ -85,5 +226,54 @@ fn check_resource(expr: &ast::Expr, contents: &str) -> bool {
         ast::Expr::Not(expr) => !check_resource(expr, contents),
         ast::Expr::Or(lhs, rhs) => check_resource(lhs, contents) || check_resource(rhs, contents),
         ast::Expr::And(lhs, rhs) => check_resource(lhs, contents) && check_resource(rhs, contents),
+    }
+}
+
+#[derive(Default)]
+pub struct ResourceSearchResults {
+    results: Vec<(ResourceUuid, Vec<(usize, String)>)>,
+}
+
+impl From<Vec<(ResourceUuid, Vec<(usize, String)>)>> for ResourceSearchResults {
+    fn from(value: Vec<(ResourceUuid, Vec<(usize, String)>)>) -> Self {
+        Self { results: value }
+    }
+}
+
+impl ResourceSearchResults {
+    pub fn show(
+        &self,
+        builder: &mut egui_ltreeview::TreeViewBuilder<'_, EntityUuid>,
+        gdc: &GlobalDrawingContext,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        if !self.results.is_empty() {
+            builder.dir(
+                EntityUuid::Folder(uuid::uuid!("00000000-0000-0000-0000-000000000002").into()),
+                format!("Resources ({})", self.results.len()),
+            );
+            for (resource, hits) in &self.results {
+                if let Some((name, _)) = gdc.raw_resources.get(resource) {
+                    builder.node(
+                        egui_ltreeview::NodeBuilder::leaf(EntityUuid::Resource(*resource))
+                            .label(name)
+                            .context_menu(|ui| {
+                                ui.set_min_width(crate::MIN_MENU_WIDTH);
+
+                                if ui.button("Edit resource").clicked() {
+                                    commands.push(ProjectCommand::OpenAndFocusTab(
+                                        NHTab::Resource {
+                                            uuid: *resource,
+                                            mode: ResourceTabMode::Edit,
+                                        },
+                                        None,
+                                    ));
+                                }
+                            }),
+                    );
+                }
+            }
+            builder.close_dir();
+        }
     }
 }
