@@ -229,7 +229,7 @@ where
 
         if let Some(child) = child {
             return child;
-        } else if self.highlight.selected {
+        } else if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 

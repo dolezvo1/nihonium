@@ -17,6 +17,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
+use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::views::multiconnection_view::{
@@ -2385,6 +2386,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             None,
             &self.model.read().content,
             None,
+            UFOption::None,
             false,
             &[],
             gdc.global_colors

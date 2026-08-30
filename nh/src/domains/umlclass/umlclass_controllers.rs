@@ -3189,6 +3189,43 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     }
 }
 
+fn show_visibility(
+    ui: &mut egui::Ui,
+    current: &UFOption<UmlClassVisibilityKind>,
+) -> Option<UFOption<UmlClassVisibilityKind>> {
+    let mut result = None;
+
+    ui.label("Visibility:");
+    egui::ComboBox::from_id_salt("visibility")
+        .selected_text(
+            current
+                .as_ref()
+                .map(|e| e.as_str())
+                .unwrap_or("Unspecified"),
+        )
+        .show_ui(ui, |ui| {
+            for e in [
+                UFOption::None,
+                UFOption::Some(UmlClassVisibilityKind::Public),
+                UFOption::Some(UmlClassVisibilityKind::PackagePrivate),
+                UFOption::Some(UmlClassVisibilityKind::Protected),
+                UFOption::Some(UmlClassVisibilityKind::Private),
+            ] {
+                if ui
+                    .selectable_label(
+                        *current == e,
+                        e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"),
+                    )
+                    .clicked()
+                {
+                    result = Some(e);
+                }
+            }
+        });
+
+    result
+}
+
 pub fn new_umlclass_package<P: UmlClassProfile>(
     name: &str,
     stereotype: &str,
@@ -3218,6 +3255,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
             background_color: MGlobalColor::None,
             display_text: Arc::new("".to_owned()),
             name_buffer: (*m.name).clone(),
+            visibility_buffer: m.visibility,
             stereotype_controller: Default::default(),
             kind_buffer: m.kind,
             comment_buffer: (*m.comment).clone(),
@@ -3242,9 +3280,14 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     name_buffer: String,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
+    visibility_buffer: UFOption<UmlClassVisibilityKind>,
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     stereotype_controller: P::PackageStereotypeController,
+    #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     kind_buffer: UmlClassPackageKind,
+    #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
@@ -3282,34 +3325,83 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
     ) -> Result<egui::Rect, Arc<String>> {
+        let visibility_size = self
+            .visibility_buffer
+            .as_ref()
+            .map_or(egui::Vec2::ZERO, |e| {
+                canvas
+                    .measure_text(
+                        egui::Pos2::ZERO,
+                        egui::Align2::CENTER_CENTER,
+                        e.as_char(),
+                        canvas::CLASS_MIDDLE_FONT_SIZE,
+                    )
+                    .size()
+            });
+        let display_text_size = canvas
+            .measure_text(
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_CENTER,
+                &self.display_text,
+                canvas::CLASS_MIDDLE_FONT_SIZE,
+            )
+            .size();
+        let foreground_color = self.text_color(&context.global_colors);
+
         match self.kind_buffer {
             UmlClassPackageKind::Package => {
                 const PADDING: f32 = 4.0;
                 let background_color = self.background_color(&context.global_colors);
-                let foreground_color = self.text_color(&context.global_colors);
-                let r = canvas.measure_text(
-                    bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING),
-                    egui::Align2::LEFT_BOTTOM,
-                    &self.display_text,
-                    canvas::CLASS_MIDDLE_FONT_SIZE,
-                );
+                let text_origin = bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING);
+                let r = egui::Rect::from_pos(text_origin)
+                    .with_max_x(text_origin.x + visibility_size.x + display_text_size.x)
+                    .with_min_y(text_origin.y - visibility_size.y.max(display_text_size.y))
+                    .expand(PADDING);
                 canvas.draw_rectangle(
-                    r.expand(PADDING),
+                    r,
                     egui::CornerRadius::ZERO,
                     background_color,
                     canvas::Stroke::new_solid(1.0, foreground_color),
                     highlight,
                 );
+                if let Some(e) = self.visibility_buffer.as_ref() {
+                    canvas.draw_text(
+                        text_origin,
+                        egui::Align2::LEFT_BOTTOM,
+                        e.as_char(),
+                        canvas::CLASS_MIDDLE_FONT_SIZE,
+                        foreground_color,
+                    );
+                }
                 canvas.draw_text(
-                    bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING),
+                    text_origin + (visibility_size.x, 0.0).into(),
                     egui::Align2::LEFT_BOTTOM,
                     &self.display_text,
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     foreground_color,
                 );
-                Ok(r.expand(PADDING))
+                Ok(r)
             }
-            UmlClassPackageKind::Boundary => Err(self.display_text.clone()),
+            UmlClassPackageKind::Boundary => {
+                if let Some(e) = self.visibility_buffer.as_ref() {
+                    canvas.draw_text(
+                        bounds_rect.center_top() + (-display_text_size.x / 2.0, 0.0).into(),
+                        egui::Align2::CENTER_TOP,
+                        e.as_char(),
+                        canvas::CLASS_MIDDLE_FONT_SIZE,
+                        foreground_color,
+                    );
+                }
+                canvas.draw_text(
+                    bounds_rect.center_top() + (visibility_size.x / 2.0, 0.0).into(),
+                    egui::Align2::CENTER_TOP,
+                    &self.display_text,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    foreground_color,
+                );
+
+                Ok(egui::Rect::NOTHING)
+            }
         }
     }
 
@@ -3339,6 +3431,13 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+            ));
+        }
+
+        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::VisibilityChange(e),
             ));
         }
 
@@ -3415,6 +3514,13 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     ));
                     model.name = name.clone();
                 }
+                UmlClassPropChange::VisibilityChange(visibility) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::VisibilityChange(model.visibility),
+                    ));
+                    model.visibility = *visibility;
+                }
                 UmlClassPropChange::PackageKindChange(kind) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
@@ -3453,6 +3559,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         };
         self.stereotype_controller.refresh(&model.stereotype);
         self.name_buffer = (*model.name).clone();
+        self.visibility_buffer = model.visibility;
         self.kind_buffer = model.kind;
         self.comment_buffer = (*model.comment).clone();
     }
@@ -3479,6 +3586,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             display_text: self.display_text.clone(),
             stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
+            visibility_buffer: self.visibility_buffer,
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
             _profile: PhantomData,
@@ -4326,7 +4434,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
                 for e in [
                     UFOption::None,
                     UFOption::Some(UmlClassVisibilityKind::Public),
-                    UFOption::Some(UmlClassVisibilityKind::Package),
+                    UFOption::Some(UmlClassVisibilityKind::PackagePrivate),
                     UFOption::Some(UmlClassVisibilityKind::Protected),
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
@@ -4584,37 +4692,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             ));
         }
 
-        ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("visibility")
-            .selected_text(
-                self.visibility_buffer
-                    .as_ref()
-                    .map(|e| e.as_str())
-                    .unwrap_or("Unspecified"),
-            )
-            .show_ui(ui, |ui| {
-                for e in [
-                    UFOption::None,
-                    UFOption::Some(UmlClassVisibilityKind::Public),
-                    UFOption::Some(UmlClassVisibilityKind::Package),
-                    UFOption::Some(UmlClassVisibilityKind::Protected),
-                    UFOption::Some(UmlClassVisibilityKind::Private),
-                ] {
-                    if ui
-                        .selectable_value(
-                            &mut self.visibility_buffer,
-                            e,
-                            e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"),
-                        )
-                        .clicked()
-                    {
-                        commands.push(InsensitiveCommand::PropertyChange(
-                            q.selected_views(),
-                            UmlClassPropChange::VisibilityChange(e),
-                        ));
-                    }
-                }
-            });
+        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::VisibilityChange(e),
+            ));
+        }
 
         if ui
             .checkbox(&mut self.is_static_buffer, "isStatic")
@@ -5140,7 +5223,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
                 for e in [
                     UFOption::None,
                     UFOption::Some(UmlClassVisibilityKind::Public),
-                    UFOption::Some(UmlClassVisibilityKind::Package),
+                    UFOption::Some(UmlClassVisibilityKind::PackagePrivate),
                     UFOption::Some(UmlClassVisibilityKind::Protected),
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
@@ -5385,37 +5468,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             ));
         }
 
-        ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("visibility")
-            .selected_text(
-                self.visibility_buffer
-                    .as_ref()
-                    .map(|e| e.as_str())
-                    .unwrap_or("Unspecified"),
-            )
-            .show_ui(ui, |ui| {
-                for e in [
-                    UFOption::None,
-                    UFOption::Some(UmlClassVisibilityKind::Public),
-                    UFOption::Some(UmlClassVisibilityKind::Package),
-                    UFOption::Some(UmlClassVisibilityKind::Protected),
-                    UFOption::Some(UmlClassVisibilityKind::Private),
-                ] {
-                    if ui
-                        .selectable_value(
-                            &mut self.visibility_buffer,
-                            e,
-                            e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"),
-                        )
-                        .clicked()
-                    {
-                        commands.push(InsensitiveCommand::PropertyChange(
-                            q.selected_views(),
-                            UmlClassPropChange::VisibilityChange(e),
-                        ));
-                    }
-                }
-            });
+        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::VisibilityChange(e),
+            ));
+        }
 
         if ui
             .checkbox(&mut self.is_static_buffer, "isStatic")
@@ -5832,6 +5890,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         stereotype_controller: Default::default(),
         name_buffer: (*m.name).clone(),
         template_parameters_buffer: (*m.template_parameters).clone(),
+        visibility_buffer: m.visibility,
         is_abstract_buffer: m.is_abstract,
         comment_buffer: (*m.comment).clone(),
 
@@ -5940,6 +5999,8 @@ pub struct UmlClassView<P: UmlClassProfile> {
     #[nh_context_serde(skip_and_default)]
     template_parameters_buffer: String,
     #[nh_context_serde(skip_and_default)]
+    visibility_buffer: UFOption<UmlClassVisibilityKind>,
+    #[nh_context_serde(skip_and_default)]
     is_abstract_buffer: bool,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
@@ -6015,6 +6076,7 @@ pub fn draw_uml_class<'a>(
     top_label: Option<Arc<String>>,
     main_label: &str,
     bottom_label: Option<Arc<String>>,
+    visibility_modifier: UFOption<UmlClassVisibilityKind>,
     is_abstract: bool,
     compartments: &[(
         egui::Vec2,
@@ -6025,10 +6087,27 @@ pub fn draw_uml_class<'a>(
     highlight: canvas::Highlight,
 ) -> egui::Rect {
     // Measure phase
-    let (offsets, global_offset, max_width, category_separators, rect) = {
+    let (
+        offsets,
+        global_offset,
+        (visibility_modifier_size, main_label_size),
+        max_width,
+        category_separators,
+        rect,
+    ) = {
         let mut offsets = vec![0.0];
         let mut max_width: f32 = 0.0;
         let mut category_separators = vec![];
+
+        let visibility_modifier_size = visibility_modifier.as_ref().map_or(egui::Vec2::ZERO, |e| {
+            let r = canvas.measure_text(
+                egui::Pos2::ZERO,
+                egui::Align2::CENTER_TOP,
+                e.as_char(),
+                canvas::CLASS_TOP_FONT_SIZE,
+            );
+            r.size()
+        });
 
         if let Some(top_label) = &top_label {
             let r = canvas.measure_text(
@@ -6041,16 +6120,17 @@ pub fn draw_uml_class<'a>(
             max_width = max_width.max(r.width());
         }
 
-        {
+        let main_label_size = {
             let r = canvas.measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_TOP,
                 main_label,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             );
-            offsets.push(r.height());
-            max_width = max_width.max(r.width());
-        }
+            offsets.push(visibility_modifier_size.y.max(r.height()));
+            max_width = max_width.max(visibility_modifier_size.x + r.width());
+            r.size()
+        };
 
         if let Some(bottom_label) = &bottom_label {
             let r = canvas.measure_text(
@@ -6081,7 +6161,14 @@ pub fn draw_uml_class<'a>(
         );
         canvas.draw_rectangle(rect, egui::CornerRadius::ZERO, fill, stroke, highlight);
 
-        (offsets, global_offset, max_width, category_separators, rect)
+        (
+            offsets,
+            global_offset,
+            (visibility_modifier_size, main_label_size),
+            max_width,
+            category_separators,
+            rect,
+        )
     };
 
     // Draw phase
@@ -6100,16 +6187,38 @@ pub fn draw_uml_class<'a>(
         }
 
         {
+            let color = if !is_abstract {
+                egui::Color32::BLACK
+            } else {
+                IS_ABSTRACT_COLOR
+            };
+
+            if let Some(e) = visibility_modifier.as_ref() {
+                canvas.draw_text(
+                    position
+                        + (
+                            -main_label_size.x / 2.0,
+                            offsets[offset_counter] - global_offset,
+                        )
+                            .into(),
+                    egui::Align2::CENTER_TOP,
+                    e.as_char(),
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    color,
+                );
+            }
+
             canvas.draw_text(
-                position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
+                position
+                    + (
+                        visibility_modifier_size.x / 2.0,
+                        offsets[offset_counter] - global_offset,
+                    )
+                        .into(),
                 egui::Align2::CENTER_TOP,
                 main_label,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
-                if !is_abstract {
-                    egui::Color32::BLACK
-                } else {
-                    IS_ABSTRACT_COLOR
-                },
+                color,
             );
             offset_counter += 1;
         }
@@ -6228,6 +6337,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 UmlClassPropChange::TemplateParametersChange(Arc::new(
                     self.template_parameters_buffer.clone(),
                 )),
+            ));
+        }
+
+        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::VisibilityChange(e),
             ));
         }
 
@@ -6476,6 +6592,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     self.stereotype_in_guillemets.clone(),
                     &read.name,
                     None,
+                    read.visibility,
                     read.is_abstract,
                     &body,
                     body_color,
@@ -7162,6 +7279,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                             ));
                             model.template_parameters = template_parameters.clone();
                         }
+                        UmlClassPropChange::VisibilityChange(visibility) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::VisibilityChange(model.visibility),
+                            ));
+                            model.visibility = *visibility;
+                        }
                         UmlClassPropChange::ClassAbstractChange(is_abstract) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -7214,6 +7338,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         self.stereotype_controller.refresh(&model.stereotype);
         self.name_buffer = (*model.name).clone();
         self.template_parameters_buffer = (*model.template_parameters).clone();
+        self.visibility_buffer = model.visibility;
         self.is_abstract_buffer = model.is_abstract;
         self.comment_buffer = (*model.comment).clone();
 
@@ -7345,6 +7470,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
             template_parameters_buffer: self.template_parameters_buffer.clone(),
+            visibility_buffer: self.visibility_buffer,
             is_abstract_buffer: self.is_abstract_buffer,
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,

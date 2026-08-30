@@ -806,6 +806,7 @@ pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub stereotype: Arc<String>,
+    pub visibility: UFOption<UmlClassVisibilityKind>,
     pub kind: UmlClassPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlClassElement>,
@@ -825,6 +826,7 @@ impl UmlClassPackage {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
             stereotype: Arc::new(stereotype),
+            visibility: UFOption::None,
             kind,
             contained_elements,
             comment: Arc::new("".to_owned()),
@@ -839,6 +841,7 @@ impl UmlClassPackage {
             uuid: new_uuid.into(),
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
+            visibility: self.visibility.clone(),
             kind: self.kind,
             contained_elements: self
                 .contained_elements
@@ -1000,7 +1003,7 @@ impl Model for UmlClassInstance {
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassVisibilityKind {
     Public,
-    Package,
+    PackagePrivate,
     Protected,
     Private,
 }
@@ -1009,7 +1012,7 @@ impl UmlClassVisibilityKind {
     pub fn as_char(&self) -> &'static str {
         match self {
             UmlClassVisibilityKind::Public => "+",
-            UmlClassVisibilityKind::Package => "~",
+            UmlClassVisibilityKind::PackagePrivate => "~",
             UmlClassVisibilityKind::Protected => "#",
             UmlClassVisibilityKind::Private => "-",
         }
@@ -1017,7 +1020,7 @@ impl UmlClassVisibilityKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             UmlClassVisibilityKind::Public => "Public",
-            UmlClassVisibilityKind::Package => "Package",
+            UmlClassVisibilityKind::PackagePrivate => "Package private",
             UmlClassVisibilityKind::Protected => "Protected",
             UmlClassVisibilityKind::Private => "Private",
         }
@@ -1229,6 +1232,7 @@ pub struct UmlClass {
     pub name: Arc<String>,
     pub stereotype: Arc<String>,
     pub template_parameters: Arc<String>,
+    pub visibility: UFOption<UmlClassVisibilityKind>,
     pub is_abstract: bool,
     #[nh_context_serde(entity)]
     pub properties: Vec<ERef<UmlClassProperty>>,
@@ -1256,6 +1260,7 @@ impl UmlClass {
             name: Arc::new(name),
             stereotype: Arc::new(stereotype),
             template_parameters: Arc::new(template_parameters),
+            visibility: UFOption::None,
             is_abstract,
             properties,
             operations,
@@ -1272,6 +1277,7 @@ impl UmlClass {
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             template_parameters: self.template_parameters.clone(),
+            visibility: self.visibility.clone(),
             is_abstract: self.is_abstract,
             properties: self
                 .properties

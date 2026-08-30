@@ -38,7 +38,12 @@ impl UmlClassPlantUmlCollector {
 impl UmlClassVisitor for UmlClassPlantUmlCollector {
     fn visit_package(&mut self, package: &UmlClassPackage) {
         self.plantuml_structures.push_str(&format!(
-            "package {} as {:?} ",
+            "{}package {} as {:?} ",
+            package
+                .visibility
+                .as_ref()
+                .map(|e| e.as_char())
+                .unwrap_or(""),
             Self::stringify_uuid(&package.uuid),
             package.name
         ));
@@ -77,7 +82,8 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
     }
     fn visit_class(&mut self, class: &UmlClass) {
         self.plantuml_structures.push_str(&format!(
-            "class {} as {:?} ",
+            "{}class {} as {:?} ",
+            class.visibility.as_ref().map(|e| e.as_char()).unwrap_or(""),
             Self::stringify_uuid(&class.uuid),
             class.name,
         ));
