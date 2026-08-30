@@ -177,7 +177,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (boundary, boundary_view) = new_umlclass_package(
         "E-Shop",
         "business",
-        UmlClassPackageKind::Boundary,
+        UmlClassPackageKind::Rectangle,
         egui::Rect::from_x_y_ranges(400.0..=750.0, 100.0..=500.0),
     );
 
@@ -454,7 +454,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     UmlClassToolStage::PackageStart {
                         name: "Boundary".to_owned(),
                         stereotype: "".to_owned(),
-                        kind: UmlClassPackageKind::Boundary,
+                        kind: UmlClassPackageKind::Rectangle,
                     },
                     "Boundary",
                     Some(egui::KeyboardShortcut::new(

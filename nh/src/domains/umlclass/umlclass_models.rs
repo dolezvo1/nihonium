@@ -784,18 +784,22 @@ impl FullTextSearchable for UmlClassDiagram {
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassPackageKind {
+    // Node,
+    Rectangle,
     #[default]
-    Package,
-    Boundary,
+    Folder,
+    // Frame,
+    // Cloud,
+    // Database,
 }
 
 impl UmlClassPackageKind {
-    pub const VARIANTS: [Self; 2] = [Self::Package, Self::Boundary];
+    pub const VARIANTS: [Self; 2] = [Self::Rectangle, Self::Folder];
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            UmlClassPackageKind::Package => "Package",
-            UmlClassPackageKind::Boundary => "Boundary",
+            UmlClassPackageKind::Rectangle => "Rectangle",
+            UmlClassPackageKind::Folder => "Folder",
         }
     }
 }

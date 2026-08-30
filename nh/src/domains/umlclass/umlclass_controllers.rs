@@ -2263,7 +2263,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     UmlClassToolStage::PackageStart {
                         name: "a package".to_owned(),
                         stereotype: "".to_owned(),
-                        kind: UmlClassPackageKind::Package,
+                        kind: UmlClassPackageKind::Folder,
                     },
                     "Package",
                     Some(egui::KeyboardShortcut::new(
@@ -3349,7 +3349,27 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         let foreground_color = self.text_color(&context.global_colors);
 
         match self.kind_buffer {
-            UmlClassPackageKind::Package => {
+            UmlClassPackageKind::Rectangle => {
+                if let Some(e) = self.visibility_buffer.as_ref() {
+                    canvas.draw_text(
+                        bounds_rect.center_top() + (-display_text_size.x / 2.0, 0.0).into(),
+                        egui::Align2::CENTER_TOP,
+                        e.as_char(),
+                        canvas::CLASS_MIDDLE_FONT_SIZE,
+                        foreground_color,
+                    );
+                }
+                canvas.draw_text(
+                    bounds_rect.center_top() + (visibility_size.x / 2.0, 0.0).into(),
+                    egui::Align2::CENTER_TOP,
+                    &self.display_text,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    foreground_color,
+                );
+
+                Ok(egui::Rect::NOTHING)
+            }
+            UmlClassPackageKind::Folder => {
                 const PADDING: f32 = 4.0;
                 let background_color = self.background_color(&context.global_colors);
                 let text_origin = bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING);
@@ -3381,26 +3401,6 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     foreground_color,
                 );
                 Ok(r)
-            }
-            UmlClassPackageKind::Boundary => {
-                if let Some(e) = self.visibility_buffer.as_ref() {
-                    canvas.draw_text(
-                        bounds_rect.center_top() + (-display_text_size.x / 2.0, 0.0).into(),
-                        egui::Align2::CENTER_TOP,
-                        e.as_char(),
-                        canvas::CLASS_MIDDLE_FONT_SIZE,
-                        foreground_color,
-                    );
-                }
-                canvas.draw_text(
-                    bounds_rect.center_top() + (visibility_size.x / 2.0, 0.0).into(),
-                    egui::Align2::CENTER_TOP,
-                    &self.display_text,
-                    canvas::CLASS_MIDDLE_FONT_SIZE,
-                    foreground_color,
-                );
-
-                Ok(egui::Rect::NOTHING)
             }
         }
     }

@@ -564,7 +564,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     UmlClassToolStage::PackageStart {
                         name: "a package".to_owned(),
                         stereotype: "".to_owned(),
-                        kind: UmlClassPackageKind::Package,
+                        kind: UmlClassPackageKind::Folder,
                     },
                     "Package",
                     Some(egui::KeyboardShortcut::new(
