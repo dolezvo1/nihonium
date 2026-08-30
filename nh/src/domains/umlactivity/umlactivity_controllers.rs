@@ -1151,7 +1151,7 @@ impl DiagramSettings for UmlActivitySettings {
                 for e in [
                     canvas::HeaderMode::Expanding(0),
                     canvas::HeaderMode::Compact,
-                    canvas::HeaderMode::Expanding(u8::max_value()),
+                    canvas::HeaderMode::Expanding(u8::MAX),
                 ] {
                     ui.selectable_value(&mut self.horizontal_header, e, e.as_str());
                 }
