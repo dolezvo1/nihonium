@@ -1340,10 +1340,28 @@ impl CommentIndication {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum VisibilityDisplayStyle {
+    Characters,
+    Icons,
+}
+
+impl VisibilityDisplayStyle {
+    const VARIANTS: [Self; 2] = [Self::Characters, Self::Icons];
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Characters => "Characters (+, ~, #, -)",
+            Self::Icons => "Icons (circle, triangle, rhombus, square)",
+        }
+    }
+}
+
 pub struct UmlClassSettings<P: UmlClassProfile> {
     palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassDomain<P>>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlClassToolStage, UmlClassElementView<P>>>,
     comment_indication: CommentIndication,
+    visibility_style: VisibilityDisplayStyle,
     instance_buttons: Vec<(usize, usize, &'static str, &'static InstanceButtonF<P>)>,
     class_buttons: Vec<(usize, usize, &'static str, &'static ClassButtonF<P>)>,
 }
@@ -1695,6 +1713,15 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                 }
             });
 
+        ui.label("Visibility Style (public, package private, protected, private)");
+        egui::ComboBox::from_id_salt("visibility style")
+            .selected_text(self.visibility_style.as_str())
+            .show_ui(ui, |ui| {
+                for e in VisibilityDisplayStyle::VARIANTS {
+                    ui.selectable_value(&mut self.visibility_style, e, e.as_str());
+                }
+            });
+
         ret
     }
 
@@ -1714,6 +1741,10 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
         table.insert(
             "comment_indication".to_owned(),
             toml::Value::try_from(self.comment_indication).map_err(|_| ())?,
+        );
+        table.insert(
+            "visibility_style".to_owned(),
+            toml::Value::try_from(self.visibility_style).map_err(|_| ())?,
         );
         Ok(table.into())
     }
@@ -1793,9 +1824,10 @@ pub fn default_settings_helper<P: UmlClassProfile>(
         .collect();
 
     Box::new(UmlClassSettings {
-        comment_indication: CommentIndication::Icon,
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
+        comment_indication: CommentIndication::Icon,
+        visibility_style: VisibilityDisplayStyle::Characters,
         instance_buttons,
         class_buttons,
     })
@@ -2334,10 +2366,12 @@ pub fn settings_deserializer_helper<P: UmlClassProfile>(
         palette_edit_buffer: PaletteEditBuffer::None.into(),
         comment_indication: value
             .get("comment_indication")
-            .unwrap()
-            .clone()
-            .try_into()
-            .unwrap(),
+            .and_then(|e| e.clone().try_into().ok())
+            .unwrap_or(CommentIndication::Icon),
+        visibility_style: value
+            .get("visibility_style")
+            .and_then(|e| e.clone().try_into().ok())
+            .unwrap_or(VisibilityDisplayStyle::Characters),
         instance_buttons,
         class_buttons,
     }))
@@ -3189,7 +3223,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     }
 }
 
-fn show_visibility(
+fn show_visibility_selectbox(
     ui: &mut egui::Ui,
     current: &UFOption<UmlClassVisibilityKind>,
 ) -> Option<UFOption<UmlClassVisibilityKind>> {
@@ -3224,6 +3258,86 @@ fn show_visibility(
         });
 
     result
+}
+
+/// class properties use outline-only shapes,
+/// whereas class operations, classes and packages use solid shapes
+const VISIBILITY_ICON_MAX_SIZE: egui::Vec2 = egui::Vec2::splat(10.0);
+fn draw_visibility_icon(
+    canvas: &mut dyn canvas::NHCanvas,
+    at: egui::Pos2,
+    visibility: UmlClassVisibilityKind,
+    solid: bool,
+) {
+    let foreground_color = match visibility {
+        UmlClassVisibilityKind::Public => egui::Color32::GREEN,
+        UmlClassVisibilityKind::PackagePrivate => egui::Color32::BLUE,
+        UmlClassVisibilityKind::Protected => egui::Color32::from_rgb(0xb9, 0x95, 0x23),
+        UmlClassVisibilityKind::Private => egui::Color32::RED,
+    };
+    let stroke = canvas::Stroke::new_solid(2.0, foreground_color);
+    let background_color = match visibility {
+        _ if !solid => egui::Color32::TRANSPARENT,
+        UmlClassVisibilityKind::Public => egui::Color32::from_rgb(0x85, 0xbf, 0x85),
+        UmlClassVisibilityKind::PackagePrivate => egui::Color32::from_rgb(0x3f, 0x78, 0xb0),
+        UmlClassVisibilityKind::Protected => egui::Color32::from_rgb(0xff, 0xff, 0x42),
+        UmlClassVisibilityKind::Private => egui::Color32::from_rgb(0xf2, 0x4c, 0x5c),
+    };
+
+    let max_rect = egui::Rect::from_center_size(at, VISIBILITY_ICON_MAX_SIZE);
+    let inner_rect = max_rect.shrink(2.0);
+    /*
+    canvas.draw_rectangle(
+        max_rect,
+        egui::CornerRadius::ZERO,
+        egui::Color32::TRANSPARENT,
+        canvas::Stroke::new_solid(1.0, egui::Color32::MAGENTA),
+        canvas::Highlight::NONE,
+    );
+    */
+    match visibility {
+        UmlClassVisibilityKind::Public => {
+            canvas.draw_ellipse(
+                at,
+                inner_rect.size() / 2.0,
+                background_color,
+                stroke,
+                canvas::Highlight::NONE,
+            );
+        }
+        UmlClassVisibilityKind::PackagePrivate => canvas.draw_polygon(
+            [
+                inner_rect.center_top(),
+                inner_rect.right_bottom(),
+                inner_rect.left_bottom(),
+            ]
+            .to_vec(),
+            background_color,
+            stroke,
+            canvas::Highlight::NONE,
+        ),
+        UmlClassVisibilityKind::Protected => canvas.draw_polygon(
+            [
+                inner_rect.center_top(),
+                inner_rect.right_center(),
+                inner_rect.center_bottom(),
+                inner_rect.left_center(),
+            ]
+            .to_vec(),
+            background_color,
+            stroke,
+            canvas::Highlight::NONE,
+        ),
+        UmlClassVisibilityKind::Private => {
+            canvas.draw_rectangle(
+                inner_rect,
+                egui::CornerRadius::ZERO,
+                background_color,
+                stroke,
+                canvas::Highlight::NONE,
+            );
+        }
+    }
 }
 
 pub fn new_umlclass_package<P: UmlClassProfile>(
@@ -3321,22 +3435,23 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         highlight: canvas::Highlight,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
     ) -> Result<egui::Rect, Arc<String>> {
         let visibility_size = self
             .visibility_buffer
             .as_ref()
-            .map_or(egui::Vec2::ZERO, |e| {
-                canvas
+            .map_or(egui::Vec2::ZERO, |e| match settings.visibility_style {
+                VisibilityDisplayStyle::Characters => canvas
                     .measure_text(
                         egui::Pos2::ZERO,
                         egui::Align2::CENTER_CENTER,
                         e.as_char(),
                         canvas::CLASS_MIDDLE_FONT_SIZE,
                     )
-                    .size()
+                    .size(),
+                VisibilityDisplayStyle::Icons => VISIBILITY_ICON_MAX_SIZE,
             });
         let display_text_size = canvas
             .measure_text(
@@ -3351,13 +3466,27 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         match self.kind_buffer {
             UmlClassPackageKind::Rectangle => {
                 if let Some(e) = self.visibility_buffer.as_ref() {
-                    canvas.draw_text(
-                        bounds_rect.center_top() + (-display_text_size.x / 2.0, 0.0).into(),
-                        egui::Align2::CENTER_TOP,
-                        e.as_char(),
-                        canvas::CLASS_MIDDLE_FONT_SIZE,
-                        foreground_color,
-                    );
+                    match settings.visibility_style {
+                        VisibilityDisplayStyle::Characters => {
+                            canvas.draw_text(
+                                bounds_rect.center_top() + (-display_text_size.x / 2.0, 0.0).into(),
+                                egui::Align2::CENTER_TOP,
+                                e.as_char(),
+                                canvas::CLASS_MIDDLE_FONT_SIZE,
+                                foreground_color,
+                            );
+                        }
+                        VisibilityDisplayStyle::Icons => {
+                            draw_visibility_icon(
+                                canvas,
+                                bounds_rect.center_top()
+                                    + (-display_text_size.x / 2.0, display_text_size.y / 2.0)
+                                        .into(),
+                                *e,
+                                true,
+                            );
+                        }
+                    }
                 }
                 canvas.draw_text(
                     bounds_rect.center_top() + (visibility_size.x / 2.0, 0.0).into(),
@@ -3385,13 +3514,30 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     highlight,
                 );
                 if let Some(e) = self.visibility_buffer.as_ref() {
-                    canvas.draw_text(
-                        text_origin,
-                        egui::Align2::LEFT_BOTTOM,
-                        e.as_char(),
-                        canvas::CLASS_MIDDLE_FONT_SIZE,
-                        foreground_color,
-                    );
+                    match settings.visibility_style {
+                        VisibilityDisplayStyle::Characters => {
+                            canvas.draw_text(
+                                text_origin,
+                                egui::Align2::LEFT_BOTTOM,
+                                e.as_char(),
+                                canvas::CLASS_MIDDLE_FONT_SIZE,
+                                foreground_color,
+                            );
+                        }
+                        VisibilityDisplayStyle::Icons => {
+                            draw_visibility_icon(
+                                canvas,
+                                text_origin
+                                    + (
+                                        VISIBILITY_ICON_MAX_SIZE.x / 2.0,
+                                        -display_text_size.y / 2.0,
+                                    )
+                                        .into(),
+                                *e,
+                                true,
+                            );
+                        }
+                    }
                 }
                 canvas.draw_text(
                     text_origin + (visibility_size.x, 0.0).into(),
@@ -3434,7 +3580,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             ));
         }
 
-        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -4538,16 +4684,32 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
         at: egui::Pos2,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
-        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
+        let visibility_size = self
+            .visibility_buffer
+            .as_ref()
+            .map_or(egui::Vec2::ZERO, |e| match settings.visibility_style {
+                VisibilityDisplayStyle::Characters => canvas
+                    .measure_text(
+                        at,
+                        egui::Align2::LEFT_TOP,
+                        e.as_char(),
+                        canvas::CLASS_ITEM_FONT_SIZE,
+                    )
+                    .size(),
+                VisibilityDisplayStyle::Icons => VISIBILITY_ICON_MAX_SIZE,
+            });
         self.bounds_rect = canvas.measure_text(
-            at,
+            at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
             &self.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
         );
+        self.bounds_rect
+            .set_left(self.bounds_rect.left() - visibility_size.x);
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
@@ -4555,8 +4717,22 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
             canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
             self.highlight,
         );
+        if let Some(e) = self.visibility_buffer.as_ref() {
+            match settings.visibility_style {
+                VisibilityDisplayStyle::Characters => canvas.draw_text(
+                    at,
+                    egui::Align2::LEFT_TOP,
+                    e.as_char(),
+                    canvas::CLASS_ITEM_FONT_SIZE,
+                    egui::Color32::BLACK,
+                ),
+                VisibilityDisplayStyle::Icons => {
+                    draw_visibility_icon(canvas, at + VISIBILITY_ICON_MAX_SIZE / 2.0, *e, false)
+                }
+            }
+        }
         canvas.draw_text(
-            at,
+            at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
             &self.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
@@ -4692,7 +4868,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             ));
         }
 
-        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -4972,16 +5148,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         self.display_text = {
             let mut t = String::new();
 
-            if !m.stereotype.is_empty() {
-                t.push('«');
-                t.push_str(&m.stereotype);
-                t.push_str("» ");
-            }
-
-            if let UFOption::Some(vis) = m.visibility {
-                t.push_str(vis.as_char());
-            }
-
             if m.is_derived {
                 t.push('/');
             }
@@ -5004,6 +5170,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             if !m.default_value.is_empty() {
                 t.push_str(" = ");
                 t.push_str(&m.default_value);
+            }
+
+            if !m.stereotype.is_empty() {
+                t.push_str(" «");
+                t.push_str(&m.stereotype);
+                t.push_str("»");
             }
 
             if m.is_read_only || m.is_ordered || m.is_unique || m.is_id {
@@ -5319,16 +5491,32 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
         at: egui::Pos2,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
-        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
+        let visibility_size = self
+            .visibility_buffer
+            .as_ref()
+            .map_or(egui::Vec2::ZERO, |e| match settings.visibility_style {
+                VisibilityDisplayStyle::Characters => canvas
+                    .measure_text(
+                        at,
+                        egui::Align2::LEFT_TOP,
+                        e.as_char(),
+                        canvas::CLASS_ITEM_FONT_SIZE,
+                    )
+                    .size(),
+                VisibilityDisplayStyle::Icons => VISIBILITY_ICON_MAX_SIZE,
+            });
         self.bounds_rect = canvas.measure_text(
-            at,
+            at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
             &self.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
         );
+        self.bounds_rect
+            .set_left(self.bounds_rect.left() - visibility_size.x);
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
@@ -5341,8 +5529,22 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
         } else {
             IS_ABSTRACT_COLOR
         };
+        if let Some(e) = self.visibility_buffer.as_ref() {
+            match settings.visibility_style {
+                VisibilityDisplayStyle::Characters => canvas.draw_text(
+                    at,
+                    egui::Align2::LEFT_TOP,
+                    e.as_char(),
+                    canvas::CLASS_ITEM_FONT_SIZE,
+                    egui::Color32::BLACK,
+                ),
+                VisibilityDisplayStyle::Icons => {
+                    draw_visibility_icon(canvas, at + VISIBILITY_ICON_MAX_SIZE / 2.0, *e, true)
+                }
+            }
+        }
         canvas.draw_text(
-            at,
+            at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
             &self.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
@@ -5468,7 +5670,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             ));
         }
 
-        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -5725,16 +5927,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         self.display_text = {
             let mut t = String::new();
 
-            if !m.stereotype.is_empty() {
-                t.push('«');
-                t.push_str(&m.stereotype);
-                t.push_str("» ");
-            }
-
-            if let UFOption::Some(vis) = m.visibility {
-                t.push_str(vis.as_char());
-            }
-
             t.push_str(&m.name);
             t.push('(');
             t.push_str(&m.parameters);
@@ -5743,6 +5935,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             if !m.return_type.is_empty() {
                 t.push_str(": ");
                 t.push_str(&m.return_type);
+            }
+
+            if !m.stereotype.is_empty() {
+                t.push_str(" «");
+                t.push_str(&m.stereotype);
+                t.push_str("»");
             }
 
             if m.is_query || m.is_ordered || m.is_unique {
@@ -6070,7 +6268,8 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassView<P> 
 
 pub const IS_ABSTRACT_COLOR: egui::Color32 = egui::Color32::from_rgb(130, 130, 130);
 pub const STATIC_UNDERLINE_WIDTH: f32 = 2.0;
-pub fn draw_uml_class<'a>(
+pub fn draw_uml_class<'a, P: UmlClassProfile>(
+    settings: &UmlClassSettings<P>,
     canvas: &'a mut dyn canvas::NHCanvas,
     position: egui::Pos2,
     top_label: Option<Arc<String>>,
@@ -6100,13 +6299,17 @@ pub fn draw_uml_class<'a>(
         let mut category_separators = vec![];
 
         let visibility_modifier_size = visibility_modifier.as_ref().map_or(egui::Vec2::ZERO, |e| {
-            let r = canvas.measure_text(
-                egui::Pos2::ZERO,
-                egui::Align2::CENTER_TOP,
-                e.as_char(),
-                canvas::CLASS_TOP_FONT_SIZE,
-            );
-            r.size()
+            match settings.visibility_style {
+                VisibilityDisplayStyle::Characters => canvas
+                    .measure_text(
+                        egui::Pos2::ZERO,
+                        egui::Align2::CENTER_TOP,
+                        e.as_char(),
+                        canvas::CLASS_TOP_FONT_SIZE,
+                    )
+                    .size(),
+                VisibilityDisplayStyle::Icons => VISIBILITY_ICON_MAX_SIZE,
+            }
         });
 
         if let Some(top_label) = &top_label {
@@ -6194,18 +6397,33 @@ pub fn draw_uml_class<'a>(
             };
 
             if let Some(e) = visibility_modifier.as_ref() {
-                canvas.draw_text(
-                    position
-                        + (
-                            -main_label_size.x / 2.0,
-                            offsets[offset_counter] - global_offset,
-                        )
-                            .into(),
-                    egui::Align2::CENTER_TOP,
-                    e.as_char(),
-                    canvas::CLASS_MIDDLE_FONT_SIZE,
-                    color,
-                );
+                match settings.visibility_style {
+                    VisibilityDisplayStyle::Characters => {
+                        canvas.draw_text(
+                            position
+                                + (
+                                    -main_label_size.x / 2.0,
+                                    offsets[offset_counter] - global_offset,
+                                )
+                                    .into(),
+                            egui::Align2::CENTER_TOP,
+                            e.as_char(),
+                            canvas::CLASS_MIDDLE_FONT_SIZE,
+                            color,
+                        );
+                    }
+                    VisibilityDisplayStyle::Icons => draw_visibility_icon(
+                        canvas,
+                        position
+                            + (
+                                -main_label_size.x / 2.0,
+                                offsets[offset_counter] - global_offset + main_label_size.y / 2.0,
+                            )
+                                .into(),
+                        *e,
+                        true,
+                    ),
+                }
             }
 
             canvas.draw_text(
@@ -6340,7 +6558,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             ));
         }
 
-        if let Some(e) = show_visibility(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -6587,6 +6805,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
 
                 self.bounds_rect = draw_uml_class(
+                    settings,
                     canvas,
                     self.position,
                     self.stereotype_in_guillemets.clone(),

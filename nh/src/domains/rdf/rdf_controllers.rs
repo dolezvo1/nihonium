@@ -17,7 +17,6 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::model::{BucketNoT, ContainerModel, Model, PositionNoT};
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
-use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::views::multiconnection_view::{
@@ -2380,20 +2379,29 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
         // Draw shape and text
-        self.bounds_rect = crate::domains::umlclass::umlclass_controllers::draw_uml_class(
-            canvas,
-            self.position,
-            None,
-            &self.model.read().content,
-            None,
-            UFOption::None,
-            false,
-            &[],
+        self.bounds_rect = canvas
+            .measure_text(
+                self.position,
+                egui::Align2::CENTER_CENTER,
+                &self.content_buffer,
+                canvas::CLASS_MIDDLE_FONT_SIZE,
+            )
+            .expand(5.0);
+        canvas.draw_rectangle(
+            self.bounds_rect,
+            egui::CornerRadius::ZERO,
             gdc.global_colors
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
+        );
+        canvas.draw_text(
+            self.position,
+            egui::Align2::CENTER_CENTER,
+            &self.content_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
         );
 
         // Draw targetting rectangle
