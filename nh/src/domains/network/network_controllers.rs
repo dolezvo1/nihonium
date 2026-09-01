@@ -3735,24 +3735,32 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                             self.position + egui::Vec2::new(2.0, -18.0),
                             self.position + egui::Vec2::new(7.0, -15.0),
                             self.position + egui::Vec2::new(10.0, -10.0),
+                            self.position + egui::Vec2::new(5.0, -7.0),
+                            self.position + egui::Vec2::new(-5.0, -7.0),
                         ]
                         .to_vec(),
                         HARD_HAT_COLOR,
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
-                    canvas.draw_polygon(
+                    canvas.draw_line(
                         [
                             self.position + egui::Vec2::new(-10.0, -10.0),
-                            self.position + egui::Vec2::new(-5.0, -9.0),
-                            self.position + egui::Vec2::new(5.0, -9.0),
                             self.position + egui::Vec2::new(10.0, -10.0),
-                        ]
-                        .to_vec(),
-                        HARD_HAT_COLOR,
+                        ],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
+                    for e in [-2.0, 2.0] {
+                        canvas.draw_line(
+                            [
+                                self.position + egui::Vec2::new(e, -18.0),
+                                self.position + egui::Vec2::new(e, -10.0),
+                            ],
+                            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                            canvas::Highlight::NONE,
+                        );
+                    }
                 }
                 NetworkUserKind::BlackHat
                 | NetworkUserKind::GrayHat
