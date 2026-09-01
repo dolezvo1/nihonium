@@ -549,12 +549,16 @@ pub enum ShowSettingsResult {
 }
 
 pub trait DiagramSettings: Any {
+    // Show all possible properties
     fn show(
         &mut self,
         gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         shortcut_being_set: &Option<SetShortcut>,
     ) -> ShowSettingsResult;
+    // Show a reduced set of properties
+    fn show_reduced(&mut self, gdc: &GlobalDrawingContext, ui: &mut egui::Ui);
+    fn clone_reduced(&self) -> Box<dyn DiagramSettings>;
     fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut);
     fn serialize(&self) -> Result<toml::Value, ()>;
 }

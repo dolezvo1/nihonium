@@ -1373,201 +1373,131 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
         ui: &mut egui::Ui,
         shortcut_being_set: &Option<SetShortcut>,
     ) -> ShowSettingsResult {
-        let mut w = self.palette.write().unwrap();
-        let mut buffer = self.palette_edit_buffer.write().unwrap();
         let mut ret = ShowSettingsResult::None;
+        {
+            let mut w = self.palette.write().unwrap();
+            let mut buffer = self.palette_edit_buffer.write().unwrap();
+            ui.columns(2, |columns| {
+                w.show_treeview(gdc, &mut columns[0]);
 
-        ui.columns(2, |columns| {
-            w.show_treeview(gdc, &mut columns[0]);
-
-            let selected = w.get_selected();
-            if selected.uuid() != buffer.uuid() {
-                *buffer = w.get_buffer(selected.uuid().cloned());
-            }
-            match &mut *buffer {
-                PaletteEditBuffer::None => {}
-                PaletteEditBuffer::Group(_uuid, name, display_style) => {
-                    let mut modified = false;
-
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
-
-                    columns[1].label("Display style");
-                    egui::ComboBox::from_id_salt("group display style")
-                        .selected_text(display_style.as_str())
-                        .show_ui(&mut columns[1], |ui| {
-                            for e in GroupDisplayStyle::VARIANTS {
-                                modified |=
-                                    ui.selectable_value(display_style, e, e.as_str()).clicked();
-                            }
-                        });
-
-                    if modified {
-                        w.set_from_buffer(buffer.clone());
-                    }
+                let selected = w.get_selected();
+                if selected.uuid() != buffer.uuid() {
+                    *buffer = w.get_buffer(selected.uuid().cloned());
                 }
-                PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
-                    let mut modified = false;
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
+                match &mut *buffer {
+                    PaletteEditBuffer::None => {}
+                    PaletteEditBuffer::Group(_uuid, name, display_style) => {
+                        let mut modified = false;
 
-                    match crate::common::diagram_settings::show_shortcut(
-                        &mut columns[1],
-                        ksc,
-                        shortcut_being_set
-                            .as_ref()
-                            .is_some_and(|e| e.is_diagram(uuid)),
-                    ) {
-                        ShortCutStatus::NoChange => {}
-                        ShortCutStatus::Cleared => modified = true,
-                        ShortCutStatus::Set => {
-                            ret = ShowSettingsResult::SetShortcut(*uuid);
-                        }
-                        ShortCutStatus::CancelSet => {
-                            ret = ShowSettingsResult::CancelShortcutSetting;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
+
+                        columns[1].label("Display style");
+                        egui::ComboBox::from_id_salt("group display style")
+                            .selected_text(display_style.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in GroupDisplayStyle::VARIANTS {
+                                    modified |=
+                                        ui.selectable_value(display_style, e, e.as_str()).clicked();
+                                }
+                            });
+
+                        if modified {
+                            w.set_from_buffer(buffer.clone());
                         }
                     }
+                    PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
+                        let mut modified = false;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
 
-                    // TODO: make the stereotypes more efficient
-                    match tool {
-                        UmlClassToolStage::Instance {
-                            instance_name,
-                            instance_type,
-                            stereotype,
-                            background_color,
-                        } => {
-                            let mut sc = P::InstanceStereotypeController::default();
-                            sc.refresh(stereotype);
-                            if sc.show(&mut columns[1]) {
-                                modified = true;
-                                *stereotype = sc.get_raw();
+                        match crate::common::diagram_settings::show_shortcut(
+                            &mut columns[1],
+                            ksc,
+                            shortcut_being_set
+                                .as_ref()
+                                .is_some_and(|e| e.is_diagram(uuid)),
+                        ) {
+                            ShortCutStatus::NoChange => {}
+                            ShortCutStatus::Cleared => modified = true,
+                            ShortCutStatus::Set => {
+                                ret = ShowSettingsResult::SetShortcut(*uuid);
                             }
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Instance name", instance_name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Instance type", instance_type)
-                                .changed();
+                            ShortCutStatus::CancelSet => {
+                                ret = ShowSettingsResult::CancelShortcutSetting;
+                            }
+                        }
 
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        UmlClassToolStage::Class {
-                            name,
-                            stereotype,
-                            is_abstract,
-                            render_style: _,
-                            background_color,
-                        } => {
-                            let mut sc = P::ClassStereotypeController::default();
-                            sc.refresh(stereotype);
-                            if sc.show(&mut columns[1]) {
-                                modified = true;
-                                *stereotype = sc.get_raw();
-                            }
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1].checkbox(is_abstract, "isAbstract").changed();
-
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        UmlClassToolStage::ClassProperty {
-                            name,
-                            property_type,
-                            stereotype,
-                        } => {
-                            let mut sc = P::ClassPropertyStereotypeController::default();
-                            sc.refresh(stereotype);
-                            if sc.show(&mut columns[1]) {
-                                modified = true;
-                                *stereotype = sc.get_raw();
-                            }
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Property type", property_type)
-                                .changed();
-                        }
-                        UmlClassToolStage::ClassOperation {
-                            name,
-                            return_type,
-                            stereotype,
-                        } => {
-                            let mut sc = P::ClassOperationStereotypeController::default();
-                            sc.refresh(stereotype);
-                            if sc.show(&mut columns[1]) {
-                                modified = true;
-                                *stereotype = sc.get_raw();
-                            }
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Return type", return_type)
-                                .changed();
-                        }
-                        UmlClassToolStage::UseCase {
-                            name,
-                            stereotype,
-                            is_abstract,
-                            render_style: _,
-                            background_color,
-                        } => {
-                            let mut sc = P::UseCaseStereotypeController::default();
-                            sc.refresh(stereotype);
-                            if sc.show(&mut columns[1]) {
-                                modified = true;
-                                *stereotype = sc.get_raw();
-                            }
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1].checkbox(is_abstract, "isAbstract").changed();
-
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        UmlClassToolStage::LinkStart { link_type } => match link_type {
-                            LinkType::Generalization { set_name } => {
-                                modified |= columns[1]
-                                    .labeled_text_edit_singleline("Set name", set_name)
-                                    .changed();
-                            }
-                            LinkType::Dependency {
-                                target_arrow_open,
+                        // TODO: make the stereotypes more efficient
+                        match tool {
+                            UmlClassToolStage::Instance {
+                                instance_name,
+                                instance_type,
                                 stereotype,
-                                name,
+                                background_color,
                             } => {
-                                let mut sc = P::DependencyStereotypeController::default();
+                                let mut sc = P::InstanceStereotypeController::default();
+                                sc.refresh(stereotype);
+                                if sc.show(&mut columns[1]) {
+                                    modified = true;
+                                    *stereotype = sc.get_raw();
+                                }
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Instance name", instance_name)
+                                    .changed();
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Instance type", instance_type)
+                                    .changed();
+
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            UmlClassToolStage::Class {
+                                name,
+                                stereotype,
+                                is_abstract,
+                                render_style: _,
+                                background_color,
+                            } => {
+                                let mut sc = P::ClassStereotypeController::default();
+                                sc.refresh(stereotype);
+                                if sc.show(&mut columns[1]) {
+                                    modified = true;
+                                    *stereotype = sc.get_raw();
+                                }
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+                                modified |=
+                                    columns[1].checkbox(is_abstract, "isAbstract").changed();
+
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            UmlClassToolStage::ClassProperty {
+                                name,
+                                property_type,
+                                stereotype,
+                            } => {
+                                let mut sc = P::ClassPropertyStereotypeController::default();
                                 sc.refresh(stereotype);
                                 if sc.show(&mut columns[1]) {
                                     modified = true;
@@ -1577,133 +1507,215 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                                     .labeled_text_edit_singleline("Name", name)
                                     .changed();
                                 modified |= columns[1]
-                                    .checkbox(target_arrow_open, "target arrow open")
+                                    .labeled_text_edit_singleline("Property type", property_type)
                                     .changed();
                             }
-                            LinkType::Association {
+                            UmlClassToolStage::ClassOperation {
+                                name,
+                                return_type,
                                 stereotype,
-                                source_multiplicity,
-                                target_multiplicity,
                             } => {
-                                let mut sc = P::AssociationStereotypeController::default();
+                                let mut sc = P::ClassOperationStereotypeController::default();
                                 sc.refresh(stereotype);
                                 if sc.show(&mut columns[1]) {
                                     modified = true;
                                     *stereotype = sc.get_raw();
                                 }
                                 modified |= columns[1]
-                                    .labeled_text_edit_singleline(
-                                        "Source multiplicity",
-                                        source_multiplicity,
-                                    )
+                                    .labeled_text_edit_singleline("Name", name)
                                     .changed();
                                 modified |= columns[1]
-                                    .labeled_text_edit_singleline(
-                                        "Target multiplicity",
-                                        target_multiplicity,
-                                    )
+                                    .labeled_text_edit_singleline("Return type", return_type)
                                     .changed();
                             }
-                        },
-                        UmlClassToolStage::PackageStart {
-                            name,
-                            stereotype,
-                            kind,
-                        } => {
-                            let mut sc = P::PackageStereotypeController::default();
-                            sc.refresh(stereotype);
-                            if sc.show(&mut columns[1]) {
-                                modified = true;
-                                *stereotype = sc.get_raw();
-                            }
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
+                            UmlClassToolStage::UseCase {
+                                name,
+                                stereotype,
+                                is_abstract,
+                                render_style: _,
+                                background_color,
+                            } => {
+                                let mut sc = P::UseCaseStereotypeController::default();
+                                sc.refresh(stereotype);
+                                if sc.show(&mut columns[1]) {
+                                    modified = true;
+                                    *stereotype = sc.get_raw();
+                                }
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+                                modified |=
+                                    columns[1].checkbox(is_abstract, "isAbstract").changed();
 
-                            columns[1].label("Package kind");
-                            egui::ComboBox::from_id_salt("package kind")
-                                .selected_text(kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in UmlClassPackageKind::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(kind, e, e.as_str()).clicked();
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            UmlClassToolStage::LinkStart { link_type } => match link_type {
+                                LinkType::Generalization { set_name } => {
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline("Set name", set_name)
+                                        .changed();
+                                }
+                                LinkType::Dependency {
+                                    target_arrow_open,
+                                    stereotype,
+                                    name,
+                                } => {
+                                    let mut sc = P::DependencyStereotypeController::default();
+                                    sc.refresh(stereotype);
+                                    if sc.show(&mut columns[1]) {
+                                        modified = true;
+                                        *stereotype = sc.get_raw();
                                     }
-                                });
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline("Name", name)
+                                        .changed();
+                                    modified |= columns[1]
+                                        .checkbox(target_arrow_open, "target arrow open")
+                                        .changed();
+                                }
+                                LinkType::Association {
+                                    stereotype,
+                                    source_multiplicity,
+                                    target_multiplicity,
+                                } => {
+                                    let mut sc = P::AssociationStereotypeController::default();
+                                    sc.refresh(stereotype);
+                                    if sc.show(&mut columns[1]) {
+                                        modified = true;
+                                        *stereotype = sc.get_raw();
+                                    }
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline(
+                                            "Source multiplicity",
+                                            source_multiplicity,
+                                        )
+                                        .changed();
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline(
+                                            "Target multiplicity",
+                                            target_multiplicity,
+                                        )
+                                        .changed();
+                                }
+                            },
+                            UmlClassToolStage::PackageStart {
+                                name,
+                                stereotype,
+                                kind,
+                            } => {
+                                let mut sc = P::PackageStereotypeController::default();
+                                sc.refresh(stereotype);
+                                if sc.show(&mut columns[1]) {
+                                    modified = true;
+                                    *stereotype = sc.get_raw();
+                                }
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+
+                                columns[1].label("Package kind");
+                                egui::ComboBox::from_id_salt("package kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in UmlClassPackageKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+                            }
+                            UmlClassToolStage::Note {
+                                stereotype,
+                                text,
+                                align,
+                                background_color,
+                            } => {
+                                let mut sc = P::NoteStereotypeController::default();
+                                sc.refresh(stereotype);
+                                if sc.show(&mut columns[1]) {
+                                    modified = true;
+                                    *stereotype = sc.get_raw();
+                                }
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Text", text)
+                                    .changed();
+
+                                egui::ComboBox::new("horizontal align", "Horizontal align")
+                                    .selected_text(format!("{:?}", align.x()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[0],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+                                egui::ComboBox::new("vertical align", "Vertical align")
+                                    .selected_text(format!("{:?}", align.y()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[1],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+
+                                columns[1].label("Background color:");
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            UmlClassToolStage::NoteLinkStart => {}
+                            UmlClassToolStage::LinkEnd
+                            | UmlClassToolStage::LinkAddEnding { .. }
+                            | UmlClassToolStage::PackageEnd
+                            | UmlClassToolStage::NoteLinkEnd => unreachable!(),
                         }
-                        UmlClassToolStage::Note {
-                            stereotype,
-                            text,
-                            align,
-                            background_color,
-                        } => {
-                            let mut sc = P::NoteStereotypeController::default();
-                            sc.refresh(stereotype);
-                            if sc.show(&mut columns[1]) {
-                                modified = true;
-                                *stereotype = sc.get_raw();
-                            }
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Text", text)
-                                .changed();
 
-                            egui::ComboBox::new("horizontal align", "Horizontal align")
-                                .selected_text(format!("{:?}", align.x()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[0],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
-                            egui::ComboBox::new("vertical align", "Vertical align")
-                                .selected_text(format!("{:?}", align.y()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[1],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
-
-                            columns[1].label("Background color:");
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
+                        if modified {
+                            *view = view_for_stage(tool);
+                            w.set_from_buffer(buffer.clone());
                         }
-                        UmlClassToolStage::NoteLinkStart => {}
-                        UmlClassToolStage::LinkEnd
-                        | UmlClassToolStage::LinkAddEnding { .. }
-                        | UmlClassToolStage::PackageEnd
-                        | UmlClassToolStage::NoteLinkEnd => unreachable!(),
-                    }
-
-                    if modified {
-                        *view = view_for_stage(tool);
-                        w.set_from_buffer(buffer.clone());
                     }
                 }
-            }
-        });
+            });
+        }
 
+        self.show_reduced(gdc, ui);
+
+        ret
+    }
+    fn show_reduced(&mut self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) {
         ui.label("Comment indication");
         egui::ComboBox::from_id_salt("comment indication")
             .selected_text(self.comment_indication.as_str())
@@ -1721,8 +1733,16 @@ impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
                     ui.selectable_value(&mut self.visibility_style, e, e.as_str());
                 }
             });
-
-        ret
+    }
+    fn clone_reduced(&self) -> Box<dyn DiagramSettings> {
+        Box::new(Self {
+            palette: ToolPalette::new(Vec::new()).into(),
+            palette_edit_buffer: PaletteEditBuffer::None.into(),
+            instance_buttons: Vec::new(),
+            class_buttons: Vec::new(),
+            comment_indication: self.comment_indication,
+            visibility_style: self.visibility_style,
+        })
     }
 
     fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut) {

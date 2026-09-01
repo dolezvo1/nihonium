@@ -358,7 +358,7 @@ struct NHContext {
     zoom_factor: f32,
     zoom_with_keyboard: bool,
     diagram_type_hierarchy: DiagramTypeHierarchyNode,
-    diagram_settings: HashMap<&'static str, Box<dyn DiagramSettings>>,
+    diagram_settings: HashMap<&'static str, (Box<dyn DiagramSettings>, Box<dyn DiagramSettings>)>,
     diagram_settings_functions: HashMap<&'static str, &'static DefaultSettingsF>,
     shades_profiles: Vec<ShadesProfile>,
     selected_shades_profile: usize,
@@ -1623,7 +1623,7 @@ impl NHContext {
             return;
         };
         let ctype = c.read().controller_type();
-        let Some(s) = self.diagram_settings.get(ctype) else {
+        let Some((s, _)) = self.diagram_settings.get(ctype) else {
             return;
         };
         c.write()
@@ -1918,7 +1918,7 @@ impl NHContext {
         };
         let mut c = c.write();
         let ctype = c.controller_type();
-        let Some(s) = self.diagram_settings.get(ctype) else {
+        let Some((s, _)) = self.diagram_settings.get(ctype) else {
             return;
         };
         let outline_rect = ui.content_rect();
@@ -2601,7 +2601,7 @@ impl NHContext {
 
         ui.collapsing("Diagram specific settings", |ui| {
             for (ctype, ctypename) in self.diagram_type_hierarchy.iter_diagrams() {
-                if let (Some(settings), Some((ctype, d))) = (
+                if let (Some((settings, _)), Some((ctype, d))) = (
                     self.diagram_settings.get_mut(ctype),
                     self.diagram_settings_functions.get_key_value(ctype),
                 ) {
@@ -2929,7 +2929,7 @@ impl NHContext {
         };
         let mut diagram_controller = v.write();
         let ctype = diagram_controller.controller_type();
-        let Some(settings) = self.diagram_settings.get(ctype) else {
+        let Some((settings, _)) = self.diagram_settings.get(ctype) else {
             return;
         };
 
@@ -3161,7 +3161,7 @@ struct NHStoredApp {
     selected_shades_profile: usize,
     shades_profiles: Vec<ShadesProfile>,
 
-    diagram_specific_settings: HashMap<String, toml::Value>,
+    diagram_specific_settings: HashMap<String, (toml::Value, toml::Value)>,
 
     tree: DockState<NHTab>,
 }
@@ -3224,7 +3224,7 @@ impl NHApp {
         shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
         selected_shades_profile: usize,
         shades_profiles: Vec<ShadesProfile>,
-        diagram_specific_settings: HashMap<String, toml::Value>,
+        diagram_specific_settings: HashMap<String, (toml::Value, toml::Value)>,
         mut tree: DockState<NHTab>,
     ) -> Self {
         let mut diagram_infos: Vec<_> = inventory::iter::<DiagramInfo>.into_iter().collect();
@@ -3267,13 +3267,15 @@ impl NHApp {
         let diagram_settings = diagram_infos
             .iter()
             .map(|e| {
-                (
-                    e.type_indentifier,
-                    diagram_specific_settings
-                        .get(e.type_indentifier)
-                        .and_then(|s| (e.settings_deserializer)(s.clone()).ok())
-                        .unwrap_or_else(|| (e.default_settings)()),
-                )
+                let s = diagram_specific_settings.get(e.type_indentifier);
+                let s1 = s
+                    .and_then(|s| (e.settings_deserializer)(s.0.clone()).ok())
+                    .unwrap_or_else(|| (e.default_settings)());
+                let s2 = s
+                    .and_then(|s| (e.settings_deserializer)(s.1.clone()).ok())
+                    .unwrap_or_else(|| (e.default_settings)());
+
+                (e.type_indentifier, (s1, s2))
             })
             .collect();
 
@@ -3523,7 +3525,10 @@ impl eframe::App for NHApp {
 
         let mut diagram_specific_settings = HashMap::new();
         for (k, v) in self.context.diagram_settings.iter() {
-            diagram_specific_settings.insert((*k).to_owned(), v.serialize().unwrap());
+            diagram_specific_settings.insert(
+                (*k).to_owned(),
+                (v.0.serialize().unwrap(), v.1.serialize().unwrap()),
+            );
         }
 
         let tree = self.tree.filter_tabs(|e| e.is_persistable());
@@ -3822,7 +3827,7 @@ impl eframe::App for NHApp {
                                     SetShortcut::Diagram(t, id) => {
                                         let settings =
                                             self.context.diagram_settings.get_mut(t).unwrap();
-                                        settings.try_set_shortcut(*id, nsc);
+                                        settings.0.try_set_shortcut(*id, nsc);
                                     }
                                 }
                                 self.context.shortcut_being_set = None;
@@ -3895,7 +3900,7 @@ impl eframe::App for NHApp {
                             {
                                 let mut w = d.1.write();
                                 let t = w.controller_type();
-                                let Some(s) = self.context.diagram_settings.get(t) else {
+                                let Some((s, _)) = self.context.diagram_settings.get(t) else {
                                     break;
                                 };
                                 w.try_handle_custom_shortcut(&d.0, s.as_ref(), *modifiers, *key);
@@ -4103,7 +4108,7 @@ impl eframe::App for NHApp {
                         return;
                     };
                     let ctype = c.read().controller_type();
-                    let Some(s) = self.context.diagram_settings.get(ctype) else {
+                    let Some((s, _)) = self.context.diagram_settings.get(ctype) else {
                         return;
                     };
                     let mut c = c.write();
@@ -4231,7 +4236,7 @@ impl eframe::App for NHApp {
             self.context.svg_export_menu.as_mut()
         {
             let ctype = c.read().controller_type();
-            let Some(s) = self.context.diagram_settings.get(ctype) else {
+            let Some((s_full, s_reduced)) = self.context.diagram_settings.get_mut(ctype) else {
                 return;
             };
             let mut controller = c.write();
@@ -4299,6 +4304,16 @@ impl eframe::App for NHApp {
                     ),
                 );
 
+                ui.collapsing("Diagram specific settings", |ui| {
+                    s_reduced.show_reduced(&mut self.context.drawing_context, ui);
+                })
+                .header_response
+                .context_menu(|ui| {
+                    if ui.button("Reset diagram specific settings").clicked() {
+                        *s_reduced = s_full.clone_reduced();
+                    }
+                });
+
                 ui.separator();
 
                 // Show preview
@@ -4308,7 +4323,7 @@ impl eframe::App for NHApp {
                     controller.draw_in(
                         v,
                         &self.context.drawing_context,
-                        s.as_ref(),
+                        s_reduced.as_ref(),
                         &mut measuring_canvas,
                         None,
                     );
@@ -4379,7 +4394,7 @@ impl eframe::App for NHApp {
                     controller.draw_in(
                         v,
                         &self.context.drawing_context,
-                        s.as_ref(),
+                        s_reduced.as_ref(),
                         &mut ui_canvas,
                         None,
                     );
@@ -4397,7 +4412,7 @@ impl eframe::App for NHApp {
                         controller.draw_in(
                             v,
                             &self.context.drawing_context,
-                            s.as_ref(),
+                            s_reduced.as_ref(),
                             &mut measuring_canvas,
                             None,
                         );
@@ -4420,7 +4435,7 @@ impl eframe::App for NHApp {
                         controller.draw_in(
                             v,
                             &self.context.drawing_context,
-                            s.as_ref(),
+                            s_reduced.as_ref(),
                             &mut svg_canvas,
                             None,
                         );

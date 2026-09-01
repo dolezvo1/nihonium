@@ -686,296 +686,312 @@ impl DiagramSettings for NetworkSettings {
         ui: &mut egui::Ui,
         shortcut_being_set: &Option<SetShortcut>,
     ) -> ShowSettingsResult {
-        let mut w = self.palette.write().unwrap();
-        let mut buffer = self.palette_edit_buffer.write().unwrap();
         let mut ret = ShowSettingsResult::None;
+        {
+            let mut w = self.palette.write().unwrap();
+            let mut buffer = self.palette_edit_buffer.write().unwrap();
+            ui.columns(2, |columns| {
+                w.show_treeview(gdc, &mut columns[0]);
 
-        ui.columns(2, |columns| {
-            w.show_treeview(gdc, &mut columns[0]);
+                let selected = w.get_selected();
+                if selected.uuid() != buffer.uuid() {
+                    *buffer = w.get_buffer(selected.uuid().cloned());
+                }
+                match &mut *buffer {
+                    PaletteEditBuffer::None => {}
+                    PaletteEditBuffer::Group(_uuid, name, display_style) => {
+                        let mut modified = false;
 
-            let selected = w.get_selected();
-            if selected.uuid() != buffer.uuid() {
-                *buffer = w.get_buffer(selected.uuid().cloned());
-            }
-            match &mut *buffer {
-                PaletteEditBuffer::None => {}
-                PaletteEditBuffer::Group(_uuid, name, display_style) => {
-                    let mut modified = false;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
 
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
+                        columns[1].label("Display style");
+                        egui::ComboBox::from_id_salt("group display style")
+                            .selected_text(display_style.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in GroupDisplayStyle::VARIANTS {
+                                    modified |=
+                                        ui.selectable_value(display_style, e, e.as_str()).clicked();
+                                }
+                            });
 
-                    columns[1].label("Display style");
-                    egui::ComboBox::from_id_salt("group display style")
-                        .selected_text(display_style.as_str())
-                        .show_ui(&mut columns[1], |ui| {
-                            for e in GroupDisplayStyle::VARIANTS {
-                                modified |=
-                                    ui.selectable_value(display_style, e, e.as_str()).clicked();
+                        if modified {
+                            w.set_from_buffer(buffer.clone());
+                        }
+                    }
+                    PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
+                        let mut modified = false;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
+
+                        match crate::common::diagram_settings::show_shortcut(
+                            &mut columns[1],
+                            ksc,
+                            shortcut_being_set
+                                .as_ref()
+                                .is_some_and(|e| e.is_diagram(uuid)),
+                        ) {
+                            ShortCutStatus::NoChange => {}
+                            ShortCutStatus::Cleared => modified = true,
+                            ShortCutStatus::Set => {
+                                ret = ShowSettingsResult::SetShortcut(*uuid);
                             }
-                        });
+                            ShortCutStatus::CancelSet => {
+                                ret = ShowSettingsResult::CancelShortcutSetting;
+                            }
+                        }
 
-                    if modified {
-                        w.set_from_buffer(buffer.clone());
+                        match tool {
+                            NetworkToolStage::Node {
+                                name,
+                                kind,
+                                background_color,
+                                with_edge_from: _,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+
+                                columns[1].label("Kind");
+                                egui::ComboBox::from_id_salt("node kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in NetworkNodeKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            NetworkToolStage::User {
+                                name,
+                                kind,
+                                background_color,
+                                with_edge_from: _,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+
+                                columns[1].label("Kind");
+                                egui::ComboBox::from_id_salt("user kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in NetworkUserKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            NetworkToolStage::File {
+                                name,
+                                kind,
+                                background_color,
+                                with_edge_from: _,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+
+                                columns[1].label("Kind");
+                                egui::ComboBox::from_id_salt("file kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in NetworkFileKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            NetworkToolStage::Location {
+                                name,
+                                kind,
+                                with_edge_from: _,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+
+                                columns[1].label("Kind");
+                                egui::ComboBox::from_id_salt("location kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in NetworkLocationKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+                            }
+                            NetworkToolStage::AssociationStart {
+                                line_type,
+                                source_arrowhead,
+                                target_arrowhead,
+                                color,
+                            } => {
+                                columns[1].label("Line type");
+                                egui::ComboBox::from_id_salt("line type")
+                                    .selected_text(line_type.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in NetworkAssociationLineType::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(line_type, e, e.as_str())
+                                                .clicked();
+                                        }
+                                    });
+
+                                columns[1].label("Source arrowhead");
+                                egui::ComboBox::from_id_salt("source arrowhead")
+                                    .selected_text(source_arrowhead.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in NetworkAssociationArrowheadType::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(source_arrowhead, e, e.as_str())
+                                                .clicked();
+                                        }
+                                    });
+
+                                columns[1].label("Target arrowhead");
+                                egui::ComboBox::from_id_salt("target arrowhead")
+                                    .selected_text(target_arrowhead.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in NetworkAssociationArrowheadType::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(target_arrowhead, e, e.as_str())
+                                                .clicked();
+                                        }
+                                    });
+
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        color,
+                                    )
+                                {
+                                    *color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            NetworkToolStage::ContainerStart { name } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+                            }
+                            NetworkToolStage::Note {
+                                text,
+                                align,
+                                background_color,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Text", text)
+                                    .changed();
+
+                                egui::ComboBox::new("horizontal align", "Horizontal align")
+                                    .selected_text(format!("{:?}", align.x()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[0],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+                                egui::ComboBox::new("vertical align", "Vertical align")
+                                    .selected_text(format!("{:?}", align.y()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[1],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+
+                                columns[1].label("Background color:");
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => {
+                                unreachable!()
+                            }
+                        }
+
+                        if modified {
+                            *view = view_for_stage(tool);
+                            w.set_from_buffer(buffer.clone());
+                        }
                     }
                 }
-                PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
-                    let mut modified = false;
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
+            });
+        }
 
-                    match crate::common::diagram_settings::show_shortcut(
-                        &mut columns[1],
-                        ksc,
-                        shortcut_being_set
-                            .as_ref()
-                            .is_some_and(|e| e.is_diagram(uuid)),
-                    ) {
-                        ShortCutStatus::NoChange => {}
-                        ShortCutStatus::Cleared => modified = true,
-                        ShortCutStatus::Set => {
-                            ret = ShowSettingsResult::SetShortcut(*uuid);
-                        }
-                        ShortCutStatus::CancelSet => {
-                            ret = ShowSettingsResult::CancelShortcutSetting;
-                        }
-                    }
-
-                    match tool {
-                        NetworkToolStage::Node {
-                            name,
-                            kind,
-                            background_color,
-                            with_edge_from: _,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-
-                            columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("node kind")
-                                .selected_text(kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in NetworkNodeKind::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(kind, e, e.as_str()).clicked();
-                                    }
-                                });
-
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        NetworkToolStage::User {
-                            name,
-                            kind,
-                            background_color,
-                            with_edge_from: _,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-
-                            columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("user kind")
-                                .selected_text(kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in NetworkUserKind::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(kind, e, e.as_str()).clicked();
-                                    }
-                                });
-
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        NetworkToolStage::File {
-                            name,
-                            kind,
-                            background_color,
-                            with_edge_from: _,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-
-                            columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("file kind")
-                                .selected_text(kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in NetworkFileKind::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(kind, e, e.as_str()).clicked();
-                                    }
-                                });
-
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        NetworkToolStage::Location {
-                            name,
-                            kind,
-                            with_edge_from: _,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-
-                            columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("location kind")
-                                .selected_text(kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in NetworkLocationKind::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(kind, e, e.as_str()).clicked();
-                                    }
-                                });
-                        }
-                        NetworkToolStage::AssociationStart {
-                            line_type,
-                            source_arrowhead,
-                            target_arrowhead,
-                            color,
-                        } => {
-                            columns[1].label("Line type");
-                            egui::ComboBox::from_id_salt("line type")
-                                .selected_text(line_type.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in NetworkAssociationLineType::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(line_type, e, e.as_str()).clicked();
-                                    }
-                                });
-
-                            columns[1].label("Source arrowhead");
-                            egui::ComboBox::from_id_salt("source arrowhead")
-                                .selected_text(source_arrowhead.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in NetworkAssociationArrowheadType::VARIANTS {
-                                        modified |= ui
-                                            .selectable_value(source_arrowhead, e, e.as_str())
-                                            .clicked();
-                                    }
-                                });
-
-                            columns[1].label("Target arrowhead");
-                            egui::ComboBox::from_id_salt("target arrowhead")
-                                .selected_text(target_arrowhead.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in NetworkAssociationArrowheadType::VARIANTS {
-                                        modified |= ui
-                                            .selectable_value(target_arrowhead, e, e.as_str())
-                                            .clicked();
-                                    }
-                                });
-
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    color,
-                                )
-                            {
-                                *color = new_color;
-                                modified = true;
-                            }
-                        }
-                        NetworkToolStage::ContainerStart { name } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                        }
-                        NetworkToolStage::Note {
-                            text,
-                            align,
-                            background_color,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Text", text)
-                                .changed();
-
-                            egui::ComboBox::new("horizontal align", "Horizontal align")
-                                .selected_text(format!("{:?}", align.x()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[0],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
-                            egui::ComboBox::new("vertical align", "Vertical align")
-                                .selected_text(format!("{:?}", align.y()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[1],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
-
-                            columns[1].label("Background color:");
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => {
-                            unreachable!()
-                        }
-                    }
-
-                    if modified {
-                        *view = view_for_stage(tool);
-                        w.set_from_buffer(buffer.clone());
-                    }
-                }
-            }
-        });
+        self.show_reduced(gdc, ui);
 
         ret
+    }
+    fn show_reduced(&mut self, _gdc: &GlobalDrawingContext, _ui: &mut egui::Ui) {}
+    fn clone_reduced(&self) -> Box<dyn DiagramSettings> {
+        Box::new(Self {
+            palette: ToolPalette::new(Vec::new()).into(),
+            palette_edit_buffer: PaletteEditBuffer::None.into(),
+            element_buttons: Vec::new(),
+        })
     }
 
     fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut) {

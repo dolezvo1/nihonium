@@ -1206,259 +1206,278 @@ impl DiagramSettings for UmlSequenceSettings {
         ui: &mut egui::Ui,
         shortcut_being_set: &Option<SetShortcut>,
     ) -> ShowSettingsResult {
-        let mut w = self.palette.write().unwrap();
-        let mut buffer = self.palette_edit_buffer.write().unwrap();
         let mut ret = ShowSettingsResult::None;
+        {
+            let mut w = self.palette.write().unwrap();
+            let mut buffer = self.palette_edit_buffer.write().unwrap();
+            ui.columns(2, |columns| {
+                w.show_treeview(gdc, &mut columns[0]);
 
-        ui.columns(2, |columns| {
-            w.show_treeview(gdc, &mut columns[0]);
-
-            let selected = w.get_selected();
-            if selected.uuid() != buffer.uuid() {
-                *buffer = w.get_buffer(selected.uuid().cloned());
-            }
-            match &mut *buffer {
-                PaletteEditBuffer::None => {}
-                PaletteEditBuffer::Group(_uuid, name, display_style) => {
-                    let mut modified = false;
-
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
-
-                    columns[1].label("Display style");
-                    egui::ComboBox::from_id_salt("group display style")
-                        .selected_text(display_style.as_str())
-                        .show_ui(&mut columns[1], |ui| {
-                            for e in GroupDisplayStyle::VARIANTS {
-                                modified |=
-                                    ui.selectable_value(display_style, e, e.as_str()).clicked();
-                            }
-                        });
-
-                    if modified {
-                        w.set_from_buffer(buffer.clone());
-                    }
+                let selected = w.get_selected();
+                if selected.uuid() != buffer.uuid() {
+                    *buffer = w.get_buffer(selected.uuid().cloned());
                 }
-                PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
-                    let mut modified = false;
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
+                match &mut *buffer {
+                    PaletteEditBuffer::None => {}
+                    PaletteEditBuffer::Group(_uuid, name, display_style) => {
+                        let mut modified = false;
 
-                    match crate::common::diagram_settings::show_shortcut(
-                        &mut columns[1],
-                        ksc,
-                        shortcut_being_set
-                            .as_ref()
-                            .is_some_and(|e| e.is_diagram(uuid)),
-                    ) {
-                        ShortCutStatus::NoChange => {}
-                        ShortCutStatus::Cleared => modified = true,
-                        ShortCutStatus::Set => {
-                            ret = ShowSettingsResult::SetShortcut(*uuid);
-                        }
-                        ShortCutStatus::CancelSet => {
-                            ret = ShowSettingsResult::CancelShortcutSetting;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
+
+                        columns[1].label("Display style");
+                        egui::ComboBox::from_id_salt("group display style")
+                            .selected_text(display_style.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in GroupDisplayStyle::VARIANTS {
+                                    modified |=
+                                        ui.selectable_value(display_style, e, e.as_str()).clicked();
+                                }
+                            });
+
+                        if modified {
+                            w.set_from_buffer(buffer.clone());
                         }
                     }
+                    PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
+                        let mut modified = false;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
 
-                    match tool {
-                        UmlSequenceToolStage::CombinedFragmentStart {
-                            kind,
-                            end_behaviour,
-                        } => {
-                            columns[1].label("Kind:");
-                            egui::ComboBox::from_id_salt("combined fragment kind")
-                                .selected_text(kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in UmlSequenceCombinedFragmentKind::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(kind, e, e.as_str()).clicked();
-                                    }
-                                });
-
-                            columns[1].label("End behaviour:");
-                            egui::ComboBox::from_id_salt("end behaviour")
-                                .selected_text(end_behaviour.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in UmlSequenceActivationBehaviour::VARIANTS {
-                                        modified |= ui
-                                            .selectable_value(end_behaviour, e, e.as_str())
-                                            .clicked();
-                                    }
-                                });
-                        }
-                        UmlSequenceToolStage::Lifeline {
-                            name,
-                            stereotype,
-                            render_style,
-                            background_color,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Stereotype", stereotype)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-
-                            columns[1].label("Render style");
-                            egui::ComboBox::from_id_salt("render style")
-                                .selected_text(render_style.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in UmlSequenceLifelineRenderStyle::VARIANTS {
-                                        modified |= ui
-                                            .selectable_value(render_style, e, e.as_str())
-                                            .clicked();
-                                    }
-                                });
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
+                        match crate::common::diagram_settings::show_shortcut(
+                            &mut columns[1],
+                            ksc,
+                            shortcut_being_set
+                                .as_ref()
+                                .is_some_and(|e| e.is_diagram(uuid)),
+                        ) {
+                            ShortCutStatus::NoChange => {}
+                            ShortCutStatus::Cleared => modified = true,
+                            ShortCutStatus::Set => {
+                                ret = ShowSettingsResult::SetShortcut(*uuid);
+                            }
+                            ShortCutStatus::CancelSet => {
+                                ret = ShowSettingsResult::CancelShortcutSetting;
                             }
                         }
-                        UmlSequenceToolStage::RefStart { text } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Text", text)
-                                .changed();
-                        }
-                        UmlSequenceToolStage::DurationConstraintY1 { text } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Text", text)
-                                .changed();
-                        }
-                        UmlSequenceToolStage::Note {
-                            text,
-                            align,
-                            background_color,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Text", text)
-                                .changed();
 
-                            egui::ComboBox::new("horizontal align", "Horizontal align")
-                                .selected_text(format!("{:?}", align.x()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[0],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
-                            egui::ComboBox::new("vertical align", "Vertical align")
-                                .selected_text(format!("{:?}", align.y()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[1],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
-
-                            columns[1].label("Background color:");
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
-                            }
-                        }
-                        UmlSequenceToolStage::LinkStart { link_type } => match link_type {
-                            LinkType::Message {
-                                synchronicity_kind,
-                                is_return,
-                                name,
-                                duration,
-                                found_activation_color,
-                                new_activation_color,
-                                state_invariant,
+                        match tool {
+                            UmlSequenceToolStage::CombinedFragmentStart {
+                                kind,
+                                end_behaviour,
                             } => {
+                                columns[1].label("Kind:");
+                                egui::ComboBox::from_id_salt("combined fragment kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in UmlSequenceCombinedFragmentKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+
+                                columns[1].label("End behaviour:");
+                                egui::ComboBox::from_id_salt("end behaviour")
+                                    .selected_text(end_behaviour.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in UmlSequenceActivationBehaviour::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(end_behaviour, e, e.as_str())
+                                                .clicked();
+                                        }
+                                    });
+                            }
+                            UmlSequenceToolStage::Lifeline {
+                                name,
+                                stereotype,
+                                render_style,
+                                background_color,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Stereotype", stereotype)
+                                    .changed();
                                 modified |= columns[1]
                                     .labeled_text_edit_singleline("Name", name)
                                     .changed();
 
-                                columns[1].label("Synchronicity:");
-                                egui::ComboBox::from_id_salt("synchronicity")
-                                    .selected_text(synchronicity_kind.as_str())
+                                columns[1].label("Render style");
+                                egui::ComboBox::from_id_salt("render style")
+                                    .selected_text(render_style.as_str())
                                     .show_ui(&mut columns[1], |ui| {
-                                        for e in UmlSequenceMessageSynchronicityKind::VARIANTS {
+                                        for e in UmlSequenceLifelineRenderStyle::VARIANTS {
                                             modified |= ui
-                                                .selectable_value(synchronicity_kind, e, e.as_str())
+                                                .selectable_value(render_style, e, e.as_str())
+                                                .clicked();
+                                        }
+                                    });
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            UmlSequenceToolStage::RefStart { text } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Text", text)
+                                    .changed();
+                            }
+                            UmlSequenceToolStage::DurationConstraintY1 { text } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Text", text)
+                                    .changed();
+                            }
+                            UmlSequenceToolStage::Note {
+                                text,
+                                align,
+                                background_color,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Text", text)
+                                    .changed();
+
+                                egui::ComboBox::new("horizontal align", "Horizontal align")
+                                    .selected_text(format!("{:?}", align.x()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[0],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+                                egui::ComboBox::new("vertical align", "Vertical align")
+                                    .selected_text(format!("{:?}", align.y()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[1],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
                                                 .changed();
                                         }
                                     });
 
-                                modified |= columns[1].checkbox(is_return, "isReturn").changed();
-                                modified |= columns[1]
-                                    .add(egui::DragValue::new(duration).speed(1.0))
-                                    .changed();
-
-                                columns[1].label("Found activation color");
+                                columns[1].label("Background color:");
                                 if let Some(new_color) =
                                     crate::common::controller::mglobalcolor_edit_button(
                                         gdc,
                                         &mut columns[1],
-                                        found_activation_color,
+                                        background_color,
                                     )
                                 {
-                                    *found_activation_color = new_color;
+                                    *background_color = new_color;
                                     modified = true;
                                 }
-
-                                columns[1].label("New activation color");
-                                if let Some(new_color) =
-                                    crate::common::controller::mglobalcolor_edit_button(
-                                        gdc,
-                                        &mut columns[1],
-                                        new_activation_color,
-                                    )
-                                {
-                                    *new_activation_color = new_color;
-                                    modified = true;
-                                }
-
-                                modified |= columns[1]
-                                    .labeled_text_edit_singleline(
-                                        "State invariant",
-                                        state_invariant,
-                                    )
-                                    .changed();
                             }
-                        },
-                        _ => {}
-                    }
+                            UmlSequenceToolStage::LinkStart { link_type } => match link_type {
+                                LinkType::Message {
+                                    synchronicity_kind,
+                                    is_return,
+                                    name,
+                                    duration,
+                                    found_activation_color,
+                                    new_activation_color,
+                                    state_invariant,
+                                } => {
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline("Name", name)
+                                        .changed();
 
-                    if modified {
-                        *view = view_for_stage(tool);
-                        w.set_from_buffer(buffer.clone());
+                                    columns[1].label("Synchronicity:");
+                                    egui::ComboBox::from_id_salt("synchronicity")
+                                        .selected_text(synchronicity_kind.as_str())
+                                        .show_ui(&mut columns[1], |ui| {
+                                            for e in UmlSequenceMessageSynchronicityKind::VARIANTS {
+                                                modified |= ui
+                                                    .selectable_value(
+                                                        synchronicity_kind,
+                                                        e,
+                                                        e.as_str(),
+                                                    )
+                                                    .changed();
+                                            }
+                                        });
+
+                                    modified |=
+                                        columns[1].checkbox(is_return, "isReturn").changed();
+                                    modified |= columns[1]
+                                        .add(egui::DragValue::new(duration).speed(1.0))
+                                        .changed();
+
+                                    columns[1].label("Found activation color");
+                                    if let Some(new_color) =
+                                        crate::common::controller::mglobalcolor_edit_button(
+                                            gdc,
+                                            &mut columns[1],
+                                            found_activation_color,
+                                        )
+                                    {
+                                        *found_activation_color = new_color;
+                                        modified = true;
+                                    }
+
+                                    columns[1].label("New activation color");
+                                    if let Some(new_color) =
+                                        crate::common::controller::mglobalcolor_edit_button(
+                                            gdc,
+                                            &mut columns[1],
+                                            new_activation_color,
+                                        )
+                                    {
+                                        *new_activation_color = new_color;
+                                        modified = true;
+                                    }
+
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline(
+                                            "State invariant",
+                                            state_invariant,
+                                        )
+                                        .changed();
+                                }
+                            },
+                            _ => {}
+                        }
+
+                        if modified {
+                            *view = view_for_stage(tool);
+                            w.set_from_buffer(buffer.clone());
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
+
+        self.show_reduced(gdc, ui);
 
         ret
+    }
+    fn show_reduced(&mut self, _gdc: &GlobalDrawingContext, _ui: &mut egui::Ui) {}
+    fn clone_reduced(&self) -> Box<dyn DiagramSettings> {
+        Box::new(Self {
+            palette: ToolPalette::new(Vec::new()).into(),
+            palette_edit_buffer: PaletteEditBuffer::None.into(),
+        })
     }
 
     fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut) {

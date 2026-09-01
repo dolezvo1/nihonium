@@ -778,217 +778,235 @@ impl DiagramSettings for DemoOfdSettings {
         ui: &mut egui::Ui,
         shortcut_being_set: &Option<SetShortcut>,
     ) -> ShowSettingsResult {
-        let mut w = self.palette.write().unwrap();
-        let mut buffer = self.palette_edit_buffer.write().unwrap();
         let mut ret = ShowSettingsResult::None;
 
-        ui.columns(2, |columns| {
-            w.show_treeview(gdc, &mut columns[0]);
+        {
+            let mut w = self.palette.write().unwrap();
+            let mut buffer = self.palette_edit_buffer.write().unwrap();
+            ui.columns(2, |columns| {
+                w.show_treeview(gdc, &mut columns[0]);
 
-            let selected = w.get_selected();
-            if selected.uuid() != buffer.uuid() {
-                *buffer = w.get_buffer(selected.uuid().cloned());
-            }
-            match &mut *buffer {
-                PaletteEditBuffer::None => {}
-                PaletteEditBuffer::Group(_uuid, name, display_style) => {
-                    let mut modified = false;
-
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
-
-                    columns[1].label("Display style");
-                    egui::ComboBox::from_id_salt("group display style")
-                        .selected_text(display_style.as_str())
-                        .show_ui(&mut columns[1], |ui| {
-                            for e in GroupDisplayStyle::VARIANTS {
-                                modified |=
-                                    ui.selectable_value(display_style, e, e.as_str()).clicked();
-                            }
-                        });
-
-                    if modified {
-                        w.set_from_buffer(buffer.clone());
-                    }
+                let selected = w.get_selected();
+                if selected.uuid() != buffer.uuid() {
+                    *buffer = w.get_buffer(selected.uuid().cloned());
                 }
-                PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
-                    let mut modified = false;
-                    modified |= columns[1]
-                        .labeled_text_edit_singleline("Label", name)
-                        .changed();
+                match &mut *buffer {
+                    PaletteEditBuffer::None => {}
+                    PaletteEditBuffer::Group(_uuid, name, display_style) => {
+                        let mut modified = false;
 
-                    match crate::common::diagram_settings::show_shortcut(
-                        &mut columns[1],
-                        ksc,
-                        shortcut_being_set
-                            .as_ref()
-                            .is_some_and(|e| e.is_diagram(uuid)),
-                    ) {
-                        ShortCutStatus::NoChange => {}
-                        ShortCutStatus::Cleared => modified = true,
-                        ShortCutStatus::Set => {
-                            ret = ShowSettingsResult::SetShortcut(*uuid);
-                        }
-                        ShortCutStatus::CancelSet => {
-                            ret = ShowSettingsResult::CancelShortcutSetting;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
+
+                        columns[1].label("Display style");
+                        egui::ComboBox::from_id_salt("group display style")
+                            .selected_text(display_style.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in GroupDisplayStyle::VARIANTS {
+                                    modified |=
+                                        ui.selectable_value(display_style, e, e.as_str()).clicked();
+                                }
+                            });
+
+                        if modified {
+                            w.set_from_buffer(buffer.clone());
                         }
                     }
+                    PaletteEditBuffer::Tool(uuid, name, tool, view, ksc) => {
+                        let mut modified = false;
+                        modified |= columns[1]
+                            .labeled_text_edit_singleline("Label", name)
+                            .changed();
 
-                    match tool {
-                        DemoOfdToolStage::Entity(EntityStageData {
-                            name,
-                            properties,
-                            internal,
-                        }) => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Properties", properties)
-                                .changed();
-                            modified |= columns[1].checkbox(internal, "internal").changed();
+                        match crate::common::diagram_settings::show_shortcut(
+                            &mut columns[1],
+                            ksc,
+                            shortcut_being_set
+                                .as_ref()
+                                .is_some_and(|e| e.is_diagram(uuid)),
+                        ) {
+                            ShortCutStatus::NoChange => {}
+                            ShortCutStatus::Cleared => modified = true,
+                            ShortCutStatus::Set => {
+                                ret = ShowSettingsResult::SetShortcut(*uuid);
+                            }
+                            ShortCutStatus::CancelSet => {
+                                ret = ShowSettingsResult::CancelShortcutSetting;
+                            }
                         }
-                        DemoOfdToolStage::EventStart {
-                            identifier,
-                            name,
-                            transaction_kind,
-                            specialization,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Identifier", identifier)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
 
-                            columns[1].label("Kind");
-                            egui::ComboBox::from_id_salt("transaction kind")
-                                .selected_text(transaction_kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in DemoTransactionKind::VARIANTS {
-                                        modified |= ui
-                                            .selectable_value(transaction_kind, e, e.as_str())
-                                            .clicked();
-                                    }
-                                });
-
-                            if let Some(s) = specialization {
+                        match tool {
+                            DemoOfdToolStage::Entity(EntityStageData {
+                                name,
+                                properties,
+                                internal,
+                            }) => {
                                 modified |= columns[1]
-                                    .labeled_text_edit_singleline("Name", &mut s.name)
+                                    .labeled_text_edit_singleline("Name", name)
                                     .changed();
                                 modified |= columns[1]
-                                    .labeled_text_edit_singleline("Properties", &mut s.properties)
+                                    .labeled_text_edit_singleline("Properties", properties)
                                     .changed();
-                                modified |=
-                                    columns[1].checkbox(&mut s.internal, "internal").changed();
+                                modified |= columns[1].checkbox(internal, "internal").changed();
                             }
-                        }
-                        DemoOfdToolStage::LinkStart {
-                            link_type:
-                                LinkType::PropertyType {
-                                    name,
-                                    domain_multiplicity,
-                                    range_multiplicity,
-                                },
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline(
-                                    "Domain multiplicity",
-                                    domain_multiplicity,
-                                )
-                                .changed();
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline(
-                                    "Range multiplicity",
-                                    range_multiplicity,
-                                )
-                                .changed();
-                        }
-                        DemoOfdToolStage::LinkStart { .. } => {}
-                        DemoOfdToolStage::PackageStart { name, kind } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Name", name)
-                                .changed();
-                            egui::ComboBox::new("package kind", "Package kind")
-                                .selected_text(kind.as_str())
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in DemoPackageKind::VARIANTS {
-                                        modified |=
-                                            ui.selectable_value(kind, e, e.as_str()).changed();
-                                    }
-                                });
-                        }
-                        DemoOfdToolStage::Note {
-                            text,
-                            align,
-                            background_color,
-                        } => {
-                            modified |= columns[1]
-                                .labeled_text_edit_singleline("Text", text)
-                                .changed();
+                            DemoOfdToolStage::EventStart {
+                                identifier,
+                                name,
+                                transaction_kind,
+                                specialization,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Identifier", identifier)
+                                    .changed();
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
 
-                            egui::ComboBox::new("horizontal align", "Horizontal align")
-                                .selected_text(format!("{:?}", align.x()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[0],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
-                            egui::ComboBox::new("vertical align", "Vertical align")
-                                .selected_text(format!("{:?}", align.y()))
-                                .show_ui(&mut columns[1], |ui| {
-                                    for e in
-                                        [egui::Align::Min, egui::Align::Center, egui::Align::Max]
-                                    {
-                                        modified |= ui
-                                            .selectable_value(
-                                                &mut align.0[1],
-                                                e,
-                                                format!("{:?}", e),
-                                            )
-                                            .changed();
-                                    }
-                                });
+                                columns[1].label("Kind");
+                                egui::ComboBox::from_id_salt("transaction kind")
+                                    .selected_text(transaction_kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in DemoTransactionKind::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(transaction_kind, e, e.as_str())
+                                                .clicked();
+                                        }
+                                    });
 
-                            columns[1].label("Background color:");
-                            if let Some(new_color) =
-                                crate::common::controller::mglobalcolor_edit_button(
-                                    gdc,
-                                    &mut columns[1],
-                                    background_color,
-                                )
-                            {
-                                *background_color = new_color;
-                                modified = true;
+                                if let Some(s) = specialization {
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline("Name", &mut s.name)
+                                        .changed();
+                                    modified |= columns[1]
+                                        .labeled_text_edit_singleline(
+                                            "Properties",
+                                            &mut s.properties,
+                                        )
+                                        .changed();
+                                    modified |=
+                                        columns[1].checkbox(&mut s.internal, "internal").changed();
+                                }
                             }
-                        }
-                        DemoOfdToolStage::EventEnd
-                        | DemoOfdToolStage::LinkEnd
-                        | DemoOfdToolStage::LinkAddEnding { .. }
-                        | DemoOfdToolStage::PackageEnd => unreachable!(),
-                    }
+                            DemoOfdToolStage::LinkStart {
+                                link_type:
+                                    LinkType::PropertyType {
+                                        name,
+                                        domain_multiplicity,
+                                        range_multiplicity,
+                                    },
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline(
+                                        "Domain multiplicity",
+                                        domain_multiplicity,
+                                    )
+                                    .changed();
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline(
+                                        "Range multiplicity",
+                                        range_multiplicity,
+                                    )
+                                    .changed();
+                            }
+                            DemoOfdToolStage::LinkStart { .. } => {}
+                            DemoOfdToolStage::PackageStart { name, kind } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
+                                    .changed();
+                                egui::ComboBox::new("package kind", "Package kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in DemoPackageKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).changed();
+                                        }
+                                    });
+                            }
+                            DemoOfdToolStage::Note {
+                                text,
+                                align,
+                                background_color,
+                            } => {
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Text", text)
+                                    .changed();
 
-                    if modified {
-                        *view = view_for_stage(tool);
-                        w.set_from_buffer(buffer.clone());
+                                egui::ComboBox::new("horizontal align", "Horizontal align")
+                                    .selected_text(format!("{:?}", align.x()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[0],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+                                egui::ComboBox::new("vertical align", "Vertical align")
+                                    .selected_text(format!("{:?}", align.y()))
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in [
+                                            egui::Align::Min,
+                                            egui::Align::Center,
+                                            egui::Align::Max,
+                                        ] {
+                                            modified |= ui
+                                                .selectable_value(
+                                                    &mut align.0[1],
+                                                    e,
+                                                    format!("{:?}", e),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+
+                                columns[1].label("Background color:");
+                                if let Some(new_color) =
+                                    crate::common::controller::mglobalcolor_edit_button(
+                                        gdc,
+                                        &mut columns[1],
+                                        background_color,
+                                    )
+                                {
+                                    *background_color = new_color;
+                                    modified = true;
+                                }
+                            }
+                            DemoOfdToolStage::EventEnd
+                            | DemoOfdToolStage::LinkEnd
+                            | DemoOfdToolStage::LinkAddEnding { .. }
+                            | DemoOfdToolStage::PackageEnd => unreachable!(),
+                        }
+
+                        if modified {
+                            *view = view_for_stage(tool);
+                            w.set_from_buffer(buffer.clone());
+                        }
                     }
                 }
-            }
-        });
+            });
+        }
+
+        self.show_reduced(gdc, ui);
 
         ret
+    }
+    fn show_reduced(&mut self, _gdc: &GlobalDrawingContext, _ui: &mut egui::Ui) {}
+    fn clone_reduced(&self) -> Box<dyn DiagramSettings> {
+        Box::new(Self {
+            palette: ToolPalette::new(Vec::new()).into(),
+            palette_edit_buffer: PaletteEditBuffer::None.into(),
+        })
     }
 
     fn try_set_shortcut(&mut self, tool: uuid::Uuid, shortcut: egui::KeyboardShortcut) {
