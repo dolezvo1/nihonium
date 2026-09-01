@@ -6887,22 +6887,22 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             }
         }
 
-        if canvas.ui_scale().is_some() {
-            if settings.comment_indication == CommentIndication::Icon && !read.comment.is_empty() {
-                canvas.draw_polygon(
-                    {
-                        let b = self.bounds_rect.left_top() + egui::Vec2::splat(2.5);
-                        canvas::COMMENT_INDICATOR
-                            .iter()
-                            .map(|e| b + e.to_vec2())
-                            .collect()
-                    },
-                    egui::Color32::LIGHT_BLUE,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
-                    canvas::Highlight::NONE,
-                );
-            }
+        if settings.comment_indication == CommentIndication::Icon && !read.comment.is_empty() {
+            canvas.draw_polygon(
+                {
+                    let b = self.bounds_rect.left_top() + egui::Vec2::splat(2.5);
+                    canvas::COMMENT_INDICATOR
+                        .iter()
+                        .map(|e| b + e.to_vec2())
+                        .collect()
+                },
+                egui::Color32::LIGHT_BLUE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                canvas::Highlight::NONE,
+            );
+        }
 
+        if canvas.ui_scale().is_some() {
             if self.dragged_shape.is_some() {
                 canvas.draw_line(
                     [
