@@ -1522,13 +1522,17 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             ));
         }
     }
-    fn show_color_property(
+    fn show_view_properties(
         &mut self,
-        context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
+        _q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
+        _commands: &mut Vec<
+            InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
+        >,
     ) -> Option<ColorChangeData> {
         ui.label("Background color:");
-        crate::common::controller::mglobalcolor_edit_button(context, ui, &self.background_color)
+        crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
             .map(|e| (0, e).into())
     }
     fn apply_change(

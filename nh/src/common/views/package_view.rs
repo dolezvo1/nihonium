@@ -73,10 +73,18 @@ pub trait PackageAdapter<DomainT: Domain>:
             >,
         >,
     );
-    fn show_color_property(
+    fn show_view_properties(
         &mut self,
         _context: &GlobalDrawingContext,
+        _q: &<DomainT as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
+        _commands: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     ) -> Option<ColorChangeData> {
         None
     }
@@ -290,7 +298,7 @@ where
             }
         });
 
-        if let Some(new_color) = self.adapter.show_color_property(gdc, ui) {
+        if let Some(new_color) = self.adapter.show_view_properties(gdc, q, ui, commands) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 new_color.into(),

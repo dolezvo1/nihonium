@@ -2711,10 +2711,18 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
             ));
         }
     }
-    fn show_color_property(
+    fn show_view_properties(
         &mut self,
         context: &GlobalDrawingContext,
+        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
+        _commands: &mut Vec<
+            InsensitiveCommand<
+                UmlActivityOrdinalMovement,
+                UmlActivityElementOrVertex,
+                UmlActivityPropChange,
+            >,
+        >,
     ) -> Option<ColorChangeData> {
         ui.label("Background color:");
         crate::common::controller::mglobalcolor_edit_button(context, ui, &self.background_color)

@@ -1982,6 +1982,7 @@ fn new_network_container_view(
         NetworkContainerAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
+            custom_image: UFOption::None,
             name_buffer: (*m.name).clone(),
             comment_buffer: (*m.comment).clone(),
         },
@@ -1997,6 +1998,7 @@ pub struct NetworkContainerAdapter {
     #[nh_context_serde(entity)]
     model: ERef<NetworkContainer>,
     background_color: MGlobalColor,
+    custom_image: UFOption<ResourceUuid>,
 
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
@@ -2021,20 +2023,35 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
 
     fn draw_area_or_get_props(
         &self,
-        _bounds_rect: egui::Rect,
-        _highlight: canvas::Highlight,
+        bounds_rect: egui::Rect,
+        highlight: canvas::Highlight,
         _q: &<NetworkDomain as Domain>::QueryableT<'_>,
         gdc: &GlobalDrawingContext,
         _settings: &<NetworkDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
+        canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<NetworkDomain as Domain>::ToolT)>,
     ) -> Result<(), (egui::Color32, canvas::Stroke)> {
-        Err((
-            gdc.global_colors
-                .get(&self.background_color)
-                .unwrap_or(egui::Color32::WHITE),
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-        ))
+        match &self.custom_image {
+            UFOption::None => Err((
+                gdc.global_colors
+                    .get(&self.background_color)
+                    .unwrap_or(egui::Color32::WHITE),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            )),
+            UFOption::Some(r) => {
+                if let Some(img) = gdc.get_image_data(r) {
+                    canvas.draw_image(bounds_rect, &img);
+                }
+                canvas.draw_rectangle(
+                    bounds_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                    highlight,
+                );
+                Ok(())
+            }
+        }
     }
 
     fn show_model_properties(
@@ -2065,14 +2082,29 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
             ));
         }
     }
-    fn show_color_property(
+    fn show_view_properties(
         &mut self,
-        context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
+        q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> Option<ColorChangeData> {
         ui.label("Background color:");
-        crate::common::controller::mglobalcolor_edit_button(context, ui, &self.background_color)
-            .map(|e| (0, e).into())
+        let ccd =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+                .map(|e| (0, e).into());
+
+        ui.label("Background image:");
+        if let Some(e) = pick_custom_image(gdc, ui, &self.custom_image) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::CustomImageChange(e),
+            ));
+        }
+
+        ccd
     }
     fn apply_change(
         &mut self,
@@ -2113,6 +2145,13 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
                     ));
                     self.background_color = *color;
                 }
+                NetworkPropChange::CustomImageChange(ci) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        NetworkPropChange::CustomImageChange(self.custom_image),
+                    ));
+                    self.custom_image = ci.clone();
+                }
                 _ => {}
             }
         }
@@ -2141,6 +2180,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         Self {
             model,
             background_color: self.background_color,
+            custom_image: self.custom_image,
             name_buffer: self.name_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
         }
