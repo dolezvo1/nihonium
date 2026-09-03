@@ -7590,7 +7590,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         self.properties_views = model
             .properties
             .iter()
-            .flat_map(|e| views_map.get(&e.read().uuid).cloned())
+            .map(|e| {
+                views_map
+                    .get(&e.read().uuid)
+                    .cloned()
+                    .unwrap_or_else(|| new_umlclass_property_view(e.clone()))
+            })
             .collect();
         let views_map = self
             .operations_views
@@ -7600,7 +7605,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         self.operations_views = model
             .operations
             .iter()
-            .flat_map(|e| views_map.get(&e.read().uuid).cloned())
+            .map(|e| {
+                views_map
+                    .get(&e.read().uuid)
+                    .cloned()
+                    .unwrap_or_else(|| new_umlclass_operation_view(e.clone()))
+            })
             .collect();
     }
 
