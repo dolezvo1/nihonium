@@ -2019,10 +2019,22 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         self.model.read().get_element_pos(uuid)
     }
 
-    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
-        global_colors
-            .get(&self.background_color)
-            .unwrap_or(egui::Color32::WHITE)
+    fn draw_area_or_get_props(
+        &self,
+        _bounds_rect: egui::Rect,
+        _highlight: canvas::Highlight,
+        _q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        gdc: &GlobalDrawingContext,
+        _settings: &<NetworkDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<NetworkDomain as Domain>::ToolT)>,
+    ) -> Result<(), (egui::Color32, canvas::Stroke)> {
+        Err((
+            gdc.global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+        ))
     }
 
     fn show_model_properties(

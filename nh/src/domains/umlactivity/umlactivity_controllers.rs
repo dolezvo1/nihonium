@@ -2596,10 +2596,22 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         self.model.read().get_element_pos(uuid)
     }
 
-    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
-        global_colors
-            .get(&self.background_color)
-            .unwrap_or(egui::Color32::WHITE)
+    fn draw_area_or_get_props(
+        &self,
+        _bounds_rect: egui::Rect,
+        _highlight: canvas::Highlight,
+        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        gdc: &GlobalDrawingContext,
+        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
+    ) -> Result<(), (egui::Color32, canvas::Stroke)> {
+        Err((
+            gdc.global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+        ))
     }
     fn draw_label_or_get_text(
         &self,
@@ -2610,7 +2622,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         _settings: &<UmlActivityDomain as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
-    ) -> Result<egui::Rect, Arc<String>> {
+    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
         // Draw top left pentagon
         const PENTAGON_PADDING: f32 = 4.0;
         let pentagon_bg = egui::Color32::WHITE;
@@ -2891,11 +2903,20 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         self.model.read().get_element_pos(uuid)
     }
 
-    fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
-        egui::Color32::TRANSPARENT
-    }
-    fn border_stroke(&self, _global_colors: &ColorBundle) -> canvas::Stroke {
-        canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
+    fn draw_area_or_get_props(
+        &self,
+        _bounds_rect: egui::Rect,
+        _highlight: canvas::Highlight,
+        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
+    ) -> Result<(), (egui::Color32, canvas::Stroke)> {
+        Err((
+            egui::Color32::TRANSPARENT,
+            canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+        ))
     }
     fn draw_label_or_get_text(
         &self,
@@ -2906,8 +2927,8 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         _settings: &<UmlActivityDomain as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
-    ) -> Result<egui::Rect, Arc<String>> {
-        Err(self.display_text.clone())
+    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
+        Err((egui::Color32::BLACK, self.display_text.clone()))
     }
 
     fn show_model_properties(

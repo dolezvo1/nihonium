@@ -10,10 +10,10 @@ use crate::{
     common::{
         canvas::{self, NHIcon},
         controller::{
-            ColorBundle, ColorChangeData, DeleteKind, Domain, ElementController,
-            ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext,
-            InputEvent, InsensitiveCommand, PropertiesStatus, Queryable, SelectionStatus,
-            SnapManager, TargettingStatus, Tool, View,
+            ColorChangeData, DeleteKind, Domain, ElementController, ElementControllerGen2,
+            EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
+            InsensitiveCommand, PropertiesStatus, Queryable, SelectionStatus, SnapManager,
+            TargettingStatus, Tool, View,
         },
         entity::{Entity, EntityUuid},
         eref::ERef,
@@ -33,14 +33,20 @@ pub trait PackageAdapter<DomainT: Domain>:
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)>;
 
-    fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
-        egui::Color32::WHITE
-    }
-    fn text_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
-        egui::Color32::BLACK
-    }
-    fn border_stroke(&self, _global_colors: &ColorBundle) -> canvas::Stroke {
-        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
+    fn draw_area_or_get_props(
+        &self,
+        _bounds_rect: egui::Rect,
+        _highlight: canvas::Highlight,
+        _q: &<DomainT as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DomainT as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DomainT as Domain>::ToolT)>,
+    ) -> Result<(), (egui::Color32, canvas::Stroke)> {
+        Err((
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+        ))
     }
     fn draw_label_or_get_text(
         &self,
@@ -51,8 +57,8 @@ pub trait PackageAdapter<DomainT: Domain>:
         _settings: &DomainT::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
-    ) -> Result<egui::Rect, Arc<String>> {
-        Err(self.model_name())
+    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
+        Err((egui::Color32::BLACK, self.model_name()))
     }
 
     fn show_model_properties(
@@ -301,14 +307,27 @@ where
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
-        // Draw shape and text
-        canvas.draw_rectangle(
+        match self.adapter.draw_area_or_get_props(
             self.bounds_rect,
-            egui::CornerRadius::ZERO,
-            self.adapter.background_color(&context.global_colors),
-            self.adapter.border_stroke(&context.global_colors),
             self.highlight,
-        );
+            q,
+            context,
+            settings,
+            canvas,
+            tool,
+        ) {
+            Ok(_) => {}
+            Err((fill, stroke)) => {
+                // Draw a rectangle shape and text
+                canvas.draw_rectangle(
+                    self.bounds_rect,
+                    egui::CornerRadius::ZERO,
+                    fill,
+                    stroke,
+                    self.highlight,
+                );
+            }
+        }
 
         match self.adapter.draw_label_or_get_text(
             self.bounds_rect,
@@ -320,14 +339,14 @@ where
             tool,
         ) {
             Ok(r) => self.label_rect = r,
-            Err(label) => {
+            Err((color, label)) => {
                 self.label_rect = egui::Rect::NOTHING;
                 canvas.draw_text(
                     self.bounds_rect.center_top(),
                     egui::Align2::CENTER_TOP,
                     &label,
                     canvas::CLASS_MIDDLE_FONT_SIZE,
-                    self.adapter.text_color(&context.global_colors),
+                    color,
                 );
             }
         }

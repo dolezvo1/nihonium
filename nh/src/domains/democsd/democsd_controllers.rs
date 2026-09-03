@@ -1722,17 +1722,26 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         self.model.read().get_element_pos(uuid)
     }
 
-    fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
-        match self.kind_buffer {
-            DemoPackageKind::Package => egui::Color32::WHITE,
-            DemoPackageKind::ScopeOfInterest => egui::Color32::TRANSPARENT,
-        }
-    }
-    fn border_stroke(&self, _global_colors: &ColorBundle) -> canvas::Stroke {
-        match self.kind_buffer {
-            DemoPackageKind::Package => canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            DemoPackageKind::ScopeOfInterest => canvas::Stroke::new_solid(2.0, egui::Color32::GRAY),
-        }
+    fn draw_area_or_get_props(
+        &self,
+        _bounds_rect: egui::Rect,
+        _highlight: canvas::Highlight,
+        _q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DemoCsdDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DemoCsdDomain as Domain>::ToolT)>,
+    ) -> Result<(), (egui::Color32, canvas::Stroke)> {
+        Err(match self.kind_buffer {
+            DemoPackageKind::Package => (
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            ),
+            DemoPackageKind::ScopeOfInterest => (
+                egui::Color32::TRANSPARENT,
+                canvas::Stroke::new_solid(2.0, egui::Color32::GRAY),
+            ),
+        })
     }
     fn show_model_properties(
         &mut self,

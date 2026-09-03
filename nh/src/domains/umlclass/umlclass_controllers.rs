@@ -3429,6 +3429,15 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     _profile: PhantomData<P>,
 }
 
+impl<P: UmlClassProfile> UmlClassPackageAdapter<P> {
+    const NODE_DEPTH: f32 = 12.0;
+    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors
+            .get(&self.background_color)
+            .unwrap_or(egui::Color32::WHITE)
+    }
+}
+
 impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAdapter<P> {
     fn model_section(&self) -> UmlClassElement {
         self.model.clone().into()
@@ -3444,21 +3453,70 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         self.model.read().get_element_pos(uuid)
     }
 
-    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
-        global_colors
-            .get(&self.background_color)
-            .unwrap_or(egui::Color32::WHITE)
+    fn draw_area_or_get_props(
+        &self,
+        bounds_rect: egui::Rect,
+        highlight: canvas::Highlight,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        gdc: &GlobalDrawingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
+    ) -> Result<(), (egui::Color32, canvas::Stroke)> {
+        let background_color = self.background_color(&gdc.global_colors);
+        let stroke = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
+
+        match self.kind_buffer {
+            UmlClassPackageKind::Node => {
+                let main_rect = bounds_rect
+                    .with_max_x(bounds_rect.max.x - Self::NODE_DEPTH)
+                    .with_min_y(bounds_rect.min.y + Self::NODE_DEPTH);
+                canvas.draw_rectangle(
+                    main_rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    stroke,
+                    highlight,
+                );
+                canvas.draw_polygon(
+                    [
+                        main_rect.left_top() + (Self::NODE_DEPTH, -Self::NODE_DEPTH).into(),
+                        main_rect.right_top() + (Self::NODE_DEPTH, -Self::NODE_DEPTH).into(),
+                        main_rect.right_top(),
+                        main_rect.left_top(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    stroke,
+                    highlight,
+                );
+                canvas.draw_polygon(
+                    [
+                        main_rect.right_top() + (Self::NODE_DEPTH, -Self::NODE_DEPTH).into(),
+                        main_rect.right_bottom() + (Self::NODE_DEPTH, -Self::NODE_DEPTH).into(),
+                        main_rect.right_bottom(),
+                        main_rect.right_top(),
+                    ]
+                    .to_vec(),
+                    background_color,
+                    stroke,
+                    highlight,
+                );
+                Ok(())
+            }
+            _ => Err((background_color, stroke)),
+        }
     }
     fn draw_label_or_get_text(
         &self,
         bounds_rect: egui::Rect,
         highlight: canvas::Highlight,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
-        context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Result<egui::Rect, Arc<String>> {
+    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
         let visibility_size = self
             .visibility_buffer
             .as_ref()
@@ -3481,15 +3539,20 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             )
             .size();
-        let foreground_color = self.text_color(&context.global_colors);
+        let foreground_color = egui::Color32::BLACK;
 
         match self.kind_buffer {
-            UmlClassPackageKind::Rectangle => {
+            UmlClassPackageKind::Node | UmlClassPackageKind::Rectangle => {
+                let text_origin = if self.kind_buffer == UmlClassPackageKind::Node {
+                    bounds_rect.center_top() + (0.0, Self::NODE_DEPTH).into()
+                } else {
+                    bounds_rect.center_top()
+                };
                 if let Some(e) = self.visibility_buffer.as_ref() {
                     match settings.visibility_style {
                         VisibilityDisplayStyle::Characters => {
                             canvas.draw_text(
-                                bounds_rect.center_top() + (-display_text_size.x / 2.0, 0.0).into(),
+                                text_origin + (-display_text_size.x / 2.0, 0.0).into(),
                                 egui::Align2::CENTER_TOP,
                                 e.as_char(),
                                 canvas::CLASS_MIDDLE_FONT_SIZE,
@@ -3499,7 +3562,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                         VisibilityDisplayStyle::Icons => {
                             draw_visibility_icon(
                                 canvas,
-                                bounds_rect.center_top()
+                                text_origin
                                     + (-display_text_size.x / 2.0, display_text_size.y / 2.0)
                                         .into(),
                                 *e,
@@ -3509,7 +3572,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     }
                 }
                 canvas.draw_text(
-                    bounds_rect.center_top() + (visibility_size.x / 2.0, 0.0).into(),
+                    text_origin + (visibility_size.x / 2.0, 0.0).into(),
                     egui::Align2::CENTER_TOP,
                     &self.display_text,
                     canvas::CLASS_MIDDLE_FONT_SIZE,
@@ -3520,7 +3583,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             }
             UmlClassPackageKind::Folder => {
                 const PADDING: f32 = 4.0;
-                let background_color = self.background_color(&context.global_colors);
+                let background_color = self.background_color(&gdc.global_colors);
                 let text_origin = bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING);
                 let r = egui::Rect::from_pos(text_origin)
                     .with_max_x(text_origin.x + visibility_size.x + display_text_size.x)
@@ -3567,6 +3630,61 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     foreground_color,
                 );
                 Ok(r)
+            }
+            UmlClassPackageKind::Frame => {
+                const PENTAGON_PADDING: f32 = 4.0;
+                let pentagon_bg = egui::Color32::WHITE;
+                let text_origin = bounds_rect.left_top() + egui::Vec2::splat(PENTAGON_PADDING);
+                let left_top_pentagon_rect = egui::Rect::from_pos(text_origin)
+                    .with_max_x(text_origin.x + visibility_size.x + display_text_size.x)
+                    .with_max_y(text_origin.y + visibility_size.y.max(display_text_size.y))
+                    .expand(PENTAGON_PADDING);
+                canvas.draw_polygon(
+                    [
+                        left_top_pentagon_rect.left_top(),
+                        left_top_pentagon_rect.right_top(),
+                        left_top_pentagon_rect.right_bottom()
+                            - egui::Vec2::new(0.0, PENTAGON_PADDING),
+                        left_top_pentagon_rect.right_bottom()
+                            - egui::Vec2::new(PENTAGON_PADDING, 0.0),
+                        left_top_pentagon_rect.left_bottom(),
+                    ]
+                    .to_vec(),
+                    pentagon_bg,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    highlight,
+                );
+                if let Some(e) = self.visibility_buffer.as_ref() {
+                    match settings.visibility_style {
+                        VisibilityDisplayStyle::Characters => {
+                            canvas.draw_text(
+                                text_origin,
+                                egui::Align2::LEFT_TOP,
+                                e.as_char(),
+                                canvas::CLASS_MIDDLE_FONT_SIZE,
+                                foreground_color,
+                            );
+                        }
+                        VisibilityDisplayStyle::Icons => {
+                            draw_visibility_icon(
+                                canvas,
+                                text_origin
+                                    + (VISIBILITY_ICON_MAX_SIZE.x / 2.0, display_text_size.y / 2.0)
+                                        .into(),
+                                *e,
+                                true,
+                            );
+                        }
+                    }
+                }
+                canvas.draw_text(
+                    text_origin + (visibility_size.x, 0.0).into(),
+                    egui::Align2::LEFT_TOP,
+                    &self.display_text,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+                Ok(left_top_pentagon_rect)
             }
         }
     }
