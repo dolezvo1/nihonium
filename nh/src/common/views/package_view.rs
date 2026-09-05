@@ -131,9 +131,7 @@ pub struct PackageView<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> {
     #[nh_context_serde(entity)]
     owned_views: OrderedViews<DomainT::CommonElementViewT>,
     #[nh_context_serde(skip_and_default)]
-    all_elements: HashMap<ViewUuid, SelectionStatus>,
-    #[nh_context_serde(skip_and_default)]
-    selected_direct_elements: HashSet<ViewUuid>,
+    all_children_status: HashMap<ViewUuid, SelectionStatus>,
 
     #[nh_context_serde(skip_and_default)]
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
@@ -154,8 +152,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
             uuid,
             adapter,
             owned_views: OrderedViews::new(owned_views),
-            all_elements: HashMap::new(),
-            selected_direct_elements: HashSet::new(),
+            all_children_status: HashMap::new(),
 
             dragged_type_and_shape: None,
             highlight: canvas::Highlight::NONE,
@@ -183,6 +180,33 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
     fn contained_within(&self, rect: &egui::Rect) -> bool {
         rect.contains_rect(self.bounds_rect)
             && (self.label_rect == egui::Rect::NOTHING || rect.contains_rect(self.label_rect))
+    }
+
+    fn refresh_all_children_status(
+        &mut self,
+        flattened_views: &mut HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        self.all_children_status.clear();
+        self.owned_views.event_order_foreach_mut(|v| {
+            v.head_count(
+                flattened_views,
+                &mut self.all_children_status,
+                flattened_represented_models,
+            )
+        });
+        for e in &self.all_children_status {
+            flattened_views_status.insert(
+                *e.0,
+                match *e.1 {
+                    SelectionStatus::NotSelected if self.highlight.selected => {
+                        SelectionStatus::TransitivelySelected
+                    }
+                    e => e,
+                },
+            );
+        }
     }
 }
 
@@ -567,7 +591,10 @@ where
                         } else {
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
-                                !self.selected_direct_elements.contains(&k),
+                                !self
+                                    .all_children_status
+                                    .get(&k)
+                                    .is_some_and(|e| e.selected()),
                                 canvas::Highlight::SELECTED,
                             ));
                         }
@@ -585,7 +612,7 @@ where
                         inner: translated_bounds,
                     };
                     let coerced_pos = ehc.snap_manager.coerce(translated_real_shape, |e| {
-                        !self.all_elements.get(e).is_some()
+                        !self.all_children_status.get(e).is_some()
                             && !if self.highlight.selected {
                                 ehc.all_elements
                                     .get(e)
@@ -651,7 +678,7 @@ where
                             ),
                         },
                         |e| {
-                            !self.all_elements.get(e).is_some()
+                            !self.all_children_status.get(e).is_some()
                                 && !ehc
                                     .all_elements
                                     .get(e)
@@ -710,13 +737,13 @@ where
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.highlight = self.highlight.combine(*set, *h);
                 if h.selected {
-                    match set {
-                        true => {
-                            self.selected_direct_elements =
-                                self.owned_views.iter_event_order_keys().collect()
-                        }
-                        false => self.selected_direct_elements.clear(),
-                    }
+                    let new_state = match set {
+                        true => SelectionStatus::Selected,
+                        false => SelectionStatus::NotSelected,
+                    };
+                    self.all_children_status
+                        .iter_mut()
+                        .for_each(|e| *e.1 = new_state);
                 }
                 recurse!();
             }
@@ -726,15 +753,18 @@ where
                 }
 
                 if h.selected {
+                    let new_state = match set {
+                        true => SelectionStatus::Selected,
+                        false => SelectionStatus::NotSelected,
+                    };
                     for k in self
                         .owned_views
                         .iter_event_order_keys()
                         .filter(|k| uuids.contains(k))
                     {
-                        match set {
-                            true => self.selected_direct_elements.insert(k),
-                            false => self.selected_direct_elements.remove(&k),
-                        };
+                        if let Some(e) = self.all_children_status.get_mut(&k) {
+                            *e = new_state;
+                        }
                     }
                 }
 
@@ -745,6 +775,12 @@ where
                     (self.highlight.selected && *retain) || self.contained_within(rect);
 
                 recurse!();
+
+                self.refresh_all_children_status(
+                    &mut HashMap::new(),
+                    &mut HashMap::new(),
+                    &mut HashMap::new(),
+                );
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!();
@@ -931,25 +967,11 @@ where
         flattened_views_status.insert(*self.uuid, self.highlight.selected.into());
         flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
 
-        self.all_elements.clear();
-        self.owned_views.event_order_foreach_mut(|v| {
-            v.head_count(
-                flattened_views,
-                &mut self.all_elements,
-                flattened_represented_models,
-            )
-        });
-        for e in &self.all_elements {
-            flattened_views_status.insert(
-                *e.0,
-                match *e.1 {
-                    SelectionStatus::NotSelected if self.highlight.selected => {
-                        SelectionStatus::TransitivelySelected
-                    }
-                    e => e,
-                },
-            );
-        }
+        self.refresh_all_children_status(
+            flattened_views,
+            flattened_views_status,
+            flattened_represented_models,
+        );
 
         self.owned_views.event_order_foreach_mut(|v| {
             flattened_views.insert(*v.uuid(), (v.clone(), *self.uuid));
@@ -993,8 +1015,7 @@ where
             uuid: view_uuid.into(),
             adapter: new_adapter,
             owned_views: OrderedViews::new(inner.into_values().collect()),
-            all_elements: HashMap::new(),
-            selected_direct_elements: self.selected_direct_elements.clone(),
+            all_children_status: HashMap::new(),
             dragged_type_and_shape: None,
             highlight: self.highlight,
             label_rect: self.label_rect,

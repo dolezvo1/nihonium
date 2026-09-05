@@ -2672,7 +2672,6 @@ struct UmlStateMachineCompositeStateViewTemporaries {
 
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     highlight: canvas::Highlight,
-    selected_direct_elements: HashSet<ViewUuid>,
 }
 
 impl UmlStateMachineCompositeStateView {
@@ -3218,9 +3217,21 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                                 canvas::Highlight::SELECTED,
                             ));
                         } else {
+                            let set = !self
+                                .internal_transition_views
+                                .iter()
+                                .find(|e| *e.read().uuid == k)
+                                .map(|e| e.read().highlight.selected)
+                                .or_else(|| {
+                                    self.region_views
+                                        .iter()
+                                        .find(|e| *e.read().uuid == k)
+                                        .map(|e| e.read().temporaries.highlight.selected)
+                                })
+                                .is_some_and(|e| e);
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
-                                !self.temporaries.selected_direct_elements.contains(&k),
+                                set,
                                 canvas::Highlight::SELECTED,
                             ));
                         }
@@ -3364,39 +3375,11 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
-                if h.selected {
-                    match set {
-                        true => {
-                            self.temporaries.selected_direct_elements = self
-                                .internal_transition_views
-                                .iter()
-                                .map(|v| *v.read().uuid)
-                                .chain(self.region_views.iter().map(|v| *v.read().uuid))
-                                .collect();
-                        }
-                        false => self.temporaries.selected_direct_elements.clear(),
-                    }
-                }
                 recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
                     self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
-                }
-
-                if h.selected {
-                    for k in self
-                        .internal_transition_views
-                        .iter()
-                        .map(|v| *v.read().uuid)
-                        .chain(self.region_views.iter().map(|v| *v.read().uuid))
-                        .filter(|k| uuids.contains(k))
-                    {
-                        match set {
-                            true => self.temporaries.selected_direct_elements.insert(k),
-                            false => self.temporaries.selected_direct_elements.remove(&k),
-                        };
-                    }
                 }
 
                 recurse!();
@@ -4217,8 +4200,7 @@ pub struct UmlStateMachineCompositeStateRegionView {
 struct UmlStateMachineCompositeStateRegionViewTemporaries {
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     highlight: canvas::Highlight,
-    selected_direct_elements: HashSet<ViewUuid>,
-    all_elements: HashMap<ViewUuid, SelectionStatus>,
+    all_children_status: HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl UmlStateMachineCompositeStateRegionView {
@@ -4302,6 +4284,33 @@ impl UmlStateMachineCompositeStateRegionView {
         });
 
         (PropertiesStatus::Shown, add_sibling)
+    }
+
+    fn refresh_all_children_status(
+        &mut self,
+        flattened_views: &mut HashMap<ViewUuid, (UmlStateMachineElementView, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        self.temporaries.all_children_status.clear();
+        self.contained_elements.event_order_foreach_mut(|v| {
+            v.head_count(
+                flattened_views,
+                &mut self.temporaries.all_children_status,
+                flattened_represented_models,
+            )
+        });
+        for e in &self.temporaries.all_children_status {
+            flattened_views_status.insert(
+                *e.0,
+                match *e.1 {
+                    SelectionStatus::NotSelected if self.temporaries.highlight.selected => {
+                        SelectionStatus::TransitivelySelected
+                    }
+                    e => e,
+                },
+            );
+        }
     }
 }
 
@@ -4521,7 +4530,11 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                         } else {
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(k).collect(),
-                                !self.temporaries.selected_direct_elements.contains(&k),
+                                !self
+                                    .temporaries
+                                    .all_children_status
+                                    .get(&k)
+                                    .is_some_and(|e| e.selected()),
                                 canvas::Highlight::SELECTED,
                             ));
                         }
@@ -4649,13 +4662,14 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 if h.selected {
-                    match set {
-                        true => {
-                            self.temporaries.selected_direct_elements =
-                                self.contained_elements.iter_event_order_keys().collect()
-                        }
-                        false => self.temporaries.selected_direct_elements.clear(),
-                    }
+                    let new_state = match set {
+                        true => SelectionStatus::Selected,
+                        false => SelectionStatus::NotSelected,
+                    };
+                    self.temporaries
+                        .all_children_status
+                        .iter_mut()
+                        .for_each(|e| *e.1 = new_state);
                 }
                 recurse!();
             }
@@ -4665,15 +4679,18 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 }
 
                 if h.selected {
+                    let new_state = match set {
+                        true => SelectionStatus::Selected,
+                        false => SelectionStatus::NotSelected,
+                    };
                     for k in self
                         .contained_elements
                         .iter_event_order_keys()
                         .filter(|k| uuids.contains(k))
                     {
-                        match set {
-                            true => self.temporaries.selected_direct_elements.insert(k),
-                            false => self.temporaries.selected_direct_elements.remove(&k),
-                        };
+                        if let Some(e) = self.temporaries.all_children_status.get_mut(&k) {
+                            *e = new_state;
+                        }
                     }
                 }
 
@@ -4685,6 +4702,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     || self.min_shape().contained_within(*rect);
 
                 recurse!();
+
+                self.refresh_all_children_status(
+                    &mut HashMap::new(),
+                    &mut HashMap::new(),
+                    &mut HashMap::new(),
+                );
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!();
@@ -4836,25 +4859,11 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
-        self.temporaries.all_elements.clear();
-        self.contained_elements.event_order_foreach_mut(|v| {
-            v.head_count(
-                flattened_views,
-                &mut self.temporaries.all_elements,
-                flattened_represented_models,
-            )
-        });
-        for e in &self.temporaries.all_elements {
-            flattened_views_status.insert(
-                *e.0,
-                match *e.1 {
-                    SelectionStatus::NotSelected if self.temporaries.highlight.selected => {
-                        SelectionStatus::TransitivelySelected
-                    }
-                    e => e,
-                },
-            );
-        }
+        self.refresh_all_children_status(
+            flattened_views,
+            flattened_views_status,
+            flattened_represented_models,
+        );
 
         self.contained_elements.event_order_foreach_mut(|v| {
             flattened_views.insert(*v.uuid(), (v.clone(), *self.uuid));
