@@ -789,12 +789,19 @@ pub enum UmlClassPackageKind {
     #[default]
     Folder,
     Frame,
-    // Cloud,
-    // Database,
+    Cloud,
+    Database,
 }
 
 impl UmlClassPackageKind {
-    pub const VARIANTS: [Self; 4] = [Self::Node, Self::Rectangle, Self::Folder, Self::Frame];
+    pub const VARIANTS: [Self; 6] = [
+        Self::Node,
+        Self::Rectangle,
+        Self::Folder,
+        Self::Frame,
+        Self::Cloud,
+        Self::Database,
+    ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -802,6 +809,8 @@ impl UmlClassPackageKind {
             UmlClassPackageKind::Rectangle => "Rectangle",
             UmlClassPackageKind::Folder => "Folder",
             UmlClassPackageKind::Frame => "Frame",
+            UmlClassPackageKind::Cloud => "Cloud",
+            UmlClassPackageKind::Database => "Database",
         }
     }
 }

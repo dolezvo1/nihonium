@@ -3431,6 +3431,8 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
 
 impl<P: UmlClassProfile> UmlClassPackageAdapter<P> {
     const NODE_DEPTH: f32 = 12.0;
+    const CLOUD_HEIGHT: f32 = 20.0;
+    const DATABASE_HEIGHT: f32 = 30.0;
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors
             .get(&self.background_color)
@@ -3504,7 +3506,113 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                 );
                 Ok(())
             }
-            _ => Err((background_color, stroke)),
+            UmlClassPackageKind::Rectangle
+            | UmlClassPackageKind::Folder
+            | UmlClassPackageKind::Frame => Err((background_color, stroke)),
+            UmlClassPackageKind::Cloud => {
+                let ch = Self::CLOUD_HEIGHT;
+                let circle_radius = egui::Vec2::splat(ch);
+                let draw_circles = |canvas: &mut dyn canvas::NHCanvas,
+                                    x_start: f32,
+                                    x_end: f32,
+                                    y_start: f32,
+                                    y_end: f32| {
+                    let dx = if x_start <= x_end { 2.0 } else { -2.0 } * ch;
+                    let dy = if y_start <= y_end { 2.0 } else { -2.0 } * ch;
+                    let mut x = x_start;
+                    while (x_start <= x_end && x <= x_end) || (x_start > x_end && x >= x_end) {
+                        let mut y = y_start;
+                        while (y_start <= y_end && y <= y_end) || (y_start > y_end && y >= y_end) {
+                            canvas.draw_ellipse(
+                                (x, y).into(),
+                                circle_radius,
+                                background_color,
+                                stroke,
+                                highlight,
+                            );
+                            y += dy;
+                        }
+                        x += dx;
+                    }
+                };
+                let shrinked_rect = bounds_rect.shrink(ch);
+                draw_circles(
+                    canvas,
+                    shrinked_rect.right(),
+                    shrinked_rect.right(),
+                    shrinked_rect.bottom(),
+                    shrinked_rect.top(),
+                );
+                draw_circles(
+                    canvas,
+                    shrinked_rect.right(),
+                    shrinked_rect.left(),
+                    shrinked_rect.top(),
+                    shrinked_rect.top(),
+                );
+                draw_circles(
+                    canvas,
+                    shrinked_rect.left(),
+                    shrinked_rect.left(),
+                    shrinked_rect.top(),
+                    shrinked_rect.bottom(),
+                );
+                draw_circles(
+                    canvas,
+                    shrinked_rect.left(),
+                    shrinked_rect.right(),
+                    shrinked_rect.bottom(),
+                    shrinked_rect.bottom(),
+                );
+
+                canvas.draw_rectangle(
+                    shrinked_rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::TRANSPARENT),
+                    canvas::Highlight::NONE,
+                );
+
+                Ok(())
+            }
+            UmlClassPackageKind::Database => {
+                canvas.draw_ellipse(
+                    bounds_rect.center_bottom() + (0.0, -Self::DATABASE_HEIGHT / 2.0).into(),
+                    (bounds_rect.width() / 2.0, Self::DATABASE_HEIGHT / 2.0).into(),
+                    background_color,
+                    stroke,
+                    highlight,
+                );
+                let rect = egui::Rect::from_center_size(
+                    bounds_rect.center(),
+                    (
+                        bounds_rect.width(),
+                        bounds_rect.height() - Self::DATABASE_HEIGHT,
+                    )
+                        .into(),
+                );
+                canvas.draw_rectangle(
+                    rect,
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                    canvas::Highlight::NONE,
+                );
+                for e in [
+                    (rect.left_top(), rect.left_bottom()),
+                    (rect.right_top(), rect.right_bottom()),
+                ] {
+                    canvas.draw_line([e.0, e.1], stroke, highlight);
+                }
+                canvas.draw_ellipse(
+                    bounds_rect.center_top() + (0.0, Self::DATABASE_HEIGHT / 2.0).into(),
+                    (bounds_rect.width() / 2.0, Self::DATABASE_HEIGHT / 2.0).into(),
+                    background_color,
+                    stroke,
+                    highlight,
+                );
+                Ok(())
+            }
         }
     }
     fn draw_label_or_get_text(
@@ -3542,12 +3650,18 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         let foreground_color = egui::Color32::BLACK;
 
         match self.kind_buffer {
-            UmlClassPackageKind::Node | UmlClassPackageKind::Rectangle => {
-                let text_origin = if self.kind_buffer == UmlClassPackageKind::Node {
-                    bounds_rect.center_top() + (0.0, Self::NODE_DEPTH).into()
-                } else {
-                    bounds_rect.center_top()
-                };
+            UmlClassPackageKind::Node
+            | UmlClassPackageKind::Rectangle
+            | UmlClassPackageKind::Cloud
+            | UmlClassPackageKind::Database => {
+                let text_origin = bounds_rect.center_top()
+                    + match self.kind_buffer {
+                        UmlClassPackageKind::Node => (0.0, Self::NODE_DEPTH).into(),
+                        UmlClassPackageKind::Rectangle => egui::Vec2::ZERO,
+                        UmlClassPackageKind::Cloud => (0.0, Self::CLOUD_HEIGHT).into(),
+                        UmlClassPackageKind::Database => (0.0, Self::DATABASE_HEIGHT).into(),
+                        _ => unreachable!(),
+                    };
                 if let Some(e) = self.visibility_buffer.as_ref() {
                     match settings.visibility_style {
                         VisibilityDisplayStyle::Characters => {
