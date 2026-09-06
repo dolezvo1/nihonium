@@ -13,6 +13,8 @@ lalrpop = "0.23"
 lalrpop-util = "0.23"
 
 derive_more = { version = "2.1", features = [ "from", "try_into", "not" ] }
+parking_lot = "0.12"
+serde = { version = "1.0", features = [ "derive", "rc" ] }
 eframe = { version = "0.36", features = ["persistence"] }
 egui_extras = { version = "0.36", features = ["serde", "image", "svg", "svg_text"] }
 image = { version = "0.25", features = ["jpeg", "png"] }
@@ -21,7 +23,7 @@ egui_dock = { version = "0.21", features = ["serde"] }
 egui_ltreeview = "0.9"
 rfd = "0.17"
 base64 = "0.23"
-serde = { version = "1.0", features = [ "derive", "rc" ] }
+inventory = "0.3"
 toml = "1.1"
 uuid = { version = "1.23", features = [ "std", "v7", "serde" ] }
 zip = { version = "8.6", default-features = false }
@@ -30,7 +32,6 @@ zip = { version = "8.6", default-features = false }
 fluent-bundle = "0.16"
 unic-langid = { version = "0.9", features = [ "macros" ] }
 unic-langid-macros = "0.9"
-inventory = "0.3"
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

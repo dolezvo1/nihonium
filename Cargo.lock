@@ -3119,6 +3119,7 @@ dependencies = [
  "lalrpop",
  "lalrpop-util",
  "nh-derive",
+ "parking_lot",
  "resvg 0.48.1",
  "rfd",
  "serde",

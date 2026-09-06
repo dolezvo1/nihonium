@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, RwLockReadGuard},
+    sync::Arc,
 };
 
 use eframe::egui;
@@ -1250,10 +1250,7 @@ fn is_anti_rigid(stereotype: &str) -> bool {
     }
 }
 
-fn validate_binover(
-    problems: &mut Vec<ValidationProblem>,
-    m: &RwLockReadGuard<'_, UmlClassDiagram>,
-) {
+fn validate_binover(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     // BinOver (Binary Relation between Overlapping Types)
     #[derive(Default)]
     struct BinOverInfo {
@@ -1519,10 +1516,7 @@ fn validate_binover(
     }
 }
 
-fn validate_relators(
-    problems: &mut Vec<ValidationProblem>,
-    m: &RwLockReadGuard<'_, UmlClassDiagram>,
-) {
+fn validate_relators(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     // MultDep (Multiple Relational Dependency), RelRig (Relator Mediating Rigid Types)
     #[derive(Default)]
     struct Info {
@@ -1664,7 +1658,7 @@ fn validate_relators(
     }
 }
 
-fn validate_undef(problems: &mut Vec<ValidationProblem>, m: &RwLockReadGuard<'_, UmlClassDiagram>) {
+fn validate_undef(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     // UndefFormal (Undefined Formal Association), UndefPhase (Undefined Phase Partition)
     #[derive(Default)]
     struct UndefInfo {
