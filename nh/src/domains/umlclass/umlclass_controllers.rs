@@ -1217,10 +1217,17 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Align2::CENTER_CENTER,
         MGlobalColor::None,
     );
-    let (notelink3, notelink3_view) = new_umlclass_notelink(
+    let (_notelink3, notelink3_view) = new_umlclass_notelink(
         None,
         (note2.clone(), note2_view.clone().into()),
         (circle_model.clone().into(), circle_view.clone().into()),
+    );
+
+    let (package, package_view) = new_umlclass_package(
+        "Shape",
+        "",
+        UmlClassPackageKind::Folder,
+        egui::Rect::from_x_y_ranges(25.0..=375.0, 350.0..=750.0),
     );
 
     let (instance, instance_view) = new_umlclass_instance(
@@ -1250,18 +1257,39 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             note.into(),
             notelink1.into(),
             notelink2.into(),
-            shape_model.into(),
-            polygon_model.into(),
-            circle_model.into(),
-            gen_model.into(),
-            point_model.into(),
-            point_assoc_model.into(),
-            note2.into(),
-            notelink3.into(),
+            package.into(),
             instance.into(),
         ],
     ));
 
+    {
+        let mut w = package_view.write();
+        let activity_uuid = *w.uuid();
+        let (mut u, mut a) = Default::default();
+        for e in [
+            shape_view.into(),
+            polygon_view.into(),
+            circle_view.clone().into(),
+            gen_view.clone().into(),
+            point_view.into(),
+            point_assoc_view.into(),
+            note2_view.into(),
+            notelink3_view.into(),
+        ] {
+            w.apply_command(
+                &diagram2,
+                &InsensitiveCommand::AddDependency {
+                    target: activity_uuid,
+                    bucket: 0,
+                    position: None,
+                    element: UmlClassElementOrVertex::Element(e),
+                    into_model: true,
+                },
+                &mut u,
+                &mut a,
+            );
+        }
+    }
     let gen_uuid = *gen_view.read().uuid();
     gen_view.write().apply_command(
         &diagram2,
@@ -1294,14 +1322,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             note_view.into(),
             notelink1_view.into(),
             notelink2_view.into(),
-            shape_view.into(),
-            polygon_view.into(),
-            circle_view.into(),
-            gen_view.into(),
-            point_view.into(),
-            point_assoc_view.into(),
-            note2_view.into(),
-            notelink3_view.into(),
+            package_view.into(),
             instance_view.into(),
         ],
     )
@@ -3425,6 +3446,7 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
+    #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     _profile: PhantomData<P>,
 }
