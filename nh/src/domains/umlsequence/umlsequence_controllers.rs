@@ -6130,30 +6130,36 @@ pub fn new_umlsequence_lifeline_view(
 pub enum UmlSequenceLifelineRenderStyle {
     StickFigure,
     Object,
+    ObjectCollection,
     Boundary,
     Control,
     Entity,
     Database,
+    Queue,
 }
 
 impl UmlSequenceLifelineRenderStyle {
-    const VARIANTS: [Self; 6] = [
+    const VARIANTS: [Self; 8] = [
         Self::StickFigure,
         Self::Object,
+        Self::ObjectCollection,
         Self::Boundary,
         Self::Control,
         Self::Entity,
         Self::Database,
+        Self::Queue,
     ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            UmlSequenceLifelineRenderStyle::StickFigure => "Stick Figure",
-            UmlSequenceLifelineRenderStyle::Object => "Object",
-            UmlSequenceLifelineRenderStyle::Boundary => "Boundary",
-            UmlSequenceLifelineRenderStyle::Control => "Control",
-            UmlSequenceLifelineRenderStyle::Entity => "Entity",
-            UmlSequenceLifelineRenderStyle::Database => "Database",
+            Self::StickFigure => "Stick Figure",
+            Self::Object => "Object",
+            Self::ObjectCollection => "Object Collection",
+            Self::Boundary => "Boundary",
+            Self::Control => "Control",
+            Self::Entity => "Entity",
+            Self::Database => "Database",
+            Self::Queue => "Queue",
         }
     }
 }
@@ -6200,7 +6206,7 @@ impl UmlSequenceLifelineView {
             .unwrap_or(egui::Color32::WHITE);
         let s = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
         let h = self.highlight;
-        match self.render_style {
+        let lifeline_start = match self.render_style {
             UmlSequenceLifelineRenderStyle::StickFigure => {
                 canvas.draw_ellipse(
                     pos - egui::Vec2::new(0.0, 20.0),
@@ -6254,38 +6260,30 @@ impl UmlSequenceLifelineView {
                     egui::Color32::BLACK,
                 );
 
-                canvas.draw_line(
-                    [
-                        pos + egui::Vec2::new(
-                            0.0,
-                            self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
-                        ),
-                        egui::Pos2::new(pos.x, max_y),
-                    ],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                    h,
-                );
+                pos + egui::Vec2::new(
+                    0.0,
+                    self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
+                )
             }
-            UmlSequenceLifelineRenderStyle::Object => {
+            UmlSequenceLifelineRenderStyle::Object
+            | UmlSequenceLifelineRenderStyle::ObjectCollection => {
                 self.bounds_rect = draw_simple_uml_class(
                     canvas,
                     pos,
                     self.stereotype_in_guillemets.clone(),
                     &read.name,
                     None,
+                    match self.render_style {
+                        UmlSequenceLifelineRenderStyle::Object => false,
+                        UmlSequenceLifelineRenderStyle::ObjectCollection => true,
+                        _ => unreachable!(),
+                    },
                     body_color,
                     s,
                     h,
                 );
 
-                canvas.draw_line(
-                    [
-                        self.bounds_rect.center_bottom(),
-                        egui::Pos2::new(pos.x, max_y),
-                    ],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                    h,
-                );
+                self.bounds_rect.center_bottom()
             }
             UmlSequenceLifelineRenderStyle::Boundary => {
                 const CIRCLE_RADIUS: f32 = 15.0;
@@ -6318,17 +6316,10 @@ impl UmlSequenceLifelineView {
                     egui::Color32::BLACK,
                 );
 
-                canvas.draw_line(
-                    [
-                        pos + egui::Vec2::new(
-                            0.0,
-                            self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
-                        ),
-                        egui::Pos2::new(pos.x, max_y),
-                    ],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                    h,
-                );
+                pos + egui::Vec2::new(
+                    0.0,
+                    self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
+                )
             }
             UmlSequenceLifelineRenderStyle::Control => {
                 const CIRCLE_RADIUS: f32 = 15.0;
@@ -6363,17 +6354,10 @@ impl UmlSequenceLifelineView {
                     egui::Color32::BLACK,
                 );
 
-                canvas.draw_line(
-                    [
-                        pos + egui::Vec2::new(
-                            0.0,
-                            self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
-                        ),
-                        egui::Pos2::new(pos.x, max_y),
-                    ],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                    h,
-                );
+                pos + egui::Vec2::new(
+                    0.0,
+                    self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
+                )
             }
             UmlSequenceLifelineRenderStyle::Entity => {
                 const CIRCLE_RADIUS: f32 = 15.0;
@@ -6399,59 +6383,50 @@ impl UmlSequenceLifelineView {
                     egui::Color32::BLACK,
                 );
 
-                canvas.draw_line(
-                    [
-                        pos + egui::Vec2::new(
-                            0.0,
-                            self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
-                        ),
-                        egui::Pos2::new(pos.x, max_y),
-                    ],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                    h,
-                );
+                pos + egui::Vec2::new(
+                    0.0,
+                    self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
+                )
             }
             UmlSequenceLifelineRenderStyle::Database => {
                 const ELLIPSE_RADIUS: egui::Vec2 = egui::Vec2::new(20.0, 10.0);
+                // bottom ellipse
                 canvas.draw_ellipse(
                     pos + egui::Vec2::new(0.0, ELLIPSE_RADIUS.y),
                     ELLIPSE_RADIUS,
                     body_color,
                     s,
                     h,
-                ); // bottom
+                );
+                // fill rect
+                let fill_rect =
+                    egui::Rect::from_min_max(pos - ELLIPSE_RADIUS, pos + ELLIPSE_RADIUS);
                 canvas.draw_rectangle(
-                    egui::Rect::from_min_max(pos - ELLIPSE_RADIUS, pos + ELLIPSE_RADIUS),
+                    fill_rect,
                     egui::CornerRadius::ZERO,
                     body_color,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                    canvas::Stroke::new_solid(0.0, egui::Color32::TRANSPARENT),
                     canvas::Highlight::NONE,
-                ); // fill
-                canvas.draw_line(
-                    [
-                        pos - ELLIPSE_RADIUS,
-                        pos - egui::Vec2::new(ELLIPSE_RADIUS.x, -ELLIPSE_RADIUS.y),
-                    ],
-                    s,
-                    h,
-                ); // left
-                canvas.draw_line(
-                    [
-                        pos + egui::Vec2::new(ELLIPSE_RADIUS.x, -ELLIPSE_RADIUS.y),
-                        pos + ELLIPSE_RADIUS,
-                    ],
-                    s,
-                    h,
-                ); // right
+                );
+                // top ellipse
                 canvas.draw_ellipse(
                     pos - egui::Vec2::new(0.0, ELLIPSE_RADIUS.y),
                     ELLIPSE_RADIUS,
                     body_color,
                     s,
                     h,
-                ); // top
-
-                self.bounds_rect = egui::Rect::from_center_size(pos, 2.0 * ELLIPSE_RADIUS);
+                );
+                // left and right line
+                for e in [
+                    (fill_rect.left_top(), fill_rect.left_bottom()),
+                    (fill_rect.right_top(), fill_rect.right_bottom()),
+                ] {
+                    canvas.draw_line([e.0, e.1], s, h);
+                }
+                self.bounds_rect = egui::Rect::from_center_size(
+                    pos,
+                    (2.0 * ELLIPSE_RADIUS.x, 4.0 * ELLIPSE_RADIUS.y).into(),
+                );
                 canvas.draw_text(
                     pos - egui::Vec2::new(0.0, -28.0),
                     egui::Align2::CENTER_TOP,
@@ -6460,19 +6435,69 @@ impl UmlSequenceLifelineView {
                     egui::Color32::BLACK,
                 );
 
-                canvas.draw_line(
-                    [
-                        pos + egui::Vec2::new(
-                            0.0,
-                            self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
-                        ),
-                        egui::Pos2::new(pos.x, max_y),
-                    ],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                pos + egui::Vec2::new(
+                    0.0,
+                    self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
+                )
+            }
+            UmlSequenceLifelineRenderStyle::Queue => {
+                const ELLIPSE_RADIUS: egui::Vec2 = egui::Vec2::new(15.0, 15.0);
+                // left ellipse
+                canvas.draw_ellipse(
+                    pos + (-ELLIPSE_RADIUS.x, 0.0).into(),
+                    ELLIPSE_RADIUS,
+                    body_color,
+                    s,
                     h,
                 );
+                // fill rect
+                let fill_rect =
+                    egui::Rect::from_min_max(pos - ELLIPSE_RADIUS, pos + ELLIPSE_RADIUS);
+                canvas.draw_rectangle(
+                    fill_rect,
+                    egui::CornerRadius::ZERO,
+                    body_color,
+                    canvas::Stroke::new_solid(0.0, egui::Color32::TRANSPARENT),
+                    canvas::Highlight::NONE,
+                );
+                // right ellipse
+                canvas.draw_ellipse(
+                    pos + (ELLIPSE_RADIUS.x, 0.0).into(),
+                    ELLIPSE_RADIUS,
+                    body_color,
+                    s,
+                    h,
+                );
+                // top and bottom line
+                for e in [
+                    (fill_rect.left_top(), fill_rect.right_top()),
+                    (fill_rect.left_bottom(), fill_rect.right_bottom()),
+                ] {
+                    canvas.draw_line([e.0, e.1], s, h);
+                }
+                self.bounds_rect = egui::Rect::from_center_size(
+                    pos,
+                    (4.0 * ELLIPSE_RADIUS.x, 2.0 * ELLIPSE_RADIUS.y).into(),
+                );
+                canvas.draw_text(
+                    pos - egui::Vec2::new(0.0, -28.0),
+                    egui::Align2::CENTER_TOP,
+                    &read.name,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+
+                pos + egui::Vec2::new(
+                    0.0,
+                    self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE,
+                )
             }
-        }
+        };
+        canvas.draw_line(
+            [lifeline_start, egui::Pos2::new(pos.x, max_y)],
+            canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+            h,
+        );
 
         let center_x = self.bounds_rect.center().x;
         let line = egui::Rect::from_x_y_ranges(center_x..=center_x, ..);
@@ -6548,6 +6573,7 @@ pub fn draw_simple_uml_class(
     top_label: Option<Arc<String>>,
     main_label: &str,
     bottom_label: Option<Arc<String>>,
+    is_collection: bool,
     fill: egui::Color32,
     stroke: canvas::Stroke,
     highlight: canvas::Highlight,
@@ -6600,6 +6626,15 @@ pub fn draw_simple_uml_class(
             position,
             egui::Vec2::new(max_width + 14.0, 2.0 * global_offset + 14.0),
         );
+        if is_collection {
+            canvas.draw_rectangle(
+                rect.translate((5.0, -5.0).into()),
+                egui::CornerRadius::ZERO,
+                fill,
+                stroke,
+                highlight,
+            );
+        }
         canvas.draw_rectangle(rect, egui::CornerRadius::ZERO, fill, stroke, highlight);
 
         (offsets, global_offset, rect)
