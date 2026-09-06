@@ -17,11 +17,11 @@ The Project Hierarchy tab shows the project structure, namely diagrams, document
 
 ## Model Hierarchy Tab
 
-The Model Hierarchy tab shows model of the currently selected diagram. Whether an element is represented in the diagram is represented with `[X]`. The context menu may be used, among other uses, to jump to a specific element in the current diagram or to (de)instantiate an element within it.
+The Model Hierarchy tab shows model of the currently selected diagram. The fact that an element is represented in the diagram is indicated with `[X]` to the left of the element name. The context menu may be used, among other, to jump to a specific element in the current diagram or to (de)instantiate an element within it.
 
 ## Search Tab
 
-The Search tab provides a way to search all models. The search expression may contain logical operators `AND`, `OR` and `NOT`.
+The Search tab provides a way to search all models and resources. The search expression may contain logical operators `AND`, `OR` and `NOT`.
 
 ![](img/screenshot_search.png)
 
@@ -52,6 +52,31 @@ The Properties tab shows available properties of the currently selected element 
 The Outline tab shows all content in the current diagram as well as relative position of the viewport.
 
 Clicking or dragging within the outline tab may be used to quickly change the viewport position.
+
+## Settings Tab
+
+Settings set through the Settings tab are persistent and project independent.
+
+The visuals section includes visual options such as Light/Dark UI theme, UI scaling, as well as customization options for egui_dock.
+
+The diagram shades sections serves to control diagram shades, which can be used to ease the stress when working in low light environment. Default shortcut to cycle shades is `Ctrl+K`.
+
+![](img/screenshot_settings_diagramshades.png)
+
+The diagram specific settings section allows for various diagram-specific customizations, such as modification of the toolbar items, or modification of diagram visuals (where supported).
+
+![](img/screenshot_settings_diagramspecific.png)
+
+The keys and shortcuts section allows for various modifications of the behaviour as well as setting of the shortcuts.
+
+![](img/screenshot_settings_keys.png)
+
+
+## Project Settings Tab
+
+Project settings are project-specific (i.e. stored and loaded along with a given project). This most notably includes project metadata (Name, Version, Description, Author) and Global Colors.
+
+![](img/screenshot_projectsettings.png)
 
 # My project files cannot be opened anymore
 
