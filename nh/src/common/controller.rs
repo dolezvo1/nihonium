@@ -1625,6 +1625,9 @@ pub trait Tool<DomainT: Domain> {
     fn add_position(&mut self, pos: egui::Pos2);
     fn add_section(&mut self, element: DomainT::ViewTargettingSectionT);
 
+    fn result_references(&self, _uuid: &ModelUuid) -> bool {
+        false
+    }
     fn try_flush(
         &mut self,
         q: &DomainT::QueryableT<'_>,

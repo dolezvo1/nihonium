@@ -1464,19 +1464,6 @@ impl NaiveArchiMateTool {
         self.result = PartialArchiMateElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
-    fn references(&self, uuid: &ModelUuid) -> bool {
-        match &self.result {
-            PartialArchiMateElement::None | PartialArchiMateElement::Some(_) => false,
-            PartialArchiMateElement::Relationship { source, dest } => {
-                *source.read().uuid == *uuid
-                    || dest.as_ref().is_some_and(|e| *e.read().uuid == *uuid)
-            }
-            PartialArchiMateElement::RelationshipEnding {
-                relationship_model,
-                new_model,
-            } => *relationship_model.read().uuid == *uuid || new_model.is_some_and(|e| e == *uuid),
-        }
-    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -1651,6 +1638,19 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
         }
     }
 
+    fn result_references(&self, uuid: &ModelUuid) -> bool {
+        match &self.result {
+            PartialArchiMateElement::None | PartialArchiMateElement::Some(_) => false,
+            PartialArchiMateElement::Relationship { source, dest } => {
+                *source.read().uuid == *uuid
+                    || dest.as_ref().is_some_and(|e| *e.read().uuid == *uuid)
+            }
+            PartialArchiMateElement::RelationshipEnding {
+                relationship_model,
+                new_model,
+            } => *relationship_model.read().uuid == *uuid || new_model.is_some_and(|e| e == *uuid),
+        }
+    }
     fn try_flush(
         &mut self,
         q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
@@ -3309,7 +3309,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
-                    if !tool.references(&self.model.read().uuid)
+                    if !tool.result_references(&self.model.read().uuid)
                         && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
                         && ehc
                             .modifier_settings

@@ -1620,7 +1620,11 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Note { .. } => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart { .. } | NetworkToolStage::AssociationEnd => {
-                    NON_TARGETTABLE_COLOR
+                    match element {
+                        Err(_) => NON_TARGETTABLE_COLOR,
+                        Ok(NetworkElement::Container(_)) => TARGETTABLE_COLOR,
+                        _ => unreachable!(),
+                    }
                 }
             },
             Ok(
@@ -1787,8 +1791,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         }
 
         match section {
-            NetworkElement::Container(..) => {}
-            NetworkElement::Node(_)
+            NetworkElement::Container(_)
+            | NetworkElement::Node(_)
             | NetworkElement::User(_)
             | NetworkElement::File(_)
             | NetworkElement::Location(_)
@@ -1814,6 +1818,16 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         }
     }
 
+    fn result_references(&self, uuid: &ModelUuid) -> bool {
+        match &self.result {
+            PartialNetworkElement::None
+            | PartialNetworkElement::Some(_)
+            | PartialNetworkElement::Container { .. } => false,
+            PartialNetworkElement::Association { source, dest } => {
+                *source.uuid() == *uuid || dest.as_ref().is_some_and(|e| *e.uuid() == *uuid)
+            }
+        }
+    }
     fn try_flush(
         &mut self,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,

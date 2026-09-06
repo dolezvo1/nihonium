@@ -562,7 +562,8 @@ where
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.adapter.model_section());
 
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
+                    if !tool.result_references(&self.adapter.model_uuid())
+                        && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
                         && ehc
                             .modifier_settings
                             .alternative_tool_mode
