@@ -59,7 +59,7 @@ Settings set through the Settings tab are persistent and project independent.
 
 The visuals section includes visual options such as Light/Dark UI theme, UI scaling, as well as customization options for egui_dock.
 
-The diagram shades sections serves to control diagram shades, which can be used to ease the stress when working in low light environment. Default shortcut to cycle shades is `Ctrl+K`.
+The diagram shades section serves to control diagram shades, which can be used to ease the eye strain when working in low light environment. Default shortcut to cycle shades is `Ctrl+K`.
 
 ![](img/screenshot_settings_diagramshades.png)
 
