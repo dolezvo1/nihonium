@@ -162,6 +162,9 @@ pub enum UmlClassPropChange {
     TemplateParametersChange(Arc<String>),
     ClassAbstractChange(bool),
     ClassRenderStyleChange(UmlClassRenderStyle),
+    ClassSuppressTemplateParameters(bool),
+    ClassSuppressProperties(bool),
+    ClassSuppressOperations(bool),
 
     PropertyTypeChange(Arc<String>),
     PropertyMultiplicityChange(Arc<String>),
@@ -6919,12 +6922,30 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
             });
 
-        ui.checkbox(
-            &mut self.suppress_template_parameters,
-            "suppress template parameters",
-        );
-        ui.checkbox(&mut self.suppress_properties, "suppress properties");
-        ui.checkbox(&mut self.suppress_operations, "suppress operations");
+        let mut temp = self.suppress_template_parameters;
+        if ui
+            .checkbox(&mut temp, "suppress template parameters")
+            .clicked()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::ClassSuppressTemplateParameters(temp),
+            ));
+        }
+        let mut temp = self.suppress_properties;
+        if ui.checkbox(&mut temp, "suppress properties").clicked() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::ClassSuppressProperties(temp),
+            ));
+        }
+        let mut temp = self.suppress_operations;
+        if ui.checkbox(&mut temp, "suppress operations").clicked() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::ClassSuppressOperations(temp),
+            ));
+        }
 
         PropertiesStatus::Shown
     }
@@ -7800,6 +7821,33 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                 UmlClassPropChange::ClassRenderStyleChange(self.render_style),
                             ));
                             self.render_style = *render_style;
+                        }
+                        UmlClassPropChange::ClassSuppressTemplateParameters(b) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ClassSuppressTemplateParameters(
+                                    self.suppress_template_parameters,
+                                ),
+                            ));
+                            self.suppress_template_parameters = *b;
+                        }
+                        UmlClassPropChange::ClassSuppressProperties(b) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ClassSuppressProperties(
+                                    self.suppress_properties,
+                                ),
+                            ));
+                            self.suppress_properties = *b;
+                        }
+                        UmlClassPropChange::ClassSuppressOperations(b) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ClassSuppressOperations(
+                                    self.suppress_operations,
+                                ),
+                            ));
+                            self.suppress_operations = *b;
                         }
                         UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
