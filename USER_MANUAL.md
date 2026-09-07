@@ -3,6 +3,23 @@
 
 ![](img/screenshot.png)
 
+## Menubar
+
+The menubar contains six submenus titled `Project`, `Edit`, `View`, `Diagram`, `Windows` and `About`.
+
+The `Project` submenu generally speaking allows for manipulation of projects, such as creating a new project, opening an existing project, saving the current project or closing the current project. It also allows for creation of new elements inside the current project hierarchy.
+
+The `Edit` submenu usually contains standard options such as Undo/Redo, Cut/Copy/Paste, Arrangement (send to back/bring to front), and Highlights control.
+
+The `View` submenu can be used to manipulate the camera position and scale in the current diagram.
+
+The `Diagram` submenu contains options related to the current diagram, such as the option to export it to SVG. It is also often used to access diagram specific functions, such as export to PlantUml or evaluation of SPARQL queries.
+
+![](img/screenshot_exportsvg.png)
+
+The `Windows` submenu can be used to open and close unique tabs.
+
+The `About` submenu contains links to project page and issue tracker.
 
 ## New Diagram Tab
 
@@ -46,6 +63,10 @@ The toolbar tools and categories for a given diagram type may usually be modifie
 The Properties tab shows available properties of the currently selected element (if some elements are selected) or the current diagram (if no elements are selected). When multiple elements are selected, the changes are usually applied to all selected elements where appropriate.
 
 ![](img/screenshot_properties.png)
+
+When an element supports color override, two different options are provided: Local Color (i.e. an anonymous value such as `#ff0000`) and Global Color (i.e. a named color, usually associated with a specific concept which is denoted by it, such as "Entity"). Global Colors are project-specific and managed through Project Settings.
+
+![](img/screenshot_properties_colors.png)
 
 ## Outline Tab
 
