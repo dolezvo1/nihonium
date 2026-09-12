@@ -1,5 +1,6 @@
 # Nihonium User Manual
 
+Nihonium is a diagramming / CASE modelling tool. It is a project-based tool, in which projects consist of a virtual folder hierarchy that usually includes diagrams (not necessarily of a single notation), but may also include any other files such as text documents and images. Diagrams are (possibly partial) representations of models and a single model may have more than one diagram representing it.
 
 ![](img/screenshot.png)
 
@@ -78,17 +79,17 @@ Clicking or dragging within the outline tab may be used to quickly change the vi
 
 Settings set through the Settings tab are persistent and project independent.
 
-The visuals section includes visual options such as Light/Dark UI theme, UI scaling, as well as customization options for egui_dock.
+The "visuals" section includes visual options such as Light/Dark UI theme, UI scaling, as well as customization options for egui_dock.
 
-The diagram shades section serves to control diagram shades, which can be used to ease the eye strain when working in low light environment. Default shortcut to cycle shades is `Ctrl+K`.
+The "diagram shades" section serves to control diagram shades, which can be used to ease the eye strain when working in low light environment. Default shortcut to cycle shades is `Ctrl+K`.
 
 ![](img/screenshot_settings_diagramshades.png)
 
-The diagram specific settings section allows for various diagram-specific customizations, such as modification of the toolbar items, or modification of diagram visuals (where supported).
+The "diagram specific settings" section allows for various diagram-specific customizations, such as modification of the toolbar items, or modification of diagram visuals (where supported).
 
 ![](img/screenshot_settings_diagramspecific.png)
 
-The keys and shortcuts section allows for various modifications of the behaviour as well as setting of the shortcuts.
+The "keys and shortcuts" section allows for various modifications of the behaviour as well as setting of the shortcuts.
 
 ![](img/screenshot_settings_keys.png)
 
