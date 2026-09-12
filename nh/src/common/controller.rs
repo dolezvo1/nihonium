@@ -162,7 +162,6 @@ pub enum ProjectCommand {
         view_uuid: ViewUuid,
         diagram: ERef<dyn DiagramController>,
     },
-    DeleteDiagram(ViewUuid),
 
     AddNewResource {
         into: FolderUuid,
@@ -171,7 +170,7 @@ pub enum ProjectCommand {
         content: Vec<u8>,
     },
     DuplicateResource(ResourceUuid),
-    DeleteResource(ResourceUuid),
+    DeleteProjectElements(HashSet<EntityUuid>, usize),
 }
 
 impl From<SimpleProjectCommand> for ProjectCommand {

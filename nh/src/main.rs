@@ -391,7 +391,7 @@ struct NHContext {
         f32,
         f32,
     )>,
-    confirm_modal_reason: Option<SimpleProjectCommand>,
+    confirm_modal_reason: Option<ProjectCommand>,
     unintended_deletes_data: Option<(Vec<ModelUuid>, Vec<ModelUuid>, Vec<(usize, ViewUuid)>)>,
     shortcut_being_set: Option<SetShortcut>,
     selected_global_color: Option<uuid::Uuid>,
@@ -714,6 +714,35 @@ fn add_project_element_block(
     ui.separator();
 }
 
+fn collect_implied_nodes(
+    e: &HierarchyNode,
+    targets: &HashSet<EntityUuid>,
+    total: &mut HashSet<EntityUuid>,
+) {
+    fn add_all(e: &HierarchyNode, total: &mut HashSet<EntityUuid>) {
+        total.insert(e.uuid());
+        match e {
+            HierarchyNode::Folder(_, _, hierarchy_nodes) => {
+                hierarchy_nodes.iter().for_each(|e| add_all(e, total));
+            }
+            HierarchyNode::Diagram(..) | HierarchyNode::Resource(..) => {}
+        }
+    }
+
+    if targets.contains(&e.uuid()) {
+        add_all(e, total);
+    } else {
+        match e {
+            HierarchyNode::Folder(_, _, hierarchy_nodes) => {
+                hierarchy_nodes
+                    .iter()
+                    .for_each(|e| collect_implied_nodes(e, targets, total));
+            }
+            HierarchyNode::Diagram(..) | HierarchyNode::Resource(..) => {}
+        }
+    }
+}
+
 macro_rules! supported_extensions {
     ($got:expr) => {
         format!(
@@ -976,17 +1005,17 @@ impl NHContext {
                 FolderUuid,
             ),
             RenameElement(EntityUuid),
-            DeleteFolder(FolderUuid),
+            DeleteElements(EntityUuid),
         }
 
-        let mut context_menu_action = None;
+        let mut top_bar_action = None;
 
         ui.horizontal(|ui| {
             if ui
                 .button(translate!("nh-tab-projecthierarchy-newfolder"))
                 .clicked()
             {
-                context_menu_action = Some(ContextMenuAction::NewFolder {
+                top_bar_action = Some(ContextMenuAction::NewFolder {
                     target: FolderUuid::nil(),
                 });
             }
@@ -994,7 +1023,7 @@ impl NHContext {
                 .button(translate!("nh-tab-projecthierarchy-collapseall"))
                 .clicked()
             {
-                context_menu_action = Some(ContextMenuAction::CollapseAt(
+                top_bar_action = Some(ContextMenuAction::CollapseAt(
                     Some(true),
                     true,
                     FolderUuid::nil(),
@@ -1004,7 +1033,7 @@ impl NHContext {
                 .button(translate!("nh-tab-projecthierarchy-uncollapseall"))
                 .clicked()
             {
-                context_menu_action = Some(ContextMenuAction::CollapseAt(
+                top_bar_action = Some(ContextMenuAction::CollapseAt(
                     Some(false),
                     true,
                     FolderUuid::nil(),
@@ -1023,87 +1052,75 @@ impl NHContext {
         ) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
-                    builder.node(
-                        NodeBuilder::dir(uuid.clone().into())
-                            .label(&**name)
-                            .context_menu(|ui| {
-                                ui.set_min_width(MIN_MENU_WIDTH);
+                    let n = NodeBuilder::dir(uuid.clone().into()).label(&**name);
+                    let n = if uuid.is_nil() {
+                        n
+                    } else {
+                        n.context_menu(|ui| {
+                            ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if uuid.is_nil() && ui.button(gdc.translate_0("nh-edit")).clicked()
-                                {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::ProjectSettings,
-                                        None,
-                                    ));
-                                }
+                            if uuid.is_nil() && ui.button(gdc.translate_0("nh-edit")).clicked() {
+                                commands.push(ProjectCommand::OpenAndFocusTab(
+                                    NHTab::ProjectSettings,
+                                    None,
+                                ));
+                            }
 
-                                if ui
-                                    .button(
-                                        gdc.translate_0("nh-tab-projecthierarchy-togglecollapse"),
-                                    )
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::CollapseAt(None, false, *uuid));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::NewFolder { target: *uuid });
-                                    ui.close();
-                                }
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-togglecollapse"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::CollapseAt(None, false, *uuid));
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::NewFolder { target: *uuid });
+                                ui.close();
+                            }
 
-                                add_project_element_block(gdc, ui, commands, uuid);
+                            add_project_element_block(gdc, ui, commands, uuid);
 
-                                if ui
-                                    .button(
-                                        gdc.translate_0("nh-tab-projecthierarchy-collapsechildren"),
-                                    )
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::CollapseAt(
-                                        Some(true),
-                                        true,
-                                        *uuid,
-                                    ));
-                                    ui.close();
-                                }
-                                if ui
-                                    .button(
-                                        gdc.translate_0(
-                                            "nh-tab-projecthierarchy-uncollapsechildren",
-                                        ),
-                                    )
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::CollapseAt(
-                                        Some(false),
-                                        true,
-                                        *uuid,
-                                    ));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
-                                    .clicked()
-                                {
-                                    *cma =
-                                        Some(ContextMenuAction::RenameElement(uuid.clone().into()));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::DeleteFolder(*uuid));
-                                    ui.close();
-                                }
-                            }),
-                    );
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-collapsechildren"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::CollapseAt(Some(true), true, *uuid));
+                                ui.close();
+                            }
+                            if ui
+                                .button(
+                                    gdc.translate_0("nh-tab-projecthierarchy-uncollapsechildren"),
+                                )
+                                .clicked()
+                            {
+                                *cma =
+                                    Some(ContextMenuAction::CollapseAt(Some(false), true, *uuid));
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::RenameElement(uuid.clone().into()));
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::DeleteElements(uuid.clone().into()));
+                                ui.close();
+                            }
+                        })
+                    };
+
+                    builder.node(n);
 
                     for c in children {
                         hierarchy(builder, gdc, c, resources, cma, commands, uuid);
@@ -1171,7 +1188,9 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
                                     .clicked()
                                 {
-                                    commands.push(ProjectCommand::DeleteDiagram(*uuid));
+                                    *cma = Some(ContextMenuAction::DeleteElements(
+                                        uuid.clone().into(),
+                                    ));
                                     ui.close();
                                 }
                             }),
@@ -1243,7 +1262,9 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
                                     .clicked()
                                 {
-                                    commands.push(ProjectCommand::DeleteResource(*uuid));
+                                    *cma = Some(ContextMenuAction::DeleteElements(
+                                        uuid.clone().into(),
+                                    ));
                                     ui.close();
                                 }
                             }),
@@ -1252,21 +1273,90 @@ impl NHContext {
             }
         }
 
-        let mut commands = Vec::new();
+        let mut fallback_menu_action = None;
+        let mut node_menu_action = None;
+        let mut fallback_menu_commands = Vec::new();
+        let mut node_menu_commands = Vec::new();
+        let mut actions_commands = Vec::new();
 
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
                 let id = ui.make_persistent_id("Project Hierarchy Tree View");
-                let (_response, actions) =
-                    TreeView::new(id).show_state(ui, &mut self.tree_view_state, |builder| {
+                let (_response, actions) = TreeView::new(id)
+                    .fallback_context_menu(|ui, selected_nodes| {
+                        if ui
+                            .button(
+                                self.drawing_context
+                                    .translate_0("nh-tab-projecthierarchy-newfolder"),
+                            )
+                            .clicked()
+                        {
+                            fallback_menu_action = Some(ContextMenuAction::NewFolder {
+                                target: FolderUuid::nil(),
+                            });
+                            ui.close();
+                        }
+                        add_project_element_block(
+                            &self.drawing_context,
+                            ui,
+                            &mut fallback_menu_commands,
+                            &FolderUuid::nil(),
+                        );
+
+                        if ui
+                            .button(
+                                self.drawing_context
+                                    .translate_0("nh-tab-projecthierarchy-collapsechildren"),
+                            )
+                            .clicked()
+                        {
+                            fallback_menu_action = Some(ContextMenuAction::CollapseAt(
+                                Some(true),
+                                true,
+                                FolderUuid::nil(),
+                            ));
+                            ui.close();
+                        }
+                        if ui
+                            .button(
+                                self.drawing_context
+                                    .translate_0("nh-tab-projecthierarchy-uncollapsechildren"),
+                            )
+                            .clicked()
+                        {
+                            fallback_menu_action = Some(ContextMenuAction::CollapseAt(
+                                Some(false),
+                                true,
+                                FolderUuid::nil(),
+                            ));
+                            ui.close();
+                        }
+
+                        if !selected_nodes.is_empty() {
+                            ui.separator();
+                            if ui
+                                .button(
+                                    self.drawing_context
+                                        .translate_0("nh-tab-projecthierarchy-deleteselected"),
+                                )
+                                .clicked()
+                            {
+                                fallback_menu_action = Some(ContextMenuAction::DeleteElements(
+                                    selected_nodes.first().cloned().unwrap(),
+                                ));
+                                ui.close();
+                            }
+                        }
+                    })
+                    .show_state(ui, &mut self.tree_view_state, |builder| {
                         hierarchy(
                             builder,
                             &self.drawing_context,
                             &self.project_hierarchy,
                             &self.drawing_context.raw_resources,
-                            &mut context_menu_action,
-                            &mut commands,
+                            &mut node_menu_action,
+                            &mut node_menu_commands,
                             &FolderUuid::nil(),
                         );
                     });
@@ -1299,12 +1389,12 @@ impl NHContext {
                     match action {
                         egui_ltreeview::Action::Activate(a) => {
                             for tab in a.selected.iter().flat_map(|e| node_to_tab!(e)) {
-                                commands.push(ProjectCommand::OpenAndFocusTab(tab, None));
+                                actions_commands.push(ProjectCommand::OpenAndFocusTab(tab, None));
                             }
                         }
                         egui_ltreeview::Action::MoveExternal(dnde) => {
                             for tab in dnde.source.iter().flat_map(|e| node_to_tab!(e)) {
-                                commands.push(ProjectCommand::OpenAndFocusTab(
+                                actions_commands.push(ProjectCommand::OpenAndFocusTab(
                                     tab,
                                     Some(dnde.position),
                                 ));
@@ -1333,6 +1423,7 @@ impl NHContext {
                 }
             });
 
+        let context_menu_action = top_bar_action.or(fallback_menu_action).or(node_menu_action);
         if let Some(c) = context_menu_action {
             match c {
                 ContextMenuAction::NewFolder { target: uuid } => {
@@ -1516,15 +1607,32 @@ impl NHContext {
                         name_buffer: original_name,
                     }));
                 }
-                ContextMenuAction::DeleteFolder(target) => {
-                    if self.project_hierarchy.remove(&target.into()).is_some() {
-                        self.set_has_unsaved_changes(true);
-                    }
+                ContextMenuAction::DeleteElements(target) => {
+                    let targets: HashSet<_> = if self
+                        .tree_view_state
+                        .selected()
+                        .iter()
+                        .find(|e| **e == target)
+                        .is_some()
+                    {
+                        self.tree_view_state.selected().iter().cloned().collect()
+                    } else {
+                        std::iter::once(target).collect()
+                    };
+                    let mut total_elements = HashSet::new();
+                    collect_implied_nodes(&self.project_hierarchy, &targets, &mut total_elements);
+
+                    self.confirm_modal_reason = Some(ProjectCommand::DeleteProjectElements(
+                        targets,
+                        total_elements.len(),
+                    ));
                 }
             }
         }
 
-        self.unprocessed_commands.extend(commands);
+        self.unprocessed_commands.extend(fallback_menu_commands);
+        self.unprocessed_commands.extend(node_menu_commands);
+        self.unprocessed_commands.extend(actions_commands);
     }
 
     fn show_model_hierarchy(&mut self, ui: &mut egui::Ui) {
@@ -3471,16 +3579,49 @@ impl NHApp {
         self.context.set_has_unsaved_changes(true);
     }
 
-    fn delete_diagram(&mut self, view_uuid: ViewUuid) {
-        self.context.project_hierarchy.remove(&view_uuid.into());
-        self.context.diagram_controllers.remove(&view_uuid);
-        self.context
-            .last_focused_diagram
-            .take_if(|e| *e == view_uuid);
-        if let Some(snt) = self.tree.find_tab(&NHTab::Diagram { uuid: view_uuid }) {
-            self.tree.remove_tab(snt);
+    fn delete_elements(&mut self, targets: &HashSet<EntityUuid>) {
+        // Collect all elements to be removed
+        let mut all_to_delete = HashSet::new();
+        collect_implied_nodes(&self.context.project_hierarchy, targets, &mut all_to_delete);
+
+        // Run removal code
+        for t in &all_to_delete {
+            match t {
+                EntityUuid::Model(_) => unreachable!(),
+                EntityUuid::View(t) => {
+                    self.context.project_hierarchy.remove(&t.clone().into());
+                    self.context.diagram_controllers.remove(&t);
+                    self.context.last_focused_diagram.take_if(|e| e == t);
+                    if let Some(snt) = self.tree.find_tab(&NHTab::Diagram { uuid: *t }) {
+                        self.tree.remove_tab(snt);
+                    }
+                    self.context.set_has_unsaved_changes(true);
+                }
+                EntityUuid::Controller(_) => unreachable!(),
+                EntityUuid::Resource(t) => {
+                    self.context.project_hierarchy.remove(&t.clone().into());
+                    self.context.drawing_context.raw_resources.remove(&t);
+                    self.tree
+                        .retain_tabs(|e| !matches!(e, NHTab::Resource { uuid, .. } if uuid == t));
+                    self.context.set_has_unsaved_changes(true)
+                }
+                EntityUuid::Folder(_) => {}
+            }
         }
-        self.context.set_has_unsaved_changes(true);
+
+        // Filter out deleted elements
+        fn retain(e: &mut HierarchyNode, all_to_delete: &HashSet<EntityUuid>) {
+            match e {
+                HierarchyNode::Folder(_, _, hierarchy_nodes) => {
+                    hierarchy_nodes.retain(|e| !all_to_delete.contains(&e.uuid()));
+                    hierarchy_nodes
+                        .iter_mut()
+                        .for_each(|e| retain(e, all_to_delete));
+                }
+                HierarchyNode::Diagram(..) | HierarchyNode::Resource(..) => {}
+            }
+        }
+        retain(&mut self.context.project_hierarchy, &all_to_delete);
     }
 
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
@@ -3749,8 +3890,10 @@ impl eframe::App for NHApp {
                 let v_no = v.iter().map(|e| e.0).sum::<usize>();
                 if u.is_none() && (m1.len() > 0 || v_no > 0) {
                     self.context.unintended_deletes_data = Some((m1, m2, v));
-                    self.context.confirm_modal_reason =
-                        Some(DiagramCommand::CutSelectedElements(None).into());
+                    self.context.confirm_modal_reason = Some(
+                        SimpleProjectCommand::from(DiagramCommand::CutSelectedElements(None))
+                            .into(),
+                    );
                 } else if (m1.len() == 0 && v_no == 0)
                     || u.is_some_and(|e| {
                         e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m1.len() == 0
@@ -4484,7 +4627,8 @@ impl eframe::App for NHApp {
             }
         }
 
-        if let Some(confirm_reason) = self.context.confirm_modal_reason {
+        let mut confirm_modal_change: Option<Option<ProjectCommand>> = None;
+        if let Some(confirm_reason) = &self.context.confirm_modal_reason {
             macro_rules! unselected_deletes {
                 ($ui:expr, $u:expr, $m1:expr, $m2:expr, $v:expr, $cmd:expr, $dont_ask_again_default:expr, $dont_ask_again_target:expr) => {
                     const SPACING: f32 = 5.0;
@@ -4521,7 +4665,7 @@ impl eframe::App for NHApp {
                         .checkbox(&mut dont_ask_again, translate!("nh-generic-dontaskagain"))
                         .changed()
                     {
-                        self.context.confirm_modal_reason = Some($dont_ask_again_default(dont_ask_again));
+                        confirm_modal_change = Some(Some($dont_ask_again_default(dont_ask_again)));
                     }
 
                     $ui.horizontal(|ui| {
@@ -4532,11 +4676,11 @@ impl eframe::App for NHApp {
                             if $u.is_some() {
                                 $dont_ask_again_target = Some(UnintendedDeleteBehavior::DeleteAll);
                             }
-                            self.context.confirm_modal_reason = None;
+                            confirm_modal_change = Some(None);
                             self.context.unintended_deletes_data = None;
                         }
                         if ui.button(translate!("nh-generic-cancel")).clicked() {
-                            self.context.confirm_modal_reason = None;
+                            confirm_modal_change = Some(None);
                             self.context.unintended_deletes_data = None;
                         }
                     });
@@ -4544,9 +4688,9 @@ impl eframe::App for NHApp {
             }
 
             egui::Modal::new("Confirm Modal Window".into()).show(ui.ctx(), |ui| {
-                if let SimpleProjectCommand::FocusedDiagramCommand(
+                if let ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::FocusedDiagramCommand(
                     DiagramCommand::DeleteSelectedElements(k, u),
-                ) = confirm_reason
+                )) = confirm_reason
                 {
                     match &self.context.unintended_deletes_data {
                         None => {
@@ -4560,16 +4704,17 @@ impl eframe::App for NHApp {
                                 )
                                 .changed()
                             {
-                                self.context.confirm_modal_reason = Some(
+                                confirm_modal_change = Some(Some(
+                                    SimpleProjectCommand::from(
                                     DiagramCommand::DeleteSelectedElements(
                                         match dont_ask_again {
                                             true => Some(Default::default()),
                                             false => None,
                                         },
-                                        u,
-                                    )
+                                        *u,
+                                    ))
                                     .into(),
-                                );
+                                ));
                             }
 
                             ui.horizontal(|ui| {
@@ -4581,7 +4726,7 @@ impl eframe::App for NHApp {
                                         SimpleProjectCommand::from(
                                             DiagramCommand::DeleteSelectedElements(
                                                 Some(DeleteKind::DeleteView),
-                                                u,
+                                                *u,
                                             ),
                                         )
                                         .into(),
@@ -4590,7 +4735,7 @@ impl eframe::App for NHApp {
                                         self.context.modifier_settings.default_delete_kind =
                                             Some(DeleteKind::DeleteView);
                                     }
-                                    self.context.confirm_modal_reason = None;
+                                    confirm_modal_change = Some(None);
                                 }
                                 if ui
                                     .button(translate!("nh-generic-deletemodel-modelif"))
@@ -4600,7 +4745,7 @@ impl eframe::App for NHApp {
                                         SimpleProjectCommand::from(
                                             DiagramCommand::DeleteSelectedElements(
                                                 Some(DeleteKind::DeleteModelIfOnlyView),
-                                                u,
+                                                *u,
                                             ),
                                         )
                                         .into(),
@@ -4609,7 +4754,7 @@ impl eframe::App for NHApp {
                                         self.context.modifier_settings.default_delete_kind =
                                             Some(DeleteKind::DeleteModelIfOnlyView);
                                     }
-                                    self.context.confirm_modal_reason = None;
+                                    confirm_modal_change = Some(None);
                                 }
                                 if ui
                                     .button(translate!("nh-generic-deletemodel-all"))
@@ -4619,7 +4764,7 @@ impl eframe::App for NHApp {
                                         SimpleProjectCommand::from(
                                             DiagramCommand::DeleteSelectedElements(
                                                 Some(DeleteKind::DeleteAll),
-                                                u,
+                                                *u,
                                             ),
                                         )
                                         .into(),
@@ -4628,22 +4773,23 @@ impl eframe::App for NHApp {
                                         self.context.modifier_settings.default_delete_kind =
                                             Some(DeleteKind::DeleteAll);
                                     }
-                                    self.context.confirm_modal_reason = None;
+                                    confirm_modal_change = Some(None);
                                 }
                                 if ui.button(translate!("nh-generic-cancel")).clicked() {
-                                    self.context.confirm_modal_reason = None;
+                                    confirm_modal_change = Some(None);
                                 }
                             });
                         }
                         Some((m1, m2, v)) => {
                             let daad = |daa| {
+                                SimpleProjectCommand::from(
                                 DiagramCommand::DeleteSelectedElements(
-                                    k,
+                                    *k,
                                     match daa {
                                         true => Some(Default::default()),
                                         false => None,
                                     },
-                                )
+                                ))
                                 .into()
                             };
                             unselected_deletes!(
@@ -4653,7 +4799,7 @@ impl eframe::App for NHApp {
                                 m2,
                                 v,
                                 DiagramCommand::DeleteSelectedElements(
-                                    k,
+                                    *k,
                                     Some(UnintendedDeleteBehavior::DeleteAll),
                                 ),
                                 daad,
@@ -4661,16 +4807,17 @@ impl eframe::App for NHApp {
                             );
                         }
                     }
-                } else if let SimpleProjectCommand::FocusedDiagramCommand(
+                } else if let ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::FocusedDiagramCommand(
                     DiagramCommand::CutSelectedElements(u),
-                ) = confirm_reason
+                )) = confirm_reason
                     && let Some((m1, m2, v)) = &self.context.unintended_deletes_data
                 {
                     let daad = |daa| {
+                        SimpleProjectCommand::from(
                         DiagramCommand::CutSelectedElements(match daa {
                             true => Some(Default::default()),
                             false => None,
-                        })
+                        }))
                         .into()
                     };
                     unselected_deletes!(
@@ -4687,17 +4834,30 @@ impl eframe::App for NHApp {
                             .modifier_settings
                             .unintended_cut_deletes_behavior
                     );
+                } else if let ProjectCommand::DeleteProjectElements(targets, total) = confirm_reason {
+                    ui.label(format!("Are you sure you want to delete {} specified elements? This will result in {} total deletions. Note that this operation cannot be undone.", targets.len(), total));
+
+                    ui.horizontal(|ui| {
+                        if ui.button(translate!("nh-generic-yes")).clicked() {
+                            commands.push(confirm_reason.clone());
+                            confirm_modal_change = Some(None);
+                        }
+
+                        if ui.button(translate!("nh-generic-cancel")).clicked() {
+                            confirm_modal_change = Some(None);
+                        }
+                    });
                 } else {
                     ui.label(translate!("nh-generic-unsavedchanges-warning"));
 
                     match confirm_reason {
-                        SimpleProjectCommand::OpenProject(_) => {
+                        ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::OpenProject(_)) => {
                             ui.label(translate!("nh-project-openproject-confirm"));
                         }
-                        SimpleProjectCommand::CloseProject(_) => {
+                        ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::CloseProject(_)) => {
                             ui.label(translate!("nh-project-closeproject-confirm"));
                         }
-                        SimpleProjectCommand::Exit(_) => {
+                        ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::Exit(_)) => {
                             ui.label(translate!("nh-project-exit-confirm"));
                         }
                         _ => unreachable!("Unexpected confirm modal reason"),
@@ -4706,18 +4866,18 @@ impl eframe::App for NHApp {
                     ui.horizontal(|ui| {
                         if ui.button(translate!("nh-generic-yes")).clicked() {
                             match confirm_reason {
-                                SimpleProjectCommand::OpenProject(_) => {
+                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::OpenProject(_)) => {
                                     commands.push(SimpleProjectCommand::OpenProject(true).into());
                                 }
-                                SimpleProjectCommand::CloseProject(_) => {
+                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::CloseProject(_)) => {
                                     commands.push(SimpleProjectCommand::CloseProject(true).into());
                                 }
-                                SimpleProjectCommand::Exit(_) => {
+                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::Exit(_)) => {
                                     commands.push(SimpleProjectCommand::Exit(true).into());
                                 }
                                 _ => unreachable!("Unexpected confirm modal reason"),
                             }
-                            self.context.confirm_modal_reason = None;
+                            confirm_modal_change = Some(None);
                         }
                         if ui
                             .button(translate!("nh-generic-unsavedchanges-saveandproceed"))
@@ -4725,25 +4885,28 @@ impl eframe::App for NHApp {
                         {
                             commands.push(SimpleProjectCommand::SaveProject.into());
                             match confirm_reason {
-                                SimpleProjectCommand::OpenProject(_) => {
+                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::OpenProject(_)) => {
                                     commands.push(SimpleProjectCommand::OpenProject(false).into());
                                 }
-                                SimpleProjectCommand::CloseProject(_) => {
+                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::CloseProject(_)) => {
                                     commands.push(SimpleProjectCommand::CloseProject(false).into());
                                 }
-                                SimpleProjectCommand::Exit(_) => {
+                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::Exit(_)) => {
                                     commands.push(SimpleProjectCommand::Exit(false).into());
                                 }
                                 _ => unreachable!("Unexpected confirm modal reason"),
                             }
-                            self.context.confirm_modal_reason = None;
+                            confirm_modal_change = Some(None);
                         }
                         if ui.button(translate!("nh-generic-cancel")).clicked() {
-                            self.context.confirm_modal_reason = None;
+                            confirm_modal_change = Some(None);
                         }
                     });
                 }
             });
+        }
+        if let Some(new_reason) = confirm_modal_change {
+            self.context.confirm_modal_reason = new_reason;
         }
 
         macro_rules! send_to_diagram {
@@ -4769,9 +4932,9 @@ impl eframe::App for NHApp {
 
         for c in commands {
             match c {
-                ProjectCommand::SimpleProjectCommand(spc) => match spc {
-                    SimpleProjectCommand::FocusedDiagramCommand(dc) => {
-                        match dc {
+                ProjectCommand::SimpleProjectCommand(spc) => {
+                    match spc {
+                        SimpleProjectCommand::FocusedDiagramCommand(dc) => match dc {
                             DiagramCommand::UndoImmediate => self.undo_immediate(),
                             DiagramCommand::RedoImmediate => self.redo_immediate(),
                             DiagramCommand::DeleteSelectedElements(k, u) => {
@@ -4784,7 +4947,10 @@ impl eframe::App for NHApp {
                                 ) {
                                     (None, u) => {
                                         self.context.confirm_modal_reason = Some(
-                                            DiagramCommand::DeleteSelectedElements(None, u).into(),
+                                            SimpleProjectCommand::from(
+                                                DiagramCommand::DeleteSelectedElements(None, u),
+                                            )
+                                            .into(),
                                         );
                                     }
                                     (otherwise, u) => {
@@ -4806,7 +4972,8 @@ impl eframe::App for NHApp {
                                         if u.is_none() && (m1.len() > 0 || v_no > 0) {
                                             self.context.unintended_deletes_data = Some((m1, m2, v));
                                             self.context.confirm_modal_reason =
-                                                Some(DiagramCommand::DeleteSelectedElements(otherwise, None).into());
+                                                Some(
+                                                SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(otherwise, None)).into());
                                         } else if (m1.len() == 0 && v_no == 0)
                                             || u.is_some_and(|e| e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m1.len() == 0)
                                             || u.is_some_and(|e| e == UnintendedDeleteBehavior::DeleteAll) {
@@ -4821,27 +4988,68 @@ impl eframe::App for NHApp {
                                 }
                             }
                             dc => send_to_focused_diagram!(dc),
+                        },
+                        SimpleProjectCommand::SpecificDiagramCommand(v, dc) => {
+                            send_to_diagram!(&v, dc);
                         }
-                    }
-                    SimpleProjectCommand::SpecificDiagramCommand(v, dc) => {
-                        send_to_diagram!(&v, dc);
-                    }
-                    SimpleProjectCommand::SwapTopLanguages => {
-                        if self.context.languages_order.len() > 1 {
-                            self.context.languages_order.swap(0, 1);
+                        SimpleProjectCommand::SwapTopLanguages => {
+                            if self.context.languages_order.len() > 1 {
+                                self.context.languages_order.swap(0, 1);
+                            }
+                            self.context.drawing_context.fluent_bundle =
+                                common::fluent::create_fluent_bundle(&self.context.languages_order)
+                                    .unwrap();
                         }
-                        self.context.drawing_context.fluent_bundle =
-                            common::fluent::create_fluent_bundle(&self.context.languages_order)
-                                .unwrap();
-                    }
-                    SimpleProjectCommand::CycleShadesProfiles => {
-                        self.context.selected_shades_profile =
-                            (self.context.selected_shades_profile + 1)
-                                % self.context.shades_profiles.len();
-                    }
-                    SimpleProjectCommand::OpenProject(b) => {
-                        if !self.context.has_unsaved_changes || b {
+                        SimpleProjectCommand::CycleShadesProfiles => {
+                            self.context.selected_shades_profile =
+                                (self.context.selected_shades_profile + 1)
+                                    % self.context.shades_profiles.len();
+                        }
+                        SimpleProjectCommand::OpenProject(b) => {
+                            if !self.context.has_unsaved_changes || b {
+                                let mut dialog = rfd::AsyncFileDialog::new();
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    dialog = dialog.add_filter("Nihonium Project files", &["nhp"]);
+                                }
+                                dialog = dialog
+                                    .add_filter("Nihonium Project Zip files", &["nhpz"])
+                                    .add_filter("All files", &["*"]);
+
+                                let s = self.context.file_io_channel.0.clone();
+
+                                execute(async move {
+                                    let file = dialog.pick_file().await;
+                                    if let Some(file) = file {
+                                        let _ = s.send(FileIOOperation::ProjectOpen(file));
+                                    }
+                                });
+                            } else {
+                                self.context.confirm_modal_reason =
+                                    Some(SimpleProjectCommand::OpenProject(b).into());
+                            }
+                        }
+                        SimpleProjectCommand::UploadNewResource => {
+                            let dialog = rfd::AsyncFileDialog::new();
+                            let s = self.context.file_io_channel.0.clone();
+                            execute(async move {
+                                let files = dialog.pick_files().await;
+                                if let Some(file) = files {
+                                    let _ = s.send(FileIOOperation::FilesUpload(file));
+                                }
+                            });
+                        }
+                        SimpleProjectCommand::SaveProject | SimpleProjectCommand::SaveProjectAs => {
                             let mut dialog = rfd::AsyncFileDialog::new();
+                            #[cfg(target_arch = "wasm32")]
+                            {
+                                let HierarchyNode::Folder(_, name, _) =
+                                    &self.context.project_hierarchy
+                                else {
+                                    continue;
+                                };
+                                dialog = dialog.set_file_name(format!("{}.nhpz", name));
+                            }
                             #[cfg(not(target_arch = "wasm32"))]
                             {
                                 dialog = dialog.add_filter("Nihonium Project files", &["nhp"]);
@@ -4850,91 +5058,51 @@ impl eframe::App for NHApp {
                                 .add_filter("Nihonium Project Zip files", &["nhpz"])
                                 .add_filter("All files", &["*"]);
 
-                            let s = self.context.file_io_channel.0.clone();
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if let Some(current_path) = self.context.project_path.clone()
+                                && spc == SimpleProjectCommand::SaveProject
+                            {
+                                match self.context.export_project(current_path.into()) {
+                                    Err(e) => {
+                                        self.context.custom_modal = Some(ErrorModal::new_box(
+                                            format!("Error exporting: {:?}", e),
+                                        ))
+                                    }
+                                    Ok(_) => {
+                                        self.context.set_has_unsaved_changes(false);
+                                    }
+                                }
+                                continue;
+                            }
 
+                            let s = self.context.file_io_channel.0.clone();
                             execute(async move {
-                                let file = dialog.pick_file().await;
+                                let file = dialog.save_file().await;
                                 if let Some(file) = file {
-                                    let _ = s.send(FileIOOperation::ProjectOpen(file));
+                                    let _ = s.send(FileIOOperation::ProjectSave(file));
                                 }
                             });
-                        } else {
-                            self.context.confirm_modal_reason =
-                                Some(SimpleProjectCommand::OpenProject(b));
                         }
-                    }
-                    SimpleProjectCommand::UploadNewResource => {
-                        let dialog = rfd::AsyncFileDialog::new();
-                        let s = self.context.file_io_channel.0.clone();
-                        execute(async move {
-                            let files = dialog.pick_files().await;
-                            if let Some(file) = files {
-                                let _ = s.send(FileIOOperation::FilesUpload(file));
+                        SimpleProjectCommand::CloseProject(b) => {
+                            if !self.context.has_unsaved_changes || b {
+                                self.context.clear_project_data();
+                                Self::clear_nonstatic_tabs(&mut self.tree);
+                            } else {
+                                self.context.confirm_modal_reason =
+                                    Some(SimpleProjectCommand::CloseProject(b).into());
                             }
-                        });
-                    }
-                    SimpleProjectCommand::SaveProject | SimpleProjectCommand::SaveProjectAs => {
-                        let mut dialog = rfd::AsyncFileDialog::new();
-                        #[cfg(target_arch = "wasm32")]
-                        {
-                            let HierarchyNode::Folder(_, name, _) = &self.context.project_hierarchy
-                            else {
-                                continue;
-                            };
-                            dialog = dialog.set_file_name(format!("{}.nhpz", name));
                         }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        {
-                            dialog = dialog.add_filter("Nihonium Project files", &["nhp"]);
-                        }
-                        dialog = dialog
-                            .add_filter("Nihonium Project Zip files", &["nhpz"])
-                            .add_filter("All files", &["*"]);
-
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if let Some(current_path) = self.context.project_path.clone()
-                            && spc == SimpleProjectCommand::SaveProject
-                        {
-                            match self.context.export_project(current_path.into()) {
-                                Err(e) => {
-                                    self.context.custom_modal = Some(ErrorModal::new_box(format!(
-                                        "Error exporting: {:?}",
-                                        e
-                                    )))
-                                }
-                                Ok(_) => {
-                                    self.context.set_has_unsaved_changes(false);
-                                }
+                        SimpleProjectCommand::Exit(b) => {
+                            if !self.context.has_unsaved_changes || b {
+                                self.context.has_unsaved_changes = false;
+                                ui.send_viewport_cmd(egui::ViewportCommand::Close);
+                            } else {
+                                self.context.confirm_modal_reason =
+                                    Some(SimpleProjectCommand::Exit(b).into());
                             }
-                            continue;
-                        }
-
-                        let s = self.context.file_io_channel.0.clone();
-                        execute(async move {
-                            let file = dialog.save_file().await;
-                            if let Some(file) = file {
-                                let _ = s.send(FileIOOperation::ProjectSave(file));
-                            }
-                        });
-                    }
-                    SimpleProjectCommand::CloseProject(b) => {
-                        if !self.context.has_unsaved_changes || b {
-                            self.context.clear_project_data();
-                            Self::clear_nonstatic_tabs(&mut self.tree);
-                        } else {
-                            self.context.confirm_modal_reason =
-                                Some(SimpleProjectCommand::CloseProject(b));
                         }
                     }
-                    SimpleProjectCommand::Exit(b) => {
-                        if !self.context.has_unsaved_changes || b {
-                            self.context.has_unsaved_changes = false;
-                            ui.send_viewport_cmd(egui::ViewportCommand::Close);
-                        } else {
-                            self.context.confirm_modal_reason = Some(SimpleProjectCommand::Exit(b));
-                        }
-                    }
-                },
+                }
                 ProjectCommand::RenameElement(uuid, new_name) => {
                     fn h(
                         e: &mut HierarchyNode,
@@ -5012,8 +5180,8 @@ impl eframe::App for NHApp {
                 } => {
                     self.add_diagram(parent, view_uuid, controller);
                 }
-                ProjectCommand::DeleteDiagram(view_uuid) => {
-                    self.delete_diagram(view_uuid);
+                ProjectCommand::DeleteProjectElements(targets, _) => {
+                    self.delete_elements(&targets);
                 }
                 ProjectCommand::AddNewResource {
                     into,
@@ -5073,17 +5241,6 @@ impl eframe::App for NHApp {
                             uuid: new_uuid,
                             mode: ResourceTabMode::Edit
                         }
-                    );
-                    self.context.set_has_unsaved_changes(true);
-                }
-                ProjectCommand::DeleteResource(needle_uuid) => {
-                    self.context.project_hierarchy.remove(&needle_uuid.into());
-                    self.context
-                        .drawing_context
-                        .raw_resources
-                        .remove(&needle_uuid);
-                    self.tree.retain_tabs(
-                        |e| !matches!(e, NHTab::Resource { uuid, .. } if *uuid == needle_uuid),
                     );
                     self.context.set_has_unsaved_changes(true);
                 }
