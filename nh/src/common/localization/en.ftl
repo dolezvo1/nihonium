@@ -83,6 +83,7 @@ nh-tab-projecthierarchy-collapsechildren = Collapse children
 nh-tab-projecthierarchy-uncollapsechildren = Uncollapse children
 nh-tab-projecthierarchy-open = Open
 nh-tab-projecthierarchy-rename = Rename
+nh-tab-projecthierarchy-renameselected = Rename selected elements
 nh-tab-projecthierarchy-newname = New name
 nh-tab-projecthierarchy-delete = Delete
 nh-tab-projecthierarchy-deleteselected = Delete selected elements

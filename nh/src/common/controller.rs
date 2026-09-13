@@ -151,7 +151,7 @@ impl Default for SnapManager {
 #[derive(Clone)]
 pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
-    RenameElement(EntityUuid, String),
+    RenameProjectElements(HashSet<EntityUuid>, String),
 
     SetInsertionTargetFolder(FolderUuid),
     OpenAndFocusTab(NHTab, Option<egui::Pos2>),

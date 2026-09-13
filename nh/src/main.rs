@@ -1004,7 +1004,7 @@ impl NHContext {
                 /*recurse:*/ bool,
                 FolderUuid,
             ),
-            RenameElement(EntityUuid),
+            RenameElements(EntityUuid),
             DeleteElements(EntityUuid),
         }
 
@@ -1119,8 +1119,9 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
                                     .clicked()
                                 {
-                                    *cma =
-                                        Some(ContextMenuAction::RenameElement(uuid.clone().into()));
+                                    *cma = Some(ContextMenuAction::RenameElements(
+                                        uuid.clone().into(),
+                                    ));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -1193,8 +1194,9 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
                                     .clicked()
                                 {
-                                    *cma =
-                                        Some(ContextMenuAction::RenameElement(uuid.clone().into()));
+                                    *cma = Some(ContextMenuAction::RenameElements(
+                                        uuid.clone().into(),
+                                    ));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -1267,8 +1269,9 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
                                     .clicked()
                                 {
-                                    *cma =
-                                        Some(ContextMenuAction::RenameElement(uuid.clone().into()));
+                                    *cma = Some(ContextMenuAction::RenameElements(
+                                        uuid.clone().into(),
+                                    ));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -1337,6 +1340,17 @@ impl NHContext {
                         }
 
                         if !selected_nodes.is_empty() {
+                            ui.separator();
+                            if ui
+                                .button(translate!("nh-tab-projecthierarchy-renameselected"))
+                                .clicked()
+                            {
+                                fallback_menu_action = Some(ContextMenuAction::RenameElements(
+                                    selected_nodes.first().cloned().unwrap(),
+                                ));
+                                ui.close();
+                            }
+
                             ui.separator();
                             if ui
                                 .button(translate!("nh-tab-projecthierarchy-deleteselected"))
@@ -1423,6 +1437,19 @@ impl NHContext {
                 }
             });
 
+        let get_multiple_targets = |target| -> HashSet<EntityUuid> {
+            if self
+                .tree_view_state
+                .selected()
+                .iter()
+                .find(|e| **e == target)
+                .is_some()
+            {
+                self.tree_view_state.selected().iter().cloned().collect()
+            } else {
+                std::iter::once(target).collect()
+            }
+        };
         let context_menu_action = top_bar_action.or(fallback_menu_action).or(node_menu_action);
         if let Some(c) = context_menu_action {
             match c {
@@ -1464,7 +1491,8 @@ impl NHContext {
                         f(e.0);
                     }
                 }
-                ContextMenuAction::RenameElement(uuid) => 'a: {
+                ContextMenuAction::RenameElements(uuid) => 'a: {
+                    let targets = get_multiple_targets(uuid);
                     let f = |e: &HierarchyNode| match e {
                         HierarchyNode::Folder(_, name, _) => (**name).clone(),
                         HierarchyNode::Diagram(uuid, c) => (*c.read().view_name(uuid)).clone(),
@@ -1487,7 +1515,7 @@ impl NHContext {
 
                     struct ViewRenameModal {
                         first_frame: bool,
-                        view_uuid: EntityUuid,
+                        targets: HashSet<EntityUuid>,
                         name_buffer: String,
                     }
 
@@ -1586,8 +1614,8 @@ impl NHContext {
                                     )
                                     .clicked()
                                 {
-                                    commands.push(ProjectCommand::RenameElement(
-                                        self.view_uuid,
+                                    commands.push(ProjectCommand::RenameProjectElements(
+                                        self.targets.clone(),
                                         self.name_buffer.clone(),
                                     ));
                                     result = CustomModalResult::CloseUnmodified;
@@ -1603,22 +1631,12 @@ impl NHContext {
 
                     self.custom_modal = Some(Box::new(ViewRenameModal {
                         first_frame: true,
-                        view_uuid: uuid,
+                        targets,
                         name_buffer: original_name,
                     }));
                 }
                 ContextMenuAction::DeleteElements(target) => {
-                    let targets: HashSet<_> = if self
-                        .tree_view_state
-                        .selected()
-                        .iter()
-                        .find(|e| **e == target)
-                        .is_some()
-                    {
-                        self.tree_view_state.selected().iter().cloned().collect()
-                    } else {
-                        std::iter::once(target).collect()
-                    };
+                    let targets = get_multiple_targets(target);
                     let mut total_elements = HashSet::new();
                     collect_implied_nodes(&self.project_hierarchy, &targets, &mut total_elements);
 
@@ -5107,10 +5125,10 @@ impl eframe::App for NHApp {
                         }
                     }
                 }
-                ProjectCommand::RenameElement(uuid, new_name) => {
+                ProjectCommand::RenameProjectElements(targets, new_name) => {
                     fn h(
                         e: &mut HierarchyNode,
-                        searched_uuid: EntityUuid,
+                        targets: &HashSet<EntityUuid>,
                         new_name: &str,
                         resources: &mut HashMap<ResourceUuid, (String, Vec<u8>)>,
                     ) -> bool {
@@ -5118,19 +5136,19 @@ impl eframe::App for NHApp {
                             HierarchyNode::Folder(uuid, name, children) => {
                                 let mut any_changed = false;
 
-                                if searched_uuid == uuid.clone().into() {
+                                if targets.contains(&uuid.clone().into()) {
                                     *name = new_name.to_owned().into();
                                     any_changed = true;
                                 }
 
                                 for e in children.iter_mut() {
-                                    any_changed |= h(e, searched_uuid, new_name, resources);
+                                    any_changed |= h(e, targets, new_name, resources);
                                 }
 
                                 any_changed
                             }
                             HierarchyNode::Diagram(uuid, inner) => {
-                                if searched_uuid == uuid.clone().into() {
+                                if targets.contains(&uuid.clone().into()) {
                                     inner
                                         .write()
                                         .set_view_name(uuid, new_name.to_owned().into());
@@ -5140,7 +5158,7 @@ impl eframe::App for NHApp {
                                 }
                             }
                             HierarchyNode::Resource(uuid) => {
-                                if searched_uuid == uuid.clone().into()
+                                if targets.contains(&uuid.clone().into())
                                     && let Some(e) = resources.get_mut(uuid)
                                 {
                                     e.0 = new_name.to_owned();
@@ -5154,13 +5172,11 @@ impl eframe::App for NHApp {
 
                     if h(
                         &mut self.context.project_hierarchy,
-                        uuid,
+                        &targets,
                         &new_name,
                         &mut self.context.drawing_context.raw_resources,
                     ) {
-                        if let EntityUuid::Folder(uuid) = uuid
-                            && uuid.is_nil()
-                        {
+                        if targets.contains(&FolderUuid::nil().into()) {
                             self.context.project_meta.name = new_name;
                         }
                         self.context.set_has_unsaved_changes(true);

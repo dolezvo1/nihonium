@@ -83,6 +83,7 @@ nh-tab-projecthierarchy-collapsechildren = Sbalit potomky
 nh-tab-projecthierarchy-uncollapsechildren = Rozbalit potomky
 nh-tab-projecthierarchy-open = Otevřít
 nh-tab-projecthierarchy-rename = Přejmenovat
+nh-tab-projecthierarchy-renameselected = Přejmenovat vybrané prvky
 nh-tab-projecthierarchy-newname = Nové jméno
 nh-tab-projecthierarchy-delete = Odstranit
 nh-tab-projecthierarchy-deleteselected = Odstranit vybrané prvky
