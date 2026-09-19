@@ -953,6 +953,12 @@ pub trait NHCanvas {
     /// None if not interactive
     fn ui_scale(&self) -> Option<f32>;
 
+    fn clear(&mut self, color: egui::Color32);
+    fn draw_gridlines(
+        &mut self,
+        vertical: Option<(f32, egui::Color32)>,
+        horizontal: Option<(f32, egui::Color32)>,
+    );
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight);
     fn draw_rectangle(
         &mut self,
@@ -1153,7 +1159,35 @@ impl UiCanvas {
         }
     }
 
-    pub fn clear(&self, color: egui::Color32) {
+    fn sc_tr(&self, pos: egui::Pos2) -> egui::Pos2 {
+        (pos * self.camera_scale) + self.canvas.min.to_vec2() + self.camera_offset.to_vec2()
+    }
+
+    fn filtered_stroke(&self, stroke: Stroke, h: Highlight) -> Stroke {
+        let h = &h & self.highlight_filter;
+        if h.count() == 0 {
+            stroke
+        } else {
+            Stroke::new_solid(
+                2.0 * stroke.width,
+                match h {
+                    Highlight { selected, .. } if selected => self.highlight_colors[0],
+                    Highlight { valid, .. } if valid => self.highlight_colors[1],
+                    Highlight { invalid, .. } if invalid => self.highlight_colors[2],
+                    Highlight { warning, .. } if warning => self.highlight_colors[3],
+                    _ => unreachable!(),
+                },
+            )
+        }
+    }
+}
+
+impl NHCanvas for UiCanvas {
+    fn ui_scale(&self) -> Option<f32> {
+        self.ui_scale.map(|e| self.camera_scale / e)
+    }
+
+    fn clear(&mut self, color: egui::Color32) {
         self.main_area_painter.rect(
             self.canvas,
             egui::CornerRadius::ZERO,
@@ -1162,9 +1196,8 @@ impl UiCanvas {
             egui::StrokeKind::Middle,
         );
     }
-
-    pub fn draw_gridlines(
-        &self,
+    fn draw_gridlines(
+        &mut self,
         vertical: Option<(f32, egui::Color32)>,
         horizontal: Option<(f32, egui::Color32)>,
     ) {
@@ -1196,34 +1229,6 @@ impl UiCanvas {
                 );
             }
         }
-    }
-
-    fn sc_tr(&self, pos: egui::Pos2) -> egui::Pos2 {
-        (pos * self.camera_scale) + self.canvas.min.to_vec2() + self.camera_offset.to_vec2()
-    }
-
-    fn filtered_stroke(&self, stroke: Stroke, h: Highlight) -> Stroke {
-        let h = &h & self.highlight_filter;
-        if h.count() == 0 {
-            stroke
-        } else {
-            Stroke::new_solid(
-                2.0 * stroke.width,
-                match h {
-                    Highlight { selected, .. } if selected => self.highlight_colors[0],
-                    Highlight { valid, .. } if valid => self.highlight_colors[1],
-                    Highlight { invalid, .. } if invalid => self.highlight_colors[2],
-                    Highlight { warning, .. } if warning => self.highlight_colors[3],
-                    _ => unreachable!(),
-                },
-            )
-        }
-    }
-}
-
-impl NHCanvas for UiCanvas {
-    fn ui_scale(&self) -> Option<f32> {
-        self.ui_scale.map(|e| self.camera_scale / e)
     }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
@@ -1640,6 +1645,14 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         None
     }
 
+    fn clear(&mut self, _color: egui::Color32) {}
+    fn draw_gridlines(
+        &mut self,
+        _vertical: Option<(f32, egui::Color32)>,
+        _horizontal: Option<(f32, egui::Color32)>,
+    ) {
+    }
+
     fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, _highlight: Highlight) {
         self.bounds.extend_with(points[0]);
         self.bounds.extend_with(points[1]);
@@ -1799,6 +1812,52 @@ impl<'a> SVGCanvas<'a> {
 impl<'a> NHCanvas for SVGCanvas<'a> {
     fn ui_scale(&self) -> Option<f32> {
         None
+    }
+
+    fn clear(&mut self, color: egui::Color32) {
+        self.draw_rectangle(
+            egui::Rect::from_min_size(-1.0 * self.camera_offset, self.export_size),
+            egui::CornerRadius::ZERO,
+            color,
+            Stroke::NONE,
+            Highlight::NONE,
+        );
+    }
+    fn draw_gridlines(
+        &mut self,
+        vertical: Option<(f32, egui::Color32)>,
+        horizontal: Option<(f32, egui::Color32)>,
+    ) {
+        if let Some((distance_x, color)) = vertical {
+            for x in
+                (1..((self.export_size.x / distance_x) as u32 + 2)).map(|e| distance_x * e as f32)
+            {
+                self.element_buffer.push(format!(
+                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}"/>
+        "#,
+                    x,
+                    0.0,
+                    x,
+                    self.export_size.y,
+                    color.to_hex(),
+                ));
+            }
+        }
+        if let Some((distance_y, color)) = horizontal {
+            for y in
+                (1..((self.export_size.y / distance_y) as u32 + 2)).map(|e| distance_y * e as f32)
+            {
+                self.element_buffer.push(format!(
+                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}"/>
+        "#,
+                    0.0,
+                    y,
+                    self.export_size.y,
+                    y,
+                    color.to_hex(),
+                ));
+            }
+        }
     }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {

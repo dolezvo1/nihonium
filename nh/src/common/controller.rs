@@ -859,7 +859,14 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-
+    fn draw_background(
+        &mut self,
+        context: &GlobalDrawingContext,
+        settings: &dyn DiagramSettings,
+        canvas: &mut dyn NHCanvas,
+        draw_background: bool,
+        draw_gridlines: bool,
+    );
     fn draw_in(
         &mut self,
         context: &GlobalDrawingContext,
@@ -1011,7 +1018,15 @@ pub trait DiagramController: Any + NHContextSerialize {
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-
+    fn draw_background(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        settings: &dyn DiagramSettings,
+        canvas: &mut dyn NHCanvas,
+        draw_background: bool,
+        draw_gridlines: bool,
+    );
     fn draw_in(
         &mut self,
         uuid: &ViewUuid,
@@ -2449,7 +2464,19 @@ where
         let view = self.views.get(uuid).unwrap();
         view.write().new_ui_canvas(context, settings, ui, ui_scale)
     }
-
+    fn draw_background(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        settings: &dyn DiagramSettings,
+        canvas: &mut dyn NHCanvas,
+        draw_background: bool,
+        draw_gridlines: bool,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write()
+            .draw_background(context, settings, canvas, draw_background, draw_gridlines)
+    }
     fn draw_in(
         &mut self,
         uuid: &ViewUuid,
@@ -2459,7 +2486,7 @@ where
         mouse_pos: Option<egui::Pos2>,
     ) {
         let view = self.views.get(uuid).unwrap();
-        view.write().draw_in(context, settings, canvas, mouse_pos);
+        view.write().draw_in(context, settings, canvas, mouse_pos)
     }
 
     fn show_context_menu(
@@ -3552,7 +3579,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
 
     fn new_ui_canvas(
         &mut self,
-        context: &GlobalDrawingContext,
+        _context: &GlobalDrawingContext,
         settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
@@ -3582,11 +3609,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             self.adapter
                 .requested_headers(settings, self.temporaries.last_max_headers),
         );
-        ui_canvas.clear(self.adapter.background_color(&context.global_colors));
-        ui_canvas.draw_gridlines(
-            Some((50.0, self.adapter.gridlines_color(&context.global_colors))),
-            Some((50.0, self.adapter.gridlines_color(&context.global_colors))),
-        );
 
         let inner_mouse = ui
             .ctx()
@@ -3604,6 +3626,24 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         );
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
+    }
+    fn draw_background(
+        &mut self,
+        context: &GlobalDrawingContext,
+        _settings: &dyn DiagramSettings,
+        canvas: &mut dyn NHCanvas,
+        draw_background: bool,
+        draw_gridlines: bool,
+    ) {
+        if draw_background {
+            canvas.clear(self.adapter.background_color(&context.global_colors));
+        }
+        if draw_gridlines {
+            canvas.draw_gridlines(
+                Some((50.0, self.adapter.gridlines_color(&context.global_colors))),
+                Some((50.0, self.adapter.gridlines_color(&context.global_colors))),
+            );
+        }
     }
     fn handle_input(
         &mut self,

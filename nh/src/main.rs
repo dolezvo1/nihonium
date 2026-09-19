@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
 
-use common::canvas::{NHCanvas, UiCanvas};
+use common::canvas::UiCanvas;
 use common::controller::{
     Arrangement, GlobalDrawingContext, HierarchyNode, ProjectCommand, SimpleProjectCommand,
 };
@@ -3125,6 +3125,14 @@ impl NHContext {
             ui,
             ui_scale,
         );
+        diagram_controller.draw_background(
+            tab_uuid,
+            &self.drawing_context,
+            settings.as_ref(),
+            ui_canvas.as_mut(),
+            true,
+            true,
+        );
 
         response.context_menu(|ui| {
             diagram_controller.show_context_menu(
@@ -4592,15 +4600,7 @@ impl eframe::App for NHApp {
 
                     let (_painter_response, painter) =
                         ui.allocate_painter(preview_size, egui::Sense::focusable_noninteractive());
-                    if *background {
-                        painter.rect(
-                            canvas_rect,
-                            egui::CornerRadius::ZERO,
-                            egui::Color32::WHITE, // TODO: load the actual background color
-                            egui::Stroke::NONE,
-                            egui::StrokeKind::Middle,
-                        );
-                    } else {
+                    if !*background {
                         const RECT_SIDE: f32 = 20.0;
                         for ii in 0..((preview_width / RECT_SIDE) as u32 + 1) {
                             for jj in 0..=((preview_height / RECT_SIDE) as u32 + 1) {
@@ -4635,12 +4635,14 @@ impl eframe::App for NHApp {
                         *highlight,
                         (HeaderMode::Expanding(0), HeaderMode::Expanding(0)),
                     );
-                    if *gridlines {
-                        ui_canvas.draw_gridlines(
-                            Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
-                            Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
-                        );
-                    }
+                    controller.draw_background(
+                        v,
+                        &self.context.drawing_context,
+                        s_reduced.as_ref(),
+                        &mut ui_canvas,
+                        *background,
+                        *gridlines,
+                    );
                     controller.draw_in(
                         v,
                         &self.context.drawing_context,
@@ -4673,15 +4675,14 @@ impl eframe::App for NHApp {
                             + egui::Vec2::new(2.0 * *padding_x, 2.0 * *padding_y);
                         let mut svg_canvas =
                             SVGCanvas::new(canvas_offset, canvas_size, *highlight, ui.painter());
-                        if *background {
-                            svg_canvas.draw_rectangle(
-                                egui::Rect::from_min_size(-1.0 * canvas_offset, canvas_size),
-                                egui::CornerRadius::ZERO,
-                                egui::Color32::WHITE, // TODO: load the actual background color
-                                common::canvas::Stroke::NONE,
-                                common::canvas::Highlight::NONE,
-                            );
-                        }
+                        controller.draw_background(
+                            v,
+                            &self.context.drawing_context,
+                            s_reduced.as_ref(),
+                            &mut svg_canvas,
+                            *background,
+                            *gridlines,
+                        );
                         controller.draw_in(
                             v,
                             &self.context.drawing_context,
