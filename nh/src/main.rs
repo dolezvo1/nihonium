@@ -4414,19 +4414,23 @@ impl eframe::App for NHApp {
             .id(egui::Id::from("SVG Export Options"))
             .show(ui.ctx(), |ui| {
                 // Change options
-                ui.checkbox(
-                    background,
-                    self.context
-                        .drawing_context
-                        .translate_0("nh-window-svgexport-solidbackground"),
-                );
-                ui.checkbox(
-                    gridlines,
-                    self.context
-                        .drawing_context
-                        .translate_0("nh-window-svgexport-gridlines"),
-                );
                 ui.horizontal(|ui| {
+                    ui.label("Background:");
+                    ui.checkbox(
+                        background,
+                        self.context
+                            .drawing_context
+                            .translate_0("nh-window-svgexport-solidbackground"),
+                    );
+                    ui.checkbox(
+                        gridlines,
+                        self.context
+                            .drawing_context
+                            .translate_0("nh-window-svgexport-gridlines"),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Highlight filters:");
                     ui.checkbox(
                         &mut highlight.selected,
                         self.context
@@ -4453,21 +4457,28 @@ impl eframe::App for NHApp {
                     );
                 });
 
-                ui.spacing_mut().slider_width = (ui.available_width() / 2.0).max(50.0);
-                ui.add(
-                    egui::Slider::new(padding_x, 0.0..=500.0).text(
+                ui.horizontal(|ui| {
+                    ui.label(
                         self.context
                             .drawing_context
                             .translate_0("nh-window-svgexport-horizontalpadding"),
-                    ),
-                );
-                ui.add(
-                    egui::Slider::new(padding_y, 0.0..=500.0).text(
+                    );
+                    ui.add(
+                        egui::DragValue::new(padding_x)
+                            .range(0.0..=500.0)
+                            .speed(1.0),
+                    );
+                    ui.label(
                         self.context
                             .drawing_context
                             .translate_0("nh-window-svgexport-verticalpadding"),
-                    ),
-                );
+                    );
+                    ui.add(
+                        egui::DragValue::new(padding_y)
+                            .range(0.0..=500.0)
+                            .speed(1.0),
+                    );
+                });
 
                 ui.collapsing("Diagram specific settings", |ui| {
                     s_reduced.show_reduced(&mut self.context.drawing_context, ui);
