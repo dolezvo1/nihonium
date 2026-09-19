@@ -1857,44 +1857,59 @@ impl NHContext {
                 .show(&mut columns[0], |builder| {
                     fn h(
                         e: &ColorHierarchyNode,
-                        gc: &ColorBundle,
+                        gdc: &GlobalDrawingContext,
                         builder: &mut egui_ltreeview::TreeViewBuilder<'_, uuid::Uuid>,
                         cmd: &mut Option<ColorCommand>,
                     ) {
                         match e {
                             ColorHierarchyNode::Folder(uuid, color_hierarchy_nodes) => {
-                                if let Some(name) = gc.folders.get(uuid) {
+                                if let Some(name) = gdc.global_colors.folders.get(uuid) {
                                     let node = egui_ltreeview::NodeBuilder::dir(*uuid)
                                         .label(name)
                                         .context_menu(|ui| {
-                                            if ui.button("Add Folder").clicked() {
+                                            if ui
+                                                .button(gdc.translate_0(
+                                                    "nh-tab-projectsettings-globalcolors-addfolder",
+                                                ))
+                                                .clicked()
+                                            {
                                                 *cmd = Some(ColorCommand::AddFolder {
                                                     name: "New Folder".to_owned(),
                                                     into: *uuid,
                                                 });
                                             }
-                                            if ui.button("Add Color").clicked() {
+                                            if ui
+                                                .button(gdc.translate_0(
+                                                    "nh-tab-projectsettings-globalcolors-addcolor",
+                                                ))
+                                                .clicked()
+                                            {
                                                 *cmd = Some(ColorCommand::AddColor {
                                                     name: "New Color".to_owned(),
                                                     color: egui::Color32::WHITE,
                                                     into: *uuid,
                                                 });
                                             }
-                                            if ui.button("Delete").clicked() {
+                                            if ui
+                                                .button(gdc.translate_0(
+                                                    "nh-tab-projectsettings-globalcolors-delete",
+                                                ))
+                                                .clicked()
+                                            {
                                                 *cmd = Some(ColorCommand::Delete(*uuid));
                                             }
                                         });
                                     builder.node(node);
 
                                     for e in color_hierarchy_nodes {
-                                        h(e, gc, builder, cmd);
+                                        h(e, gdc, builder, cmd);
                                     }
 
                                     builder.close_dir();
                                 }
                             }
                             ColorHierarchyNode::Color(uuid) => {
-                                if let Some(v) = gc.colors.get(uuid) {
+                                if let Some(v) = gdc.global_colors.colors.get(uuid) {
                                     let node = egui_ltreeview::NodeBuilder::leaf(*uuid)
                                         .label_ui(|ui| {
                                             let (r, p) = ui.allocate_painter(
@@ -1911,27 +1926,47 @@ impl NHContext {
                                             ui.label(&v.0);
                                         })
                                         .context_menu(|ui| {
-                                            if ui.button("Add Folder").clicked() {
+                                            if ui
+                                                .button(gdc.translate_0(
+                                                    "nh-tab-projectsettings-globalcolors-addfolder",
+                                                ))
+                                                .clicked()
+                                            {
                                                 *cmd = Some(ColorCommand::AddFolder {
                                                     name: "New Folder".to_owned(),
                                                     into: uuid::Uuid::nil(),
                                                 });
                                             }
-                                            if ui.button("Add Color").clicked() {
+                                            if ui
+                                                .button(gdc.translate_0(
+                                                    "nh-tab-projectsettings-globalcolors-addcolor",
+                                                ))
+                                                .clicked()
+                                            {
                                                 *cmd = Some(ColorCommand::AddColor {
                                                     name: "New Color".to_owned(),
                                                     color: egui::Color32::WHITE,
                                                     into: uuid::Uuid::nil(),
                                                 });
                                             }
-                                            if ui.button("Duplicate").clicked() {
+                                            if ui
+                                                .button(gdc.translate_0(
+                                                    "nh-tab-projectsettings-globalcolors-duplicate",
+                                                ))
+                                                .clicked()
+                                            {
                                                 *cmd = Some(ColorCommand::AddColor {
                                                     name: v.0.clone(),
                                                     color: v.1,
                                                     into: uuid::Uuid::nil(),
                                                 });
                                             }
-                                            if ui.button("Delete").clicked() {
+                                            if ui
+                                                .button(gdc.translate_0(
+                                                    "nh-tab-projectsettings-globalcolors-delete",
+                                                ))
+                                                .clicked()
+                                            {
                                                 *cmd = Some(ColorCommand::Delete(*uuid));
                                             }
                                         });
@@ -1940,7 +1975,12 @@ impl NHContext {
                             }
                         }
                     }
-                    h(&gc!().colors_hierarchy, &gc!(), builder, &mut cmd);
+                    h(
+                        &gc!().colors_hierarchy,
+                        &self.drawing_context,
+                        builder,
+                        &mut cmd,
+                    );
                 });
                 for e in actions {
                     match e {
@@ -1969,12 +2009,24 @@ impl NHContext {
                 }
 
                 if let Some(k) = &self.selected_global_color {
+                    let name_string = self
+                        .drawing_context
+                        .translate_0("nh-tab-projectsettings-globalcolors-name")
+                        .to_string();
+                    let color_string = self
+                        .drawing_context
+                        .translate_0("nh-tab-projectsettings-globalcolors-color")
+                        .to_string();
+                    let delete_string = self
+                        .drawing_context
+                        .translate_0("nh-tab-projectsettings-globalcolors-delete")
+                        .to_string();
                     if let Some(v) = gc!().colors.get_mut(k) {
                         anything_changed |= columns[1]
-                            .labeled_text_edit_singleline("Name", &mut v.0)
+                            .labeled_text_edit_singleline(name_string, &mut v.0)
                             .changed();
 
-                        columns[1].label("Color:");
+                        columns[1].label(color_string);
                         anything_changed |= egui::widgets::color_picker::color_edit_button_srgba(
                             &mut columns[1],
                             &mut v.1,
@@ -1983,15 +2035,16 @@ impl NHContext {
                         .changed();
 
                         columns[1].separator();
-                        if columns[1].button("Delete").clicked() {
+                        if columns[1].button(delete_string).clicked() {
                             cmd = Some(ColorCommand::Delete(*k));
                         }
                     } else if let Some(v) = gc!().folders.get_mut(k) {
-                        anything_changed |=
-                            columns[1].labeled_text_edit_singleline("Name", v).changed();
+                        anything_changed |= columns[1]
+                            .labeled_text_edit_singleline(name_string, v)
+                            .changed();
 
                         columns[1].separator();
-                        if columns[1].button("Delete").clicked() {
+                        if columns[1].button(delete_string).clicked() {
                             cmd = Some(ColorCommand::Delete(*k));
                         }
                     }
@@ -4415,7 +4468,11 @@ impl eframe::App for NHApp {
             .show(ui.ctx(), |ui| {
                 // Change options
                 ui.horizontal(|ui| {
-                    ui.label("Background:");
+                    ui.label(
+                        self.context
+                            .drawing_context
+                            .translate_0("nh-window-svgexport-background"),
+                    );
                     ui.checkbox(
                         background,
                         self.context
@@ -4430,7 +4487,11 @@ impl eframe::App for NHApp {
                     );
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Highlight filters:");
+                    ui.label(
+                        self.context
+                            .drawing_context
+                            .translate_0("nh-window-svgexport-highlightfilters"),
+                    );
                     ui.checkbox(
                         &mut highlight.selected,
                         self.context
@@ -4480,12 +4541,25 @@ impl eframe::App for NHApp {
                     );
                 });
 
-                ui.collapsing("Diagram specific settings", |ui| {
+                egui::CollapsingHeader::new(
+                    self.context
+                        .drawing_context
+                        .translate_0("nh-window-svgexport-diagramspecificsettings"),
+                )
+                .id_salt("nh-window-svgexport-diagramspecificsettings")
+                .show(ui, |ui| {
                     s_reduced.show_reduced(&mut self.context.drawing_context, ui);
                 })
                 .header_response
                 .context_menu(|ui| {
-                    if ui.button("Reset diagram specific settings").clicked() {
+                    if ui
+                        .button(
+                            self.context
+                                .drawing_context
+                                .translate_0("nh-window-svgexport-resetdiagramspecificsettings"),
+                        )
+                        .clicked()
+                    {
                         *s_reduced = s_full.clone_reduced();
                     }
                 });
@@ -4897,21 +4971,28 @@ impl eframe::App for NHApp {
                     }
 
                     ui.horizontal(|ui| {
-                        if ui.button(translate!("nh-generic-yes")).clicked() {
-                            match confirm_reason {
-                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::OpenProject(_)) => {
+                        match confirm_reason {
+                            ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::OpenProject(_)) => {
+                                if ui.button(translate!("nh-generic-unsavedchanges-discardandproceed")).clicked() {
                                     commands.push(SimpleProjectCommand::OpenProject(true).into());
+                                    confirm_modal_change = Some(None);
                                 }
-                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::CloseProject(_)) => {
-                                    commands.push(SimpleProjectCommand::CloseProject(true).into());
-                                }
-                                ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::Exit(_)) => {
-                                    commands.push(SimpleProjectCommand::Exit(true).into());
-                                }
-                                _ => unreachable!("Unexpected confirm modal reason"),
                             }
-                            confirm_modal_change = Some(None);
+                            ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::CloseProject(_)) => {
+                                if ui.button(translate!("nh-generic-unsavedchanges-discardandproceed")).clicked() {
+                                    commands.push(SimpleProjectCommand::CloseProject(true).into());
+                                    confirm_modal_change = Some(None);
+                                }
+                            }
+                            ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::Exit(_)) => {
+                                if ui.button(translate!("nh-generic-unsavedchanges-discardandproceed")).clicked() {
+                                    commands.push(SimpleProjectCommand::Exit(true).into());
+                                    confirm_modal_change = Some(None);
+                                }
+                            }
+                            _ => unreachable!("Unexpected confirm modal reason"),
                         }
+
                         if ui
                             .button(translate!("nh-generic-unsavedchanges-saveandproceed"))
                             .clicked()

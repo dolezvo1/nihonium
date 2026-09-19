@@ -5,7 +5,8 @@ nh-generic-ok = OK
 nh-generic-cancel = Cancel
 nh-generic-dontaskagain = Don't ask again
 nh-generic-unsavedchanges-warning = The current project has unsaved changes.
-nh-generic-unsavedchanges-saveandproceed = Save and proceed
+nh-generic-unsavedchanges-discardandproceed = Discard changes and proceed
+nh-generic-unsavedchanges-saveandproceed = Save changes and proceed
 nh-generic-deletemodel-title = Do you want to delete view element or model element?
 nh-generic-deletemodel-view = Delete view element
 nh-generic-deletemodel-modelif = Delete model element if there are no other view elements
@@ -118,7 +119,12 @@ nh-tab-projectsettings-general-projectversion = Project Version
 nh-tab-projectsettings-general-projectdescription = Project Description
 nh-tab-projectsettings-general-projectauthor = Project Author
 nh-tab-projectsettings-globalcolors = Global Colors
-nh-tab-projectsettings-globalcolors-addnew = Add new
+nh-tab-projectsettings-globalcolors-addfolder = Add folder
+nh-tab-projectsettings-globalcolors-addcolor = Add color
+nh-tab-projectsettings-globalcolors-duplicate = Duplicate
+nh-tab-projectsettings-globalcolors-delete = Delete
+nh-tab-projectsettings-globalcolors-name = Name:
+nh-tab-projectsettings-globalcolors-color = Color:
 
 nh-modal-colorpicker-nooveridebrackets = [no override]
 nh-modal-colorpicker-notfoundbrackets = [not found]
@@ -127,14 +133,18 @@ nh-modal-colorpicker-localcolor = Local color
 nh-modal-colorpicker-globalcolor = Global color (see Project Settings)
 
 nh-window-svgexport = SVG Export Options
+nh-window-svgexport-background = Background
 nh-window-svgexport-solidbackground = Solid background
 nh-window-svgexport-gridlines = Gridlines
+nh-window-svgexport-highlightfilters = Highlight filters
 nh-window-svgexport-select = Select
 nh-window-svgexport-valid = Valid
 nh-window-svgexport-warning = Warning
 nh-window-svgexport-invalid = Invalid
 nh-window-svgexport-horizontalpadding = Horizontal padding
 nh-window-svgexport-verticalpadding = Vertical padding
+nh-window-svgexport-diagramspecificsettings = Diagram specific settings
+nh-window-svgexport-resetdiagramspecificsettings = Reset diagram specific settings
 
 
 pluralize-element = { $count ->

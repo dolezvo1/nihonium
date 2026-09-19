@@ -5,7 +5,8 @@ nh-generic-ok = Budiž
 nh-generic-cancel = Zrušit
 nh-generic-dontaskagain = Znovu se neptat
 nh-generic-unsavedchanges-warning = Současný projekt má neuložené změny.
-nh-generic-unsavedchanges-saveandproceed = Uložit a potvrdit
+nh-generic-unsavedchanges-discardandproceed = Zahodit změny a pokračovat
+nh-generic-unsavedchanges-saveandproceed = Uložit změny a pokračovat
 nh-generic-deletemodel-title = Chcete odstranit prvek pohledu, nebo modelu?
 nh-generic-deletemodel-view = Odstranit prvek pohledu
 nh-generic-deletemodel-modelif = Odstranit prvek modelu pokud je prvek pohledu jediný
@@ -118,7 +119,12 @@ nh-tab-projectsettings-general-projectversion = Verze projektu
 nh-tab-projectsettings-general-projectdescription = Popis projektu
 nh-tab-projectsettings-general-projectauthor = Autor projektu
 nh-tab-projectsettings-globalcolors = Globální barvy
-nh-tab-projectsettings-globalcolors-addnew = Přidat novou
+nh-tab-projectsettings-globalcolors-addfolder = Přidat složku
+nh-tab-projectsettings-globalcolors-addcolor = Přidat barvu
+nh-tab-projectsettings-globalcolors-duplicate = Duplikovat
+nh-tab-projectsettings-globalcolors-delete = Smazat
+nh-tab-projectsettings-globalcolors-name = Jméno:
+nh-tab-projectsettings-globalcolors-color = Barva:
 
 nh-modal-colorpicker-nooveridebrackets = [beze změn]
 nh-modal-colorpicker-notfoundbrackets = [nenalezeno]
@@ -127,14 +133,18 @@ nh-modal-colorpicker-localcolor = Lokální barva
 nh-modal-colorpicker-globalcolor = Globální barva (viz Nastavení projektu)
 
 nh-window-svgexport = Možnosti SVG Exportu
+nh-window-svgexport-background = Pozadí
 nh-window-svgexport-solidbackground = Pevné pozadí
 nh-window-svgexport-gridlines = Mřížka
+nh-window-svgexport-highlightfilters = Filtry zvýraznění
 nh-window-svgexport-select = Výběr
 nh-window-svgexport-valid = Platný
 nh-window-svgexport-warning = Varování
 nh-window-svgexport-invalid = Neplatný
 nh-window-svgexport-horizontalpadding = Horizontální vycpávka
 nh-window-svgexport-verticalpadding = Vertikální vycpávka
+nh-window-svgexport-diagramspecificsettings = Specifická nastavení diagramu
+nh-window-svgexport-resetdiagramspecificsettings = Resetovat specifická nastavení diagramu
 
 
 pluralize-element = { $count ->
