@@ -3125,7 +3125,7 @@ impl NHContext {
             ui,
             ui_scale,
         );
-        diagram_controller.draw_background(
+        diagram_controller.draw_initialize(
             tab_uuid,
             &self.drawing_context,
             settings.as_ref(),
@@ -3148,7 +3148,7 @@ impl NHContext {
             diagram_controller.unset_context_menu(tab_uuid);
         }
 
-        diagram_controller.draw_in(
+        diagram_controller.draw_elements(
             tab_uuid,
             &self.drawing_context,
             settings.as_ref(),
@@ -4578,7 +4578,7 @@ impl eframe::App for NHApp {
                 {
                     // Measure the diagram
                     let mut measuring_canvas = MeasuringCanvas::new(ui.painter());
-                    controller.draw_in(
+                    controller.draw_elements(
                         v,
                         &self.context.drawing_context,
                         s_reduced.as_ref(),
@@ -4635,7 +4635,7 @@ impl eframe::App for NHApp {
                         *highlight,
                         (HeaderMode::Expanding(0), HeaderMode::Expanding(0)),
                     );
-                    controller.draw_background(
+                    controller.draw_initialize(
                         v,
                         &self.context.drawing_context,
                         s_reduced.as_ref(),
@@ -4643,7 +4643,7 @@ impl eframe::App for NHApp {
                         *background,
                         *gridlines,
                     );
-                    controller.draw_in(
+                    controller.draw_elements(
                         v,
                         &self.context.drawing_context,
                         s_reduced.as_ref(),
@@ -4661,7 +4661,7 @@ impl eframe::App for NHApp {
                         .clicked()
                     {
                         let mut measuring_canvas = MeasuringCanvas::new(ui.painter());
-                        controller.draw_in(
+                        controller.draw_elements(
                             v,
                             &self.context.drawing_context,
                             s_reduced.as_ref(),
@@ -4675,7 +4675,7 @@ impl eframe::App for NHApp {
                             + egui::Vec2::new(2.0 * *padding_x, 2.0 * *padding_y);
                         let mut svg_canvas =
                             SVGCanvas::new(canvas_offset, canvas_size, *highlight, ui.painter());
-                        controller.draw_background(
+                        controller.draw_initialize(
                             v,
                             &self.context.drawing_context,
                             s_reduced.as_ref(),
@@ -4683,7 +4683,7 @@ impl eframe::App for NHApp {
                             *background,
                             *gridlines,
                         );
-                        controller.draw_in(
+                        controller.draw_elements(
                             v,
                             &self.context.drawing_context,
                             s_reduced.as_ref(),

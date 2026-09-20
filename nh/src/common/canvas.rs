@@ -953,12 +953,6 @@ pub trait NHCanvas {
     /// None if not interactive
     fn ui_scale(&self) -> Option<f32>;
 
-    fn clear(&mut self, color: egui::Color32);
-    fn draw_gridlines(
-        &mut self,
-        vertical: Option<(f32, egui::Color32)>,
-        horizontal: Option<(f32, egui::Color32)>,
-    );
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight);
     fn draw_rectangle(
         &mut self,
@@ -1023,6 +1017,14 @@ pub trait NHCanvas {
     fn max_headers(&self) -> Option<(u8, u8)> {
         None
     }
+}
+pub trait InitiableNHCanvas: NHCanvas {
+    fn clear(&mut self, color: egui::Color32);
+    fn draw_gridlines(
+        &mut self,
+        vertical: Option<(f32, egui::Color32)>,
+        horizontal: Option<(f32, egui::Color32)>,
+    );
 }
 
 #[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -1185,50 +1187,6 @@ impl UiCanvas {
 impl NHCanvas for UiCanvas {
     fn ui_scale(&self) -> Option<f32> {
         self.ui_scale.map(|e| self.camera_scale / e)
-    }
-
-    fn clear(&mut self, color: egui::Color32) {
-        self.main_area_painter.rect(
-            self.canvas,
-            egui::CornerRadius::ZERO,
-            color,
-            egui::Stroke::NONE,
-            egui::StrokeKind::Middle,
-        );
-    }
-    fn draw_gridlines(
-        &mut self,
-        vertical: Option<(f32, egui::Color32)>,
-        horizontal: Option<(f32, egui::Color32)>,
-    ) {
-        let canvas_size_scaled = (self.canvas.max - self.canvas.min) / self.camera_scale;
-
-        if let Some((distance_x, color)) = vertical {
-            for x in
-                (0..((canvas_size_scaled.x / distance_x) as u32 + 2)).map(|e| distance_x * e as f32)
-            {
-                self.main_area_painter.vline(
-                    self.canvas.min.x
-                        + self.camera_offset.x % (distance_x * self.camera_scale)
-                        + x * self.camera_scale,
-                    egui::Rangef::new(self.canvas.min.y, self.canvas.max.y),
-                    egui::Stroke::new(1.0_f32, color),
-                );
-            }
-        }
-        if let Some((distance_y, color)) = horizontal {
-            for y in
-                (0..((canvas_size_scaled.y / distance_y) as u32 + 2)).map(|e| distance_y * e as f32)
-            {
-                self.main_area_painter.hline(
-                    egui::Rangef::new(self.canvas.min.x, self.canvas.max.x),
-                    self.canvas.min.y
-                        + self.camera_offset.y % (distance_y * self.camera_scale)
-                        + y * self.camera_scale,
-                    egui::Stroke::new(1.0_f32, color),
-                );
-            }
-        }
     }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
@@ -1610,6 +1568,51 @@ impl NHCanvas for UiCanvas {
         ))
     }
 }
+impl InitiableNHCanvas for UiCanvas {
+    fn clear(&mut self, color: egui::Color32) {
+        self.main_area_painter.rect(
+            self.canvas,
+            egui::CornerRadius::ZERO,
+            color,
+            egui::Stroke::NONE,
+            egui::StrokeKind::Middle,
+        );
+    }
+    fn draw_gridlines(
+        &mut self,
+        vertical: Option<(f32, egui::Color32)>,
+        horizontal: Option<(f32, egui::Color32)>,
+    ) {
+        let canvas_size_scaled = (self.canvas.max - self.canvas.min) / self.camera_scale;
+
+        if let Some((distance_x, color)) = vertical {
+            for x in
+                (0..((canvas_size_scaled.x / distance_x) as u32 + 2)).map(|e| distance_x * e as f32)
+            {
+                self.main_area_painter.vline(
+                    self.canvas.min.x
+                        + self.camera_offset.x % (distance_x * self.camera_scale)
+                        + x * self.camera_scale,
+                    egui::Rangef::new(self.canvas.min.y, self.canvas.max.y),
+                    egui::Stroke::new(1.0_f32, color),
+                );
+            }
+        }
+        if let Some((distance_y, color)) = horizontal {
+            for y in
+                (0..((canvas_size_scaled.y / distance_y) as u32 + 2)).map(|e| distance_y * e as f32)
+            {
+                self.main_area_painter.hline(
+                    egui::Rangef::new(self.canvas.min.x, self.canvas.max.x),
+                    self.canvas.min.y
+                        + self.camera_offset.y % (distance_y * self.camera_scale)
+                        + y * self.camera_scale,
+                    egui::Stroke::new(1.0_f32, color),
+                );
+            }
+        }
+    }
+}
 
 pub struct MeasuringCanvas<'a> {
     painter: &'a egui::Painter,
@@ -1643,14 +1646,6 @@ impl<'a> MeasuringCanvas<'a> {
 impl<'a> NHCanvas for MeasuringCanvas<'a> {
     fn ui_scale(&self) -> Option<f32> {
         None
-    }
-
-    fn clear(&mut self, _color: egui::Color32) {}
-    fn draw_gridlines(
-        &mut self,
-        _vertical: Option<(f32, egui::Color32)>,
-        _horizontal: Option<(f32, egui::Color32)>,
-    ) {
     }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, _highlight: Highlight) {
@@ -1722,6 +1717,15 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
 
     fn draw_image(&mut self, rect: egui::Rect, _image: &ImageData) {
         self.bounds = self.bounds.union(rect);
+    }
+}
+impl<'a> InitiableNHCanvas for MeasuringCanvas<'a> {
+    fn clear(&mut self, _color: egui::Color32) {}
+    fn draw_gridlines(
+        &mut self,
+        _vertical: Option<(f32, egui::Color32)>,
+        _horizontal: Option<(f32, egui::Color32)>,
+    ) {
     }
 }
 
@@ -1812,52 +1816,6 @@ impl<'a> SVGCanvas<'a> {
 impl<'a> NHCanvas for SVGCanvas<'a> {
     fn ui_scale(&self) -> Option<f32> {
         None
-    }
-
-    fn clear(&mut self, color: egui::Color32) {
-        self.draw_rectangle(
-            egui::Rect::from_min_size(-1.0 * self.camera_offset, self.export_size),
-            egui::CornerRadius::ZERO,
-            color,
-            Stroke::NONE,
-            Highlight::NONE,
-        );
-    }
-    fn draw_gridlines(
-        &mut self,
-        vertical: Option<(f32, egui::Color32)>,
-        horizontal: Option<(f32, egui::Color32)>,
-    ) {
-        if let Some((distance_x, color)) = vertical {
-            for x in
-                (1..((self.export_size.x / distance_x) as u32 + 2)).map(|e| distance_x * e as f32)
-            {
-                self.element_buffer.push(format!(
-                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}"/>
-        "#,
-                    x,
-                    0.0,
-                    x,
-                    self.export_size.y,
-                    color.to_hex(),
-                ));
-            }
-        }
-        if let Some((distance_y, color)) = horizontal {
-            for y in
-                (1..((self.export_size.y / distance_y) as u32 + 2)).map(|e| distance_y * e as f32)
-            {
-                self.element_buffer.push(format!(
-                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}"/>
-        "#,
-                    0.0,
-                    y,
-                    self.export_size.y,
-                    y,
-                    color.to_hex(),
-                ));
-            }
-        }
     }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
@@ -2048,5 +2006,52 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
             mime_type,
             BASE64_STANDARD.encode(&image.bytes),
         ));
+    }
+}
+impl<'a> InitiableNHCanvas for SVGCanvas<'a> {
+    fn clear(&mut self, color: egui::Color32) {
+        self.draw_rectangle(
+            egui::Rect::from_min_size(-1.0 * self.camera_offset, self.export_size),
+            egui::CornerRadius::ZERO,
+            color,
+            Stroke::NONE,
+            Highlight::NONE,
+        );
+    }
+    fn draw_gridlines(
+        &mut self,
+        vertical: Option<(f32, egui::Color32)>,
+        horizontal: Option<(f32, egui::Color32)>,
+    ) {
+        if let Some((distance_x, color)) = vertical {
+            for x in
+                (1..((self.export_size.x / distance_x) as u32 + 2)).map(|e| distance_x * e as f32)
+            {
+                self.element_buffer.push(format!(
+                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}"/>
+        "#,
+                    x,
+                    0.0,
+                    x,
+                    self.export_size.y,
+                    color.to_hex(),
+                ));
+            }
+        }
+        if let Some((distance_y, color)) = horizontal {
+            for y in
+                (1..((self.export_size.y / distance_y) as u32 + 2)).map(|e| distance_y * e as f32)
+            {
+                self.element_buffer.push(format!(
+                    r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}"/>
+        "#,
+                    0.0,
+                    y,
+                    self.export_size.y,
+                    y,
+                    color.to_hex(),
+                ));
+            }
+        }
     }
 }

@@ -3,7 +3,9 @@ use super::eref::ERef;
 use super::project_serde::{NHContextDeserialize, NHContextSerialize};
 use super::uuid::{ModelUuid, ViewUuid};
 use super::views::ordered_views::OrderedViews;
-use crate::common::canvas::{self, Highlight, ImageData, NHCanvas, NHShape, UiCanvas};
+use crate::common::canvas::{
+    self, Highlight, ImageData, InitiableNHCanvas, NHCanvas, NHShape, UiCanvas,
+};
 use crate::common::diagram_settings::{DiagramSettings, DiagramSettings2, GroupDisplayStyle};
 use crate::common::model::{
     BucketNoT, ContainerModel, DiagramModel, DiagramVisitor, ElementVisitor, Model,
@@ -858,16 +860,20 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
-    ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-    fn draw_background(
+    ) -> (
+        Box<dyn InitiableNHCanvas>,
+        egui::Response,
+        Option<egui::Pos2>,
+    );
+    fn draw_initialize(
         &mut self,
         context: &GlobalDrawingContext,
         settings: &dyn DiagramSettings,
-        canvas: &mut dyn NHCanvas,
+        canvas: &mut dyn InitiableNHCanvas,
         draw_background: bool,
         draw_gridlines: bool,
     );
-    fn draw_in(
+    fn draw_elements(
         &mut self,
         context: &GlobalDrawingContext,
         settings: &dyn DiagramSettings,
@@ -1017,17 +1023,21 @@ pub trait DiagramController: Any + NHContextSerialize {
         settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
-    ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-    fn draw_background(
+    ) -> (
+        Box<dyn InitiableNHCanvas>,
+        egui::Response,
+        Option<egui::Pos2>,
+    );
+    fn draw_initialize(
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         settings: &dyn DiagramSettings,
-        canvas: &mut dyn NHCanvas,
+        canvas: &mut dyn InitiableNHCanvas,
         draw_background: bool,
         draw_gridlines: bool,
     );
-    fn draw_in(
+    fn draw_elements(
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
@@ -2460,24 +2470,28 @@ where
         settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
-    ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
+    ) -> (
+        Box<dyn InitiableNHCanvas>,
+        egui::Response,
+        Option<egui::Pos2>,
+    ) {
         let view = self.views.get(uuid).unwrap();
         view.write().new_ui_canvas(context, settings, ui, ui_scale)
     }
-    fn draw_background(
+    fn draw_initialize(
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         settings: &dyn DiagramSettings,
-        canvas: &mut dyn NHCanvas,
+        canvas: &mut dyn InitiableNHCanvas,
         draw_background: bool,
         draw_gridlines: bool,
     ) {
         let view = self.views.get(uuid).unwrap();
         view.write()
-            .draw_background(context, settings, canvas, draw_background, draw_gridlines)
+            .draw_initialize(context, settings, canvas, draw_background, draw_gridlines)
     }
-    fn draw_in(
+    fn draw_elements(
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
@@ -2486,7 +2500,8 @@ where
         mouse_pos: Option<egui::Pos2>,
     ) {
         let view = self.views.get(uuid).unwrap();
-        view.write().draw_in(context, settings, canvas, mouse_pos)
+        view.write()
+            .draw_elements(context, settings, canvas, mouse_pos)
     }
 
     fn show_context_menu(
@@ -3583,7 +3598,11 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         settings: &dyn DiagramSettings,
         ui: &mut egui::Ui,
         ui_scale: Option<f32>,
-    ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
+    ) -> (
+        Box<dyn InitiableNHCanvas>,
+        egui::Response,
+        Option<egui::Pos2>,
+    ) {
         let Some(settings) = (settings as &dyn Any).downcast_ref::<DomainT::SettingsT>() else {
             panic!("received invalid settings object")
         };
@@ -3627,11 +3646,11 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
     }
-    fn draw_background(
+    fn draw_initialize(
         &mut self,
         context: &GlobalDrawingContext,
         _settings: &dyn DiagramSettings,
-        canvas: &mut dyn NHCanvas,
+        canvas: &mut dyn InitiableNHCanvas,
         draw_background: bool,
         draw_gridlines: bool,
     ) {
@@ -4248,7 +4267,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         ui: &mut egui::Ui,
     ) {
         let mut measuring_canvas = canvas::MeasuringCanvas::new(ui.painter());
-        self.draw_in(context, settings, &mut measuring_canvas, None);
+        self.draw_elements(context, settings, &mut measuring_canvas, None);
         let diagram_bounds = measuring_canvas.bounds();
 
         let outline_size = ui.available_size();
@@ -4282,7 +4301,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                 canvas::HeaderMode::Expanding(0),
             ),
         );
-        self.draw_in(context, settings, &mut ui_canvas, None);
+        self.draw_elements(context, settings, &mut ui_canvas, None);
 
         // Draw viewport location hint
         {
@@ -4790,7 +4809,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         self.apply_command_inner(&self.model(), command, undo_accumulator, affected_models);
     }
 
-    fn draw_in(
+    fn draw_elements(
         &mut self,
         context: &GlobalDrawingContext,
         settings: &dyn DiagramSettings,
