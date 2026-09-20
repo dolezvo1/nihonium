@@ -154,7 +154,6 @@ pub enum ResourceTabMode {
 #[derive(Debug, Hash, Eq, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub enum NHTab {
     NewDiagram,
-    RecentlyUsed,
     Settings,
 
     ProjectHierarchy,
@@ -182,7 +181,6 @@ impl NHTab {
     pub fn name<'a>(&self, gdc: &'a GlobalDrawingContext) -> Cow<'a, str> {
         match self {
             NHTab::NewDiagram => gdc.translate_0("nh-tab-newdiagram"),
-            NHTab::RecentlyUsed => gdc.translate_0("nh-tab-recentlyused"),
             NHTab::Settings => gdc.translate_0("nh-tab-settings"),
 
             NHTab::ProjectHierarchy => gdc.translate_0("nh-tab-projecthierarchy"),
@@ -581,11 +579,6 @@ impl TabViewer for NHContext {
 
         match tab {
             NHTab::NewDiagram => self.show_newdiagram_tab(ui),
-            NHTab::RecentlyUsed => {
-                // TODO: show recently used projects
-                ui.heading("Recently used");
-                ui.label("[no recently used]");
-            }
             NHTab::Settings => self.show_settings_tab(ui),
 
             NHTab::ProjectHierarchy => self.show_project_hierarchy(ui),
@@ -4180,13 +4173,6 @@ impl eframe::App for NHApp {
                         "nh-project-openproject",
                         SimpleProjectCommand::OpenProject(false)
                     );
-
-                    // TODO: implement
-                    ui.menu_button(translate!("nh-project-recentprojects"), |ui| {
-                        if ui.button("asdf").clicked() {
-                            println!("TODO");
-                        }
-                    });
                     ui.separator();
 
                     add_project_element_block(
@@ -4406,7 +4392,6 @@ impl eframe::App for NHApp {
                     // allow certain tabs to be toggled
                     for tab in &[
                         NHTab::NewDiagram,
-                        NHTab::RecentlyUsed,
                         NHTab::Settings,
                         NHTab::ProjectHierarchy,
                         NHTab::ModelHierarchy,

@@ -16,7 +16,6 @@ nh-project = Project
 nh-project-newproject = New Project
 nh-project-openproject = Open Project
 nh-project-openproject-confirm = Are you sure you want to open a different project?
-nh-project-recentprojects = Recent Projects
 nh-project-addnewdocument = Add New Document
 nh-project-addnewdiagram = Add New Diagram
 nh-project-uploadnewresource = Upload New Resource
@@ -55,7 +54,6 @@ nh-diagram = Diagram
 nh-diagram-exportto = Export Diagram { $name } to
 
 nh-windows = Windows
-nh-windows-recentlyused = Recently Used
 nh-windows-styleeditor = Style Editor
 nh-windows-projecthierarchy = Project Hierarchy
 nh-windows-toolbar = Toolbar
@@ -66,7 +64,6 @@ nh-about = About
 nh-about-mainpage = Nihonium Main Page
 nh-about-bugtracker = Bug reporting/Feature requests
 
-nh-tab-recentlyused = Recently Used
 nh-tab-settings = Settings
 
 nh-tab-newdiagram = New Diagram

@@ -16,7 +16,6 @@ nh-project = Projekt
 nh-project-newproject = Nový Projekt
 nh-project-openproject = Otevřít Projekt
 nh-project-openproject-confirm = Opravdu chcete otevřít jiný projekt?
-nh-project-recentprojects = Nedávné Projekty
 nh-project-addnewdocument = Přidat Nový Dokument
 nh-project-addnewdiagram = Přidat Nový Diagram
 nh-project-uploadnewresource = Nahrát Nový Soubor
@@ -55,7 +54,6 @@ nh-diagram = Diagram
 nh-diagram-exportto = Exportovat Diagram { $name } do
 
 nh-windows = Okna
-nh-windows-recentlyused = Nedávné
 nh-windows-styleeditor = Editor Stylů
 nh-windows-projecthierarchy = Hierarchie Projektu
 nh-windows-toolbar = Nástroje
@@ -66,7 +64,6 @@ nh-about = O Programu
 nh-about-mainpage = Hlavní stránka Nihonium
 nh-about-bugtracker = Hlášení chyb/Požadavky
 
-nh-tab-recentlyused = Nedávné
 nh-tab-settings = Nastavení
 
 nh-tab-newdiagram = Nový Diagram
