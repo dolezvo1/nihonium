@@ -3430,14 +3430,16 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
         UmlClassPackageAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
-            request_focus,
-            display_text: Arc::new("".to_owned()),
-            name_buffer: (*m.name).clone(),
-            visibility_buffer: m.visibility,
-            stereotype_controller: Default::default(),
-            kind_buffer: m.kind,
-            comment_buffer: (*m.comment).clone(),
-            _profile: PhantomData,
+            temporaries: UmlClassPackageAdapterTemporaries {
+                request_focus,
+                display_text: Arc::new("".to_owned()),
+                name_buffer: (*m.name).clone(),
+                visibility_buffer: m.visibility,
+                stereotype_controller: Default::default(),
+                kind_buffer: m.kind,
+                comment_buffer: (*m.comment).clone(),
+                _profile: PhantomData,
+            },
         },
         Vec::new(),
         canvas::Highlight::from_selected(request_focus),
@@ -3453,27 +3455,20 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     model: ERef<UmlClassPackage>,
     background_color: MGlobalColor,
 
-    #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    display_text: Arc<String>,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
-    visibility_buffer: UFOption<UmlClassVisibilityKind>,
-    #[serde(skip)]
-    #[nh_context_serde(skip_and_default)]
-    stereotype_controller: P::PackageStereotypeController,
-    #[serde(skip)]
-    #[nh_context_serde(skip_and_default)]
-    kind_buffer: UmlClassPackageKind,
-    #[serde(skip)]
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
+    temporaries: UmlClassPackageAdapterTemporaries<P>,
+}
 
-    #[serde(skip)]
-    #[nh_context_serde(skip_and_default)]
+#[derive(Clone, Default)]
+struct UmlClassPackageAdapterTemporaries<P: UmlClassProfile> {
+    request_focus: bool,
+    display_text: Arc<String>,
+    name_buffer: String,
+    visibility_buffer: UFOption<UmlClassVisibilityKind>,
+    stereotype_controller: P::PackageStereotypeController,
+    kind_buffer: UmlClassPackageKind,
+    comment_buffer: String,
     _profile: PhantomData<P>,
 }
 
@@ -3516,7 +3511,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         let background_color = self.background_color(&gdc.global_colors);
         let stroke = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
 
-        match self.kind_buffer {
+        match self.temporaries.kind_buffer {
             UmlClassPackageKind::Node => {
                 let main_rect = bounds_rect
                     .with_max_x(bounds_rect.max.x - Self::NODE_DEPTH)
@@ -3673,10 +3668,9 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
     ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
-        let visibility_size = self
-            .visibility_buffer
-            .as_ref()
-            .map_or(egui::Vec2::ZERO, |e| match settings.visibility_style {
+        let visibility_size = self.temporaries.visibility_buffer.as_ref().map_or(
+            egui::Vec2::ZERO,
+            |e| match settings.visibility_style {
                 VisibilityDisplayStyle::Characters => canvas
                     .measure_text(
                         egui::Pos2::ZERO,
@@ -3686,31 +3680,32 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     )
                     .size(),
                 VisibilityDisplayStyle::Icons => VISIBILITY_ICON_MAX_SIZE,
-            });
+            },
+        );
         let display_text_size = canvas
             .measure_text(
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
-                &self.display_text,
+                &self.temporaries.display_text,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             )
             .size();
         let foreground_color = egui::Color32::BLACK;
 
-        match self.kind_buffer {
+        match self.temporaries.kind_buffer {
             UmlClassPackageKind::Node
             | UmlClassPackageKind::Rectangle
             | UmlClassPackageKind::Cloud
             | UmlClassPackageKind::Database => {
                 let text_origin = bounds_rect.center_top()
-                    + match self.kind_buffer {
+                    + match self.temporaries.kind_buffer {
                         UmlClassPackageKind::Node => (0.0, Self::NODE_DEPTH).into(),
                         UmlClassPackageKind::Rectangle => egui::Vec2::ZERO,
                         UmlClassPackageKind::Cloud => (0.0, Self::CLOUD_HEIGHT).into(),
                         UmlClassPackageKind::Database => (0.0, Self::DATABASE_HEIGHT).into(),
                         _ => unreachable!(),
                     };
-                if let Some(e) = self.visibility_buffer.as_ref() {
+                if let Some(e) = self.temporaries.visibility_buffer.as_ref() {
                     match settings.visibility_style {
                         VisibilityDisplayStyle::Characters => {
                             canvas.draw_text(
@@ -3736,7 +3731,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                 canvas.draw_text(
                     text_origin + (visibility_size.x / 2.0, 0.0).into(),
                     egui::Align2::CENTER_TOP,
-                    &self.display_text,
+                    &self.temporaries.display_text,
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     foreground_color,
                 );
@@ -3758,7 +3753,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     canvas::Stroke::new_solid(1.0, foreground_color),
                     highlight,
                 );
-                if let Some(e) = self.visibility_buffer.as_ref() {
+                if let Some(e) = self.temporaries.visibility_buffer.as_ref() {
                     match settings.visibility_style {
                         VisibilityDisplayStyle::Characters => {
                             canvas.draw_text(
@@ -3787,7 +3782,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                 canvas.draw_text(
                     text_origin + (visibility_size.x, 0.0).into(),
                     egui::Align2::LEFT_BOTTOM,
-                    &self.display_text,
+                    &self.temporaries.display_text,
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     foreground_color,
                 );
@@ -3816,7 +3811,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     highlight,
                 );
-                if let Some(e) = self.visibility_buffer.as_ref() {
+                if let Some(e) = self.temporaries.visibility_buffer.as_ref() {
                     match settings.visibility_style {
                         VisibilityDisplayStyle::Characters => {
                             canvas.draw_text(
@@ -3842,7 +3837,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                 canvas.draw_text(
                     text_origin + (visibility_size.x, 0.0).into(),
                     egui::Align2::LEFT_TOP,
-                    &self.display_text,
+                    &self.temporaries.display_text,
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     egui::Color32::BLACK,
                 );
@@ -3863,25 +3858,31 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             >,
         >,
     ) {
-        if self.stereotype_controller.show(ui) {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+                UmlClassPropChange::StereotypeChange(
+                    self.temporaries.stereotype_controller.get_arc(),
+                ),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
-        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.temporaries.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -3890,28 +3891,30 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
 
         ui.label("Package kind:");
         egui::ComboBox::from_id_salt("package kind")
-            .selected_text(self.kind_buffer.as_str())
+            .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in UmlClassPackageKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str())
                         .clicked()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            UmlClassPropChange::PackageKindChange(self.kind_buffer),
+                            UmlClassPropChange::PackageKindChange(self.temporaries.kind_buffer),
                         ));
                     }
                 }
             });
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlClassPropChange::CommentChange(Arc::new(
+                    self.temporaries.comment_buffer.clone(),
+                )),
             ));
         }
     }
@@ -3952,7 +3955,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             let mut model = self.model.write();
             match property {
                 UmlClassPropChange::StereotypeChange(stereotype) => {
-                    if !self.stereotype_controller.is_valid(stereotype) {
+                    if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                         return;
                     }
 
@@ -4007,16 +4010,18 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.display_text = if model.stereotype.is_empty() {
+        self.temporaries.display_text = if model.stereotype.is_empty() {
             model.name.clone()
         } else {
             format!("«{}» {}", model.stereotype, model.name).into()
         };
-        self.stereotype_controller.refresh(&model.stereotype);
-        self.name_buffer = (*model.name).clone();
-        self.visibility_buffer = model.visibility;
-        self.kind_buffer = model.kind;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries
+            .stereotype_controller
+            .refresh(&model.stereotype);
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.visibility_buffer = model.visibility;
+        self.temporaries.kind_buffer = model.kind;
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn deep_copy_init(
@@ -4038,14 +4043,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         Self {
             model,
             background_color: self.background_color,
-            request_focus: false,
-            display_text: self.display_text.clone(),
-            stereotype_controller: self.stereotype_controller.clone(),
-            name_buffer: self.name_buffer.clone(),
-            visibility_buffer: self.visibility_buffer,
-            kind_buffer: self.kind_buffer,
-            comment_buffer: self.comment_buffer.clone(),
-            _profile: PhantomData,
+            temporaries: self.temporaries.clone(),
         }
     }
 
@@ -4087,20 +4085,22 @@ fn new_umlclass_instance_view<P: UmlClassProfile>(
     ERef::new(UmlClassInstanceView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
-        request_focus,
-        stereotype_in_guillemets: String::new(),
-        main_text: String::new(),
-        name_buffer: (*m.instance_name).clone(),
-        type_buffer: (*m.instance_type).clone(),
-        stereotype_controller: Default::default(),
-        slots_buffer: (*m.instance_slots).clone(),
-        comment_buffer: (*m.comment).clone(),
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+        temporaries: UmlClassInstanceViewTemporaries {
+            request_focus,
+            stereotype_in_guillemets: String::new(),
+            main_text: String::new(),
+            name_buffer: (*m.instance_name).clone(),
+            type_buffer: (*m.instance_type).clone(),
+            stereotype_controller: Default::default(),
+            slots_buffer: (*m.instance_slots).clone(),
+            comment_buffer: (*m.comment).clone(),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+            _profile: PhantomData,
+        },
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color,
-        _profile: PhantomData,
     })
 }
 
@@ -4112,31 +4112,25 @@ pub struct UmlClassInstanceView<P: UmlClassProfile> {
     pub model: ERef<UmlClassInstance>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_in_guillemets: String,
-    #[nh_context_serde(skip_and_default)]
-    main_text: String,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    type_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_controller: P::InstanceStereotypeController,
-    #[nh_context_serde(skip_and_default)]
-    slots_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: UmlClassInstanceViewTemporaries<P>,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+}
 
-    #[nh_context_serde(skip_and_default)]
+#[derive(Clone, Default)]
+struct UmlClassInstanceViewTemporaries<P: UmlClassProfile> {
+    request_focus: bool,
+    stereotype_in_guillemets: String,
+    main_text: String,
+    name_buffer: String,
+    type_buffer: String,
+    stereotype_controller: P::InstanceStereotypeController,
+    slots_buffer: String,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
     _profile: PhantomData<P>,
 }
 
@@ -4200,57 +4194,65 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             >,
         >,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
-        if self.stereotype_controller.show(ui) {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+                UmlClassPropChange::StereotypeChange(
+                    self.temporaries.stereotype_controller.get_arc(),
+                ),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::InstanceName(Arc::new(self.name_buffer.clone())),
+                UmlClassPropChange::InstanceName(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
-            .labeled_text_edit_singleline("Type:", &mut self.type_buffer)
+            .labeled_text_edit_singleline("Type:", &mut self.temporaries.type_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::InstanceType(Arc::new(self.type_buffer.clone())),
-            ));
-        }
-
-        if ui
-            .labeled_text_edit_multiline("Slots:", &mut self.slots_buffer)
-            .changed()
-        {
-            commands.push(InsensitiveCommand::PropertyChange(
-                q.selected_views(),
-                UmlClassPropChange::InstanceSlots(Arc::new(self.slots_buffer.clone())),
+                UmlClassPropChange::InstanceType(Arc::new(self.temporaries.type_buffer.clone())),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Slots:", &mut self.temporaries.slots_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlClassPropChange::InstanceSlots(Arc::new(self.temporaries.slots_buffer.clone())),
+            ));
+        }
+
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::CommentChange(Arc::new(
+                    self.temporaries.comment_buffer.clone(),
+                )),
             ));
         }
 
@@ -4301,15 +4303,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         let mut min = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.main_text,
+            &self.temporaries.main_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
         let stereotype_botton = min.center_top();
-        if !self.stereotype_in_guillemets.is_empty() {
+        if !self.temporaries.stereotype_in_guillemets.is_empty() {
             min = min.union(canvas.measure_text(
                 stereotype_botton,
                 egui::Align2::CENTER_BOTTOM,
-                &self.stereotype_in_guillemets,
+                &self.temporaries.stereotype_in_guillemets,
                 canvas::CLASS_TOP_FONT_SIZE,
             ));
         }
@@ -4332,20 +4334,20 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.main_text,
+            &self.temporaries.main_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
-        if !self.stereotype_in_guillemets.is_empty() {
+        if !self.temporaries.stereotype_in_guillemets.is_empty() {
             canvas.draw_text(
                 stereotype_botton,
                 egui::Align2::CENTER_BOTTOM,
-                &self.stereotype_in_guillemets,
+                &self.temporaries.stereotype_in_guillemets,
                 canvas::CLASS_ITEM_FONT_SIZE,
                 egui::Color32::BLACK,
             );
@@ -4355,7 +4357,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 [self.bounds_rect.left(), self.bounds_rect.right()]
                     .map(|e| egui::Pos2::new(e, slots_top.y)),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                self.highlight,
+                self.temporaries.highlight,
             );
             canvas.draw_text(
                 slots_top,
@@ -4367,7 +4369,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         }
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             for (row_idx, col_idx, l, _f) in settings.instance_buttons.iter() {
                 let b_rect = self.button_rect(ui_scale, *row_idx, *col_idx);
                 canvas.draw_rectangle(
@@ -4388,7 +4393,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         }
 
         if canvas.ui_scale().is_some() {
-            if self.dragged_shape.is_some() {
+            if self.temporaries.dragged_shape.is_some() {
                 canvas.draw_line(
                     [
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
@@ -4450,19 +4455,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && let Some(e) =
                         settings
                             .instance_buttons
@@ -4493,18 +4498,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                         .hold_selection
                         .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                     {
-                        self.highlight.selected = true;
+                        self.temporaries.highlight.selected = true;
                     } else {
-                        self.highlight.selected = !self.highlight.selected;
+                        self.temporaries.highlight.selected = !self.temporaries.highlight.selected;
                     }
                 }
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -4516,7 +4522,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 };
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -4553,15 +4559,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -4607,7 +4614,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                             model.instance_slots = s.clone();
                         }
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(stereotype) {
+                            if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -4644,22 +4651,24 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.stereotype_in_guillemets = if model.stereotype.is_empty() {
+        self.temporaries.stereotype_in_guillemets = if model.stereotype.is_empty() {
             String::new()
         } else {
             format!("«{}»", model.stereotype)
         };
-        self.main_text = if model.instance_name.is_empty() {
+        self.temporaries.main_text = if model.instance_name.is_empty() {
             format!(":{}", model.instance_type)
         } else {
             format!("{}: {}", model.instance_name, model.instance_type)
         };
 
-        self.name_buffer = (*model.instance_name).clone();
-        self.type_buffer = (*model.instance_type).clone();
-        self.stereotype_controller.refresh(&model.stereotype);
-        self.slots_buffer = (*model.instance_slots).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = (*model.instance_name).clone();
+        self.temporaries.type_buffer = (*model.instance_type).clone();
+        self.temporaries
+            .stereotype_controller
+            .refresh(&model.stereotype);
+        self.temporaries.slots_buffer = (*model.instance_slots).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -4668,7 +4677,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -4696,20 +4705,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
-            main_text: self.main_text.clone(),
-            name_buffer: self.name_buffer.clone(),
-            type_buffer: self.type_buffer.clone(),
-            stereotype_controller: self.stereotype_controller.clone(),
-            slots_buffer: self.slots_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
-            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -4748,25 +4747,27 @@ fn new_umlclass_property_view<P: UmlClassProfile>(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        display_text: String::new(),
-        visibility_buffer: m.visibility,
-        stereotype_controller: Default::default(),
-        name_buffer: (*m.name).clone(),
-        value_type_buffer: (*m.value_type).clone(),
-        multiplicity_buffer: (*m.multiplicity).clone(),
-        default_value_buffer: (*m.default_value).clone(),
+        temporaries: UmlClassPropertyViewTemporaries {
+            request_focus,
+            display_text: String::new(),
+            visibility_buffer: m.visibility,
+            stereotype_controller: Default::default(),
+            name_buffer: (*m.name).clone(),
+            value_type_buffer: (*m.value_type).clone(),
+            multiplicity_buffer: (*m.multiplicity).clone(),
+            default_value_buffer: (*m.default_value).clone(),
 
-        is_static_buffer: m.is_static,
-        is_derived_buffer: m.is_derived,
-        is_read_only_buffer: m.is_read_only,
-        is_ordered_buffer: m.is_ordered,
-        is_unique_buffer: m.is_unique,
-        is_id_buffer: m.is_id,
+            is_static_buffer: m.is_static,
+            is_derived_buffer: m.is_derived,
+            is_read_only_buffer: m.is_read_only,
+            is_ordered_buffer: m.is_ordered,
+            is_unique_buffer: m.is_unique,
+            is_id_buffer: m.is_id,
 
-        highlight: canvas::Highlight::from_selected(request_focus),
+            highlight: canvas::Highlight::from_selected(request_focus),
+            _profile: PhantomData,
+        },
         bounds_rect: egui::Rect::ZERO,
-        _profile: PhantomData,
     })
 }
 
@@ -4778,39 +4779,28 @@ pub struct UmlClassPropertyView<P: UmlClassProfile> {
     pub model: ERef<UmlClassProperty>,
 
     #[nh_context_serde(skip_and_default)]
+    temporaries: UmlClassPropertyViewTemporaries<P>,
+    bounds_rect: egui::Rect,
+}
+
+#[derive(Clone, Default)]
+pub struct UmlClassPropertyViewTemporaries<P: UmlClassProfile> {
     request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
     display_text: String,
-    #[nh_context_serde(skip_and_default)]
     visibility_buffer: UFOption<UmlClassVisibilityKind>,
-    #[nh_context_serde(skip_and_default)]
     stereotype_controller: P::ClassPropertyStereotypeController,
-    #[nh_context_serde(skip_and_default)]
     name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     value_type_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     multiplicity_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     default_value_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     is_static_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_derived_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_read_only_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_ordered_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_unique_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_id_buffer: bool,
 
-    #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
-    bounds_rect: egui::Rect,
-
-    #[nh_context_serde(skip_and_default)]
     _profile: PhantomData<P>,
 }
 
@@ -4824,10 +4814,9 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
-        let visibility_size = self
-            .visibility_buffer
-            .as_ref()
-            .map_or(egui::Vec2::ZERO, |e| match settings.visibility_style {
+        let visibility_size = self.temporaries.visibility_buffer.as_ref().map_or(
+            egui::Vec2::ZERO,
+            |e| match settings.visibility_style {
                 VisibilityDisplayStyle::Characters => canvas
                     .measure_text(
                         at,
@@ -4837,11 +4826,12 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
                     )
                     .size(),
                 VisibilityDisplayStyle::Icons => VISIBILITY_ICON_MAX_SIZE,
-            });
+            },
+        );
         self.bounds_rect = canvas.measure_text(
             at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
-            &self.display_text,
+            &self.temporaries.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
         );
         self.bounds_rect
@@ -4851,9 +4841,9 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
             egui::CornerRadius::ZERO,
             egui::Color32::TRANSPARENT,
             canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
-            self.highlight,
+            self.temporaries.highlight,
         );
-        if let Some(e) = self.visibility_buffer.as_ref() {
+        if let Some(e) = self.temporaries.visibility_buffer.as_ref() {
             match settings.visibility_style {
                 VisibilityDisplayStyle::Characters => canvas.draw_text(
                     at,
@@ -4870,11 +4860,11 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
         canvas.draw_text(
             at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
-            &self.display_text,
+            &self.temporaries.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
             egui::Color32::BLACK,
         );
-        if self.is_static_buffer {
+        if self.temporaries.is_static_buffer {
             let d = egui::Vec2::new(0.0, 1.0);
             canvas.draw_line(
                 [
@@ -4949,63 +4939,77 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             >,
         >,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
-        if self.stereotype_controller.show(ui) {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+                UmlClassPropChange::StereotypeChange(
+                    self.temporaries.stereotype_controller.get_arc(),
+                ),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
-            .labeled_text_edit_singleline("Type:", &mut self.value_type_buffer)
+            .labeled_text_edit_singleline("Type:", &mut self.temporaries.value_type_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::PropertyTypeChange(Arc::new(self.value_type_buffer.clone())),
+                UmlClassPropChange::PropertyTypeChange(Arc::new(
+                    self.temporaries.value_type_buffer.clone(),
+                )),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline("Multiplicity:", &mut self.multiplicity_buffer)
+            .labeled_text_edit_singleline(
+                "Multiplicity:",
+                &mut self.temporaries.multiplicity_buffer,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::PropertyMultiplicityChange(Arc::new(
-                    self.multiplicity_buffer.clone(),
+                    self.temporaries.multiplicity_buffer.clone(),
                 )),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline("Default value:", &mut self.default_value_buffer)
+            .labeled_text_edit_singleline(
+                "Default value:",
+                &mut self.temporaries.default_value_buffer,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::PropertyDefaultValueChange(Arc::new(
-                    self.default_value_buffer.clone(),
+                    self.temporaries.default_value_buffer.clone(),
                 )),
             ));
         }
 
-        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.temporaries.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -5013,54 +5017,57 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         }
 
         if ui
-            .checkbox(&mut self.is_static_buffer, "isStatic")
+            .checkbox(&mut self.temporaries.is_static_buffer, "isStatic")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsStaticChange(self.is_static_buffer),
+                UmlClassPropChange::IsStaticChange(self.temporaries.is_static_buffer),
             ));
         }
         if ui
-            .checkbox(&mut self.is_derived_buffer, "isDerived")
+            .checkbox(&mut self.temporaries.is_derived_buffer, "isDerived")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsDerivedChange(self.is_derived_buffer),
+                UmlClassPropChange::IsDerivedChange(self.temporaries.is_derived_buffer),
             ));
         }
         if ui
-            .checkbox(&mut self.is_read_only_buffer, "isReadOnly")
+            .checkbox(&mut self.temporaries.is_read_only_buffer, "isReadOnly")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsReadOnlyChange(self.is_read_only_buffer),
+                UmlClassPropChange::IsReadOnlyChange(self.temporaries.is_read_only_buffer),
             ));
         }
         if ui
-            .checkbox(&mut self.is_ordered_buffer, "isOrdered")
+            .checkbox(&mut self.temporaries.is_ordered_buffer, "isOrdered")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
+                UmlClassPropChange::IsOrderedChange(self.temporaries.is_ordered_buffer),
             ));
         }
         if ui
-            .checkbox(&mut self.is_unique_buffer, "isUnique")
+            .checkbox(&mut self.temporaries.is_unique_buffer, "isUnique")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
+                UmlClassPropChange::IsUniqueChange(self.temporaries.is_unique_buffer),
             ));
         }
-        if ui.checkbox(&mut self.is_id_buffer, "isID").changed() {
+        if ui
+            .checkbox(&mut self.temporaries.is_id_buffer, "isID")
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsIdChange(self.is_id_buffer),
+                UmlClassPropChange::IsIdChange(self.temporaries.is_id_buffer),
             ));
         }
 
@@ -5124,9 +5131,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     .hold_selection
                     .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                 {
-                    self.highlight.selected = true;
+                    self.temporaries.highlight.selected = true;
                 } else {
-                    self.highlight.selected = !self.highlight.selected;
+                    self.temporaries.highlight.selected = !self.temporaries.highlight.selected;
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -5154,15 +5161,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(..)
@@ -5180,7 +5188,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(stereotype) {
+                            if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -5282,7 +5290,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
     fn refresh_buffers(&mut self) {
         let m = self.model.read();
 
-        self.display_text = {
+        self.temporaries.display_text = {
             let mut t = String::new();
 
             if m.is_derived {
@@ -5340,19 +5348,21 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             t
         };
 
-        self.visibility_buffer = m.visibility;
-        self.stereotype_controller.refresh(&m.stereotype);
-        self.name_buffer = (*m.name).clone();
-        self.value_type_buffer = (*m.value_type).clone();
-        self.multiplicity_buffer = (*m.multiplicity).clone();
-        self.default_value_buffer = (*m.default_value).clone();
+        self.temporaries.visibility_buffer = m.visibility;
+        self.temporaries
+            .stereotype_controller
+            .refresh(&m.stereotype);
+        self.temporaries.name_buffer = (*m.name).clone();
+        self.temporaries.value_type_buffer = (*m.value_type).clone();
+        self.temporaries.multiplicity_buffer = (*m.multiplicity).clone();
+        self.temporaries.default_value_buffer = (*m.default_value).clone();
 
-        self.is_static_buffer = m.is_static;
-        self.is_derived_buffer = m.is_derived;
-        self.is_read_only_buffer = m.is_read_only;
-        self.is_ordered_buffer = m.is_ordered;
-        self.is_unique_buffer = m.is_unique;
-        self.is_id_buffer = m.is_id;
+        self.temporaries.is_static_buffer = m.is_static;
+        self.temporaries.is_derived_buffer = m.is_derived;
+        self.temporaries.is_read_only_buffer = m.is_read_only;
+        self.temporaries.is_ordered_buffer = m.is_ordered;
+        self.temporaries.is_unique_buffer = m.is_unique;
+        self.temporaries.is_id_buffer = m.is_id;
     }
     fn head_count(
         &mut self,
@@ -5363,7 +5373,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid, self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -5391,26 +5401,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-
-            request_focus: false,
-            display_text: self.display_text.clone(),
-            visibility_buffer: self.visibility_buffer,
-            stereotype_controller: self.stereotype_controller.clone(),
-            name_buffer: self.name_buffer.clone(),
-            value_type_buffer: self.value_type_buffer.clone(),
-            multiplicity_buffer: self.multiplicity_buffer.clone(),
-            default_value_buffer: self.default_value_buffer.clone(),
-
-            is_static_buffer: self.is_static_buffer,
-            is_derived_buffer: self.is_derived_buffer,
-            is_read_only_buffer: self.is_read_only_buffer,
-            is_ordered_buffer: self.is_ordered_buffer,
-            is_unique_buffer: self.is_unique_buffer,
-            is_id_buffer: self.is_id_buffer,
-
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             bounds_rect: self.bounds_rect,
-            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -5447,24 +5439,25 @@ fn new_umlclass_operation_view<P: UmlClassProfile>(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        display_text: String::new(),
-        visibility_buffer: m.visibility,
-        stereotype_controller: Default::default(),
-        name_buffer: (*m.name).clone(),
-        parameters_buffer: (*m.parameters).clone(),
-        return_type_buffer: (*m.return_type).clone(),
+        temporaries: UmlClassOperationViewTemporaries {
+            request_focus,
+            display_text: String::new(),
+            visibility_buffer: m.visibility,
+            stereotype_controller: Default::default(),
+            name_buffer: (*m.name).clone(),
+            parameters_buffer: (*m.parameters).clone(),
+            return_type_buffer: (*m.return_type).clone(),
 
-        is_static_buffer: m.is_static,
-        is_abstract_buffer: m.is_abstract,
-        is_query_buffer: m.is_query,
-        is_ordered_buffer: m.is_ordered,
-        is_unique_buffer: m.is_unique,
+            is_static_buffer: m.is_static,
+            is_abstract_buffer: m.is_abstract,
+            is_query_buffer: m.is_query,
+            is_ordered_buffer: m.is_ordered,
+            is_unique_buffer: m.is_unique,
 
-        highlight: canvas::Highlight::from_selected(request_focus),
+            highlight: canvas::Highlight::from_selected(request_focus),
+            _profile: PhantomData,
+        },
         bounds_rect: egui::Rect::ZERO,
-
-        _profile: PhantomData,
     })
 }
 
@@ -5476,35 +5469,26 @@ pub struct UmlClassOperationView<P: UmlClassProfile> {
     pub model: ERef<UmlClassOperation>,
 
     #[nh_context_serde(skip_and_default)]
+    temporaries: UmlClassOperationViewTemporaries<P>,
+    bounds_rect: egui::Rect,
+}
+
+#[derive(Clone, Default)]
+struct UmlClassOperationViewTemporaries<P: UmlClassProfile> {
     request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
     display_text: String,
-    #[nh_context_serde(skip_and_default)]
     visibility_buffer: UFOption<UmlClassVisibilityKind>,
-    #[nh_context_serde(skip_and_default)]
     stereotype_controller: P::ClassOperationStereotypeController,
-    #[nh_context_serde(skip_and_default)]
     name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     parameters_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     return_type_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     is_static_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_abstract_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_query_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_ordered_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     is_unique_buffer: bool,
 
-    #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
-    bounds_rect: egui::Rect,
-
-    #[nh_context_serde(skip_and_default)]
     _profile: PhantomData<P>,
 }
 
@@ -5518,10 +5502,9 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
-        let visibility_size = self
-            .visibility_buffer
-            .as_ref()
-            .map_or(egui::Vec2::ZERO, |e| match settings.visibility_style {
+        let visibility_size = self.temporaries.visibility_buffer.as_ref().map_or(
+            egui::Vec2::ZERO,
+            |e| match settings.visibility_style {
                 VisibilityDisplayStyle::Characters => canvas
                     .measure_text(
                         at,
@@ -5531,11 +5514,12 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
                     )
                     .size(),
                 VisibilityDisplayStyle::Icons => VISIBILITY_ICON_MAX_SIZE,
-            });
+            },
+        );
         self.bounds_rect = canvas.measure_text(
             at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
-            &self.display_text,
+            &self.temporaries.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
         );
         self.bounds_rect
@@ -5545,14 +5529,14 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
             egui::CornerRadius::ZERO,
             egui::Color32::TRANSPARENT,
             canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
-            self.highlight,
+            self.temporaries.highlight,
         );
-        let text_color = if !self.is_abstract_buffer {
+        let text_color = if !self.temporaries.is_abstract_buffer {
             egui::Color32::BLACK
         } else {
             IS_ABSTRACT_COLOR
         };
-        if let Some(e) = self.visibility_buffer.as_ref() {
+        if let Some(e) = self.temporaries.visibility_buffer.as_ref() {
             match settings.visibility_style {
                 VisibilityDisplayStyle::Characters => canvas.draw_text(
                     at,
@@ -5569,11 +5553,11 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
         canvas.draw_text(
             at + (visibility_size.x, 0.0).into(),
             egui::Align2::LEFT_TOP,
-            &self.display_text,
+            &self.temporaries.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
             text_color,
         );
-        if self.is_static_buffer {
+        if self.temporaries.is_static_buffer {
             let d = egui::Vec2::new(0.0, 1.0);
             canvas.draw_line(
                 [
@@ -5648,53 +5632,59 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             >,
         >,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
-        if self.stereotype_controller.show(ui) {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+                UmlClassPropChange::StereotypeChange(
+                    self.temporaries.stereotype_controller.get_arc(),
+                ),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
-            .labeled_text_edit_singleline("Parameters:", &mut self.parameters_buffer)
+            .labeled_text_edit_singleline("Parameters:", &mut self.temporaries.parameters_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::OperationParametersChange(Arc::new(
-                    self.parameters_buffer.clone(),
+                    self.temporaries.parameters_buffer.clone(),
                 )),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline("Return type:", &mut self.return_type_buffer)
+            .labeled_text_edit_singleline("Return type:", &mut self.temporaries.return_type_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::OperationReturnTypeChange(Arc::new(
-                    self.return_type_buffer.clone(),
+                    self.temporaries.return_type_buffer.clone(),
                 )),
             ));
         }
 
-        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.temporaries.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -5702,45 +5692,48 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         }
 
         if ui
-            .checkbox(&mut self.is_static_buffer, "isStatic")
+            .checkbox(&mut self.temporaries.is_static_buffer, "isStatic")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsStaticChange(self.is_static_buffer),
+                UmlClassPropChange::IsStaticChange(self.temporaries.is_static_buffer),
             ));
         }
         if ui
-            .checkbox(&mut self.is_abstract_buffer, "isAbstract")
+            .checkbox(&mut self.temporaries.is_abstract_buffer, "isAbstract")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsAbstractChange(self.is_abstract_buffer),
-            ));
-        }
-        if ui.checkbox(&mut self.is_query_buffer, "isQuery").changed() {
-            commands.push(InsensitiveCommand::PropertyChange(
-                q.selected_views(),
-                UmlClassPropChange::IsQueryChange(self.is_query_buffer),
+                UmlClassPropChange::IsAbstractChange(self.temporaries.is_abstract_buffer),
             ));
         }
         if ui
-            .checkbox(&mut self.is_ordered_buffer, "isOrdered")
+            .checkbox(&mut self.temporaries.is_query_buffer, "isQuery")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
+                UmlClassPropChange::IsQueryChange(self.temporaries.is_query_buffer),
             ));
         }
         if ui
-            .checkbox(&mut self.is_unique_buffer, "isUnique")
+            .checkbox(&mut self.temporaries.is_ordered_buffer, "isOrdered")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
+                UmlClassPropChange::IsOrderedChange(self.temporaries.is_ordered_buffer),
+            ));
+        }
+        if ui
+            .checkbox(&mut self.temporaries.is_unique_buffer, "isUnique")
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::IsUniqueChange(self.temporaries.is_unique_buffer),
             ));
         }
 
@@ -5804,9 +5797,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     .hold_selection
                     .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                 {
-                    self.highlight.selected = true;
+                    self.temporaries.highlight.selected = true;
                 } else {
-                    self.highlight.selected = !self.highlight.selected;
+                    self.temporaries.highlight.selected = !self.temporaries.highlight.selected;
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -5834,15 +5827,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(..)
@@ -5860,7 +5854,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(stereotype) {
+                            if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -5948,7 +5942,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
     fn refresh_buffers(&mut self) {
         let m = self.model.read();
 
-        self.display_text = {
+        self.temporaries.display_text = {
             let mut t = String::new();
 
             t.push_str(&m.name);
@@ -5991,17 +5985,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             t
         };
 
-        self.visibility_buffer = m.visibility;
-        self.stereotype_controller.refresh(&m.stereotype);
-        self.name_buffer = (*m.name).clone();
-        self.parameters_buffer = (*m.parameters).clone();
-        self.return_type_buffer = (*m.return_type).clone();
+        self.temporaries.visibility_buffer = m.visibility;
+        self.temporaries
+            .stereotype_controller
+            .refresh(&m.stereotype);
+        self.temporaries.name_buffer = (*m.name).clone();
+        self.temporaries.parameters_buffer = (*m.parameters).clone();
+        self.temporaries.return_type_buffer = (*m.return_type).clone();
 
-        self.is_static_buffer = m.is_static;
-        self.is_abstract_buffer = m.is_abstract;
-        self.is_query_buffer = m.is_query;
-        self.is_ordered_buffer = m.is_ordered;
-        self.is_unique_buffer = m.is_unique;
+        self.temporaries.is_static_buffer = m.is_static;
+        self.temporaries.is_abstract_buffer = m.is_abstract;
+        self.temporaries.is_query_buffer = m.is_query;
+        self.temporaries.is_ordered_buffer = m.is_ordered;
+        self.temporaries.is_unique_buffer = m.is_unique;
     }
     fn head_count(
         &mut self,
@@ -6012,7 +6008,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid, self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -6040,24 +6036,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-
-            request_focus: false,
-            display_text: self.display_text.clone(),
-            visibility_buffer: self.visibility_buffer,
-            stereotype_controller: self.stereotype_controller.clone(),
-            name_buffer: self.name_buffer.clone(),
-            parameters_buffer: self.parameters_buffer.clone(),
-            return_type_buffer: self.return_type_buffer.clone(),
-
-            is_static_buffer: self.is_static_buffer,
-            is_abstract_buffer: self.is_abstract_buffer,
-            is_query_buffer: self.is_query_buffer,
-            is_ordered_buffer: self.is_ordered_buffer,
-            is_unique_buffer: self.is_unique_buffer,
-
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             bounds_rect: self.bounds_rect,
-            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -6112,17 +6092,20 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         properties_views,
         operations_views,
 
-        request_focus,
-        stereotype_in_guillemets: None,
-        stereotype_controller: Default::default(),
-        name_buffer: (*m.name).clone(),
-        template_parameters_buffer: (*m.template_parameters).clone(),
-        visibility_buffer: m.visibility,
-        is_abstract_buffer: m.is_abstract,
-        comment_buffer: (*m.comment).clone(),
+        temporaries: UmlClassViewTemporaries {
+            request_focus,
+            stereotype_in_guillemets: None,
+            stereotype_controller: Default::default(),
+            name_buffer: (*m.name).clone(),
+            template_parameters_buffer: (*m.template_parameters).clone(),
+            visibility_buffer: m.visibility,
+            is_abstract_buffer: m.is_abstract,
+            comment_buffer: (*m.comment).clone(),
 
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+            _profile: PhantomData,
+        },
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color,
@@ -6131,8 +6114,6 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         suppress_template_parameters: false,
         suppress_properties: false,
         suppress_operations: false,
-
-        _profile: PhantomData,
     })
 }
 
@@ -6163,26 +6144,7 @@ pub struct UmlClassView<P: UmlClassProfile> {
     pub operations_views: Vec<ERef<UmlClassOperationView<P>>>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_in_guillemets: Option<Arc<String>>,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_controller: P::ClassStereotypeController,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    template_parameters_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    visibility_buffer: UFOption<UmlClassVisibilityKind>,
-    #[nh_context_serde(skip_and_default)]
-    is_abstract_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: UmlClassViewTemporaries<P>,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
@@ -6191,8 +6153,21 @@ pub struct UmlClassView<P: UmlClassProfile> {
     suppress_template_parameters: bool,
     suppress_properties: bool,
     suppress_operations: bool,
+}
 
-    #[nh_context_serde(skip_and_default)]
+#[derive(Clone, Default)]
+pub struct UmlClassViewTemporaries<P: UmlClassProfile> {
+    request_focus: bool,
+    stereotype_in_guillemets: Option<Arc<String>>,
+    stereotype_controller: P::ClassStereotypeController,
+    name_buffer: String,
+    template_parameters_buffer: String,
+    visibility_buffer: UFOption<UmlClassVisibilityKind>,
+    is_abstract_buffer: bool,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
     _profile: PhantomData<P>,
 }
 
@@ -6496,46 +6471,52 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             return status;
         }
 
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
-        if self.stereotype_controller.show(ui) {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+                UmlClassPropChange::StereotypeChange(
+                    self.temporaries.stereotype_controller.get_arc(),
+                ),
             ));
         }
 
         if ui
-            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline(
                 "Template parameters:",
-                &mut self.template_parameters_buffer,
+                &mut self.temporaries.template_parameters_buffer,
             )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::TemplateParametersChange(Arc::new(
-                    self.template_parameters_buffer.clone(),
+                    self.temporaries.template_parameters_buffer.clone(),
                 )),
             ));
         }
 
-        if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
+        if let Some(e) = show_visibility_selectbox(ui, &self.temporaries.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::VisibilityChange(e),
@@ -6543,22 +6524,24 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         }
 
         if ui
-            .checkbox(&mut self.is_abstract_buffer, "isAbstract")
+            .checkbox(&mut self.temporaries.is_abstract_buffer, "isAbstract")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
+                UmlClassPropChange::ClassAbstractChange(self.temporaries.is_abstract_buffer),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlClassPropChange::CommentChange(Arc::new(
+                    self.temporaries.comment_buffer.clone(),
+                )),
             ));
         }
 
@@ -6675,7 +6658,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             UmlClassRenderStyle::StickFigure => {
                 let p = self.position;
                 let s = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
-                let h = self.highlight;
+                let h = self.temporaries.highlight;
                 canvas.draw_ellipse(
                     p - egui::Vec2::new(0.0, 20.0),
                     egui::Vec2::splat(10.0),
@@ -6803,7 +6786,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     settings,
                     canvas,
                     self.position,
-                    self.stereotype_in_guillemets.clone(),
+                    self.temporaries.stereotype_in_guillemets.clone(),
                     &read.name,
                     None,
                     read.visibility,
@@ -6811,7 +6794,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     &body,
                     body_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    self.highlight,
+                    self.temporaries.highlight,
                 );
 
                 if !self.suppress_template_parameters && !read.template_parameters.is_empty() {
@@ -6840,7 +6823,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
 
                 // Draw buttons
-                if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+                if let Some(ui_scale) = canvas
+                    .ui_scale()
+                    .filter(|_| self.temporaries.highlight.selected)
+                {
                     for (row_idx, col_idx, l, _f) in settings.class_buttons.iter() {
                         let b1 = self.button_rect(ui_scale, *row_idx, *col_idx);
                         canvas.draw_rectangle(
@@ -6878,7 +6864,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         }
 
         if canvas.ui_scale().is_some() {
-            if self.dragged_shape.is_some() {
+            if self.temporaries.dragged_shape.is_some() {
                 canvas.draw_line(
                     [
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
@@ -6950,19 +6936,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     return EventHandlingStatus::NotHandled;
                 }
 
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && let Some(e) =
                         settings
                             .class_buttons
@@ -7004,7 +6990,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         let mut w = e.write();
                         (
                             *w.uuid,
-                            w.highlight.selected,
+                            w.temporaries.highlight.selected,
                             w.handle_event(
                                 event,
                                 ehc,
@@ -7024,7 +7010,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                 let mut w = e.write();
                                 (
                                     *w.uuid,
-                                    w.highlight.selected,
+                                    w.temporaries.highlight.selected,
                                     w.handle_event(
                                         event,
                                         ehc,
@@ -7088,18 +7074,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         .hold_selection
                         .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                     {
-                        self.highlight.selected = true;
+                        self.temporaries.highlight.selected = true;
                     } else {
-                        self.highlight.selected = !self.highlight.selected;
+                        self.temporaries.highlight.selected = !self.temporaries.highlight.selected;
                     }
                 }
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -7111,7 +7098,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 };
                 let coerced_delta = coerced_pos - self.position;
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -7169,17 +7156,18 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
                 recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
                 recurse!();
             }
@@ -7467,7 +7455,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(stereotype) {
+                            if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -7570,18 +7558,20 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.stereotype_in_guillemets = if model.stereotype.is_empty() {
+        self.temporaries.stereotype_in_guillemets = if model.stereotype.is_empty() {
             None
         } else {
             Some(format!("«{}»", model.stereotype).into())
         };
 
-        self.stereotype_controller.refresh(&model.stereotype);
-        self.name_buffer = (*model.name).clone();
-        self.template_parameters_buffer = (*model.template_parameters).clone();
-        self.visibility_buffer = model.visibility;
-        self.is_abstract_buffer = model.is_abstract;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries
+            .stereotype_controller
+            .refresh(&model.stereotype);
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.template_parameters_buffer = (*model.template_parameters).clone();
+        self.temporaries.visibility_buffer = model.visibility;
+        self.temporaries.is_abstract_buffer = model.is_abstract;
+        self.temporaries.comment_buffer = (*model.comment).clone();
 
         // Structural refresh
         let views_map = self
@@ -7622,7 +7612,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
         for e in &self.properties_views {
@@ -7717,16 +7707,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             model: modelish,
             properties_views,
             operations_views,
-            request_focus: false,
-            stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
-            stereotype_controller: self.stereotype_controller.clone(),
-            name_buffer: self.name_buffer.clone(),
-            template_parameters_buffer: self.template_parameters_buffer.clone(),
-            visibility_buffer: self.visibility_buffer,
-            is_abstract_buffer: self.is_abstract_buffer,
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
@@ -7734,7 +7715,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             suppress_template_parameters: self.suppress_template_parameters,
             suppress_properties: self.suppress_properties,
             suppress_operations: self.suppress_operations,
-            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -7778,22 +7758,23 @@ pub fn new_uml_usecase_view<P: UmlClassProfile>(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        stereotype_in_guillemets: None,
-        stereotype_controller: Default::default(),
-        name_buffer: (*m.name).clone(),
-        is_abstract_buffer: m.is_abstract,
-        extension_points_buffer: (*m.extension_points).clone(),
-        comment_buffer: (*m.comment).clone(),
+        temporaries: UmlUseCaseViewTemporaries {
+            request_focus,
+            stereotype_in_guillemets: None,
+            stereotype_controller: Default::default(),
+            name_buffer: (*m.name).clone(),
+            is_abstract_buffer: m.is_abstract,
+            extension_points_buffer: (*m.extension_points).clone(),
+            comment_buffer: (*m.comment).clone(),
 
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+            _profile: PhantomData,
+        },
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
         render_style,
-
-        _profile: PhantomData,
     })
 }
 
@@ -7820,31 +7801,25 @@ pub struct UmlUseCaseView<P: UmlClassProfile> {
     pub model: ERef<UmlUseCase>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_in_guillemets: Option<Arc<String>>,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_controller: P::UseCaseStereotypeController,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    is_abstract_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
-    extension_points_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: UmlUseCaseViewTemporaries<P>,
     pub position: egui::Pos2,
     bounds_rect: egui::Rect,
     background_color: MGlobalColor,
-
     render_style: UseCaseRenderStyle,
+}
 
-    #[nh_context_serde(skip_and_default)]
+#[derive(Clone, Default)]
+struct UmlUseCaseViewTemporaries<P: UmlClassProfile> {
+    request_focus: bool,
+    stereotype_in_guillemets: Option<Arc<String>>,
+    stereotype_controller: P::UseCaseStereotypeController,
+    name_buffer: String,
+    is_abstract_buffer: bool,
+    extension_points_buffer: String,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
     _profile: PhantomData<P>,
 }
 
@@ -7899,59 +7874,70 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             >,
         >,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
-        if self.stereotype_controller.show(ui) {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+                UmlClassPropChange::StereotypeChange(
+                    self.temporaries.stereotype_controller.get_arc(),
+                ),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
-            .checkbox(&mut self.is_abstract_buffer, "isAbstract")
+            .checkbox(&mut self.temporaries.is_abstract_buffer, "isAbstract")
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
+                UmlClassPropChange::ClassAbstractChange(self.temporaries.is_abstract_buffer),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline("Extension points:", &mut self.extension_points_buffer)
+            .labeled_text_edit_multiline(
+                "Extension points:",
+                &mut self.temporaries.extension_points_buffer,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::UseCaseExtensionPointsChange(Arc::new(
-                    self.extension_points_buffer.clone(),
+                    self.temporaries.extension_points_buffer.clone(),
                 )),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlClassPropChange::CommentChange(Arc::new(
+                    self.temporaries.comment_buffer.clone(),
+                )),
             ));
         }
 
@@ -8021,15 +8007,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         let name_bounds = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            if !self.name_buffer.is_empty() {
-                &self.name_buffer
+            if !self.temporaries.name_buffer.is_empty() {
+                &self.temporaries.name_buffer
             } else {
                 " "
             },
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
         let mut text_bounds = name_bounds;
-        if let Some(s) = &self.stereotype_in_guillemets {
+        if let Some(s) = &self.temporaries.stereotype_in_guillemets {
             let stereotype_bounds = canvas.measure_text(
                 name_bounds.center_top(),
                 egui::Align2::CENTER_BOTTOM,
@@ -8054,17 +8040,17 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     bounds_radius,
                     background_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    self.highlight,
+                    self.temporaries.highlight,
                 );
             }
             UseCaseRenderStyle::RectangleWithEllipseIcon => {
                 let icon_radius = egui::Vec2::new(6.0, 3.0);
 
-                if !self.extension_points_buffer.is_empty() {
+                if !self.temporaries.extension_points_buffer.is_empty() {
                     text_bounds.max.y += 3.0;
                 }
                 let extension_points_top = text_bounds.center_bottom();
-                if !self.extension_points_buffer.is_empty() {
+                if !self.temporaries.extension_points_buffer.is_empty() {
                     text_bounds = text_bounds.union(canvas.measure_text(
                         text_bounds.center_bottom(),
                         egui::Align2::CENTER_TOP,
@@ -8074,11 +8060,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     text_bounds.max.y += 3.0;
                 }
                 let extension_points_top2 = text_bounds.center_bottom();
-                if !self.extension_points_buffer.is_empty() {
+                if !self.temporaries.extension_points_buffer.is_empty() {
                     text_bounds = text_bounds.union(canvas.measure_text(
                         text_bounds.center_bottom(),
                         egui::Align2::CENTER_TOP,
-                        &self.extension_points_buffer,
+                        &self.temporaries.extension_points_buffer,
                         canvas::CLASS_ITEM_FONT_SIZE,
                     ));
                 }
@@ -8089,7 +8075,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     egui::CornerRadius::ZERO,
                     background_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    self.highlight,
+                    self.temporaries.highlight,
                 );
                 canvas.draw_ellipse(
                     self.bounds_rect.right_top()
@@ -8097,10 +8083,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     icon_radius,
                     background_color,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    self.highlight,
+                    self.temporaries.highlight,
                 );
 
-                if !self.extension_points_buffer.is_empty() {
+                if !self.temporaries.extension_points_buffer.is_empty() {
                     canvas.draw_line(
                         [
                             (self.bounds_rect.min.x, extension_points_top.y).into(),
@@ -8120,7 +8106,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     canvas.draw_text(
                         extension_points_top2,
                         egui::Align2::CENTER_TOP,
-                        &self.extension_points_buffer,
+                        &self.temporaries.extension_points_buffer,
                         canvas::CLASS_ITEM_FONT_SIZE,
                         egui::Color32::BLACK,
                     );
@@ -8131,15 +8117,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         canvas.draw_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.name_buffer,
+            &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            if !self.is_abstract_buffer {
+            if !self.temporaries.is_abstract_buffer {
                 egui::Color32::BLACK
             } else {
                 IS_ABSTRACT_COLOR
             },
         );
-        if let Some(s) = &self.stereotype_in_guillemets {
+        if let Some(s) = &self.temporaries.stereotype_in_guillemets {
             canvas.draw_text(
                 name_bounds.center_top(),
                 egui::Align2::CENTER_BOTTOM,
@@ -8205,12 +8191,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     return EventHandlingStatus::NotHandled;
                 }
 
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -8223,10 +8209,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -8238,7 +8225,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                 };
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -8275,15 +8262,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -8308,7 +8296,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(stereotype) {
+                            if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -8375,17 +8363,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.stereotype_in_guillemets = if model.stereotype.is_empty() {
+        self.temporaries.stereotype_in_guillemets = if model.stereotype.is_empty() {
             None
         } else {
             Some(format!("«{}»", model.stereotype).into())
         };
 
-        self.stereotype_controller.refresh(&model.stereotype);
-        self.name_buffer = (*model.name).clone();
-        self.is_abstract_buffer = model.is_abstract;
-        self.extension_points_buffer = (*model.extension_points).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries
+            .stereotype_controller
+            .refresh(&model.stereotype);
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.is_abstract_buffer = model.is_abstract;
+        self.temporaries.extension_points_buffer = (*model.extension_points).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -8394,7 +8384,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -8422,20 +8412,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
-            stereotype_controller: self.stereotype_controller.clone(),
-            name_buffer: self.name_buffer.clone(),
-            is_abstract_buffer: self.is_abstract_buffer,
-            extension_points_buffer: self.extension_points_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
             render_style: self.render_style,
-            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -10178,18 +10159,20 @@ pub fn new_umlclass_note_view<P: UmlClassProfile>(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        display_text: String::new(),
-        stereotype_controller: Default::default(),
-        text_buffer: (*m.text).clone(),
+        temporaries: UmlClassNoteViewTemporaries {
+            request_focus,
+            display_text: String::new(),
+            stereotype_controller: Default::default(),
+            text_buffer: (*m.text).clone(),
 
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+            _profile: PhantomData,
+        },
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color,
-        _profile: PhantomData,
     })
 }
 
@@ -10201,24 +10184,22 @@ pub struct UmlClassNoteView<P: UmlClassProfile> {
     pub model: ERef<UmlClassNote>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    display_text: String,
-    #[nh_context_serde(skip_and_default)]
-    stereotype_controller: P::NoteStereotypeController,
-    #[nh_context_serde(skip_and_default)]
-    text_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: UmlClassNoteViewTemporaries<P>,
     pub position: egui::Pos2,
     pub align: egui::Align2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+}
 
-    #[nh_context_serde(skip_and_default)]
+#[derive(Clone, Default)]
+struct UmlClassNoteViewTemporaries<P: UmlClassProfile> {
+    request_focus: bool,
+    display_text: String,
+    stereotype_controller: P::NoteStereotypeController,
+    text_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
     _profile: PhantomData<P>,
 }
 
@@ -10277,29 +10258,35 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
             >,
         >,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
-        if self.stereotype_controller.show(ui) {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+                UmlClassPropChange::StereotypeChange(
+                    self.temporaries.stereotype_controller.get_arc(),
+                ),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Text:",
+                &mut self.temporaries.text_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                UmlClassPropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         ui.label("View properties");
 
@@ -10392,7 +10379,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
             .measure_text(
                 self.position,
                 self.align,
-                &self.display_text,
+                &self.temporaries.display_text,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             )
             .expand2(egui::Vec2 {
@@ -10422,7 +10409,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_polygon(
             [
@@ -10446,18 +10433,21 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_text(
             self.position + align_offset,
             self.align,
-            &self.display_text,
+            &self.temporaries.display_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             let b_rect = self.note_link_button_rect(ui_scale);
             canvas.draw_rectangle(
                 b_rect,
@@ -10476,7 +10466,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         }
 
         if canvas.ui_scale().is_some() {
-            if self.dragged_shape.is_some() {
+            if self.temporaries.dragged_shape.is_some() {
                 canvas.draw_line(
                     [
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
@@ -10551,12 +10541,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -10586,18 +10576,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                         .hold_selection
                         .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                     {
-                        self.highlight.selected = true;
+                        self.temporaries.highlight.selected = true;
                     } else {
-                        self.highlight.selected = !self.highlight.selected;
+                        self.temporaries.highlight.selected = !self.temporaries.highlight.selected;
                     }
                 }
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -10609,7 +10600,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                 };
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -10646,15 +10637,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -10679,7 +10671,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                     let mut model = self.model.write();
                     match property {
                         UmlClassPropChange::StereotypeChange(stereotype) => {
-                            if !self.stereotype_controller.is_valid(stereotype) {
+                            if !self.temporaries.stereotype_controller.is_valid(stereotype) {
                                 return;
                             }
 
@@ -10731,7 +10723,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.display_text = {
+        self.temporaries.display_text = {
             let mut s = String::new();
             if !model.stereotype.is_empty() {
                 s.push('«');
@@ -10741,8 +10733,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
             s.push_str(&model.text);
             s
         };
-        self.stereotype_controller.refresh(&model.stereotype);
-        self.text_buffer = (*model.text).clone();
+        self.temporaries
+            .stereotype_controller
+            .refresh(&model.stereotype);
+        self.temporaries.text_buffer = (*model.text).clone();
     }
 
     fn head_count(
@@ -10751,7 +10745,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -10779,17 +10773,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            display_text: self.display_text.clone(),
-            stereotype_controller: self.stereotype_controller.clone(),
-            text_buffer: self.text_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             align: self.align,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
-            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());

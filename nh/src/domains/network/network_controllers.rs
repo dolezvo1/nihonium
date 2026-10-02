@@ -2055,9 +2055,11 @@ fn new_network_container_view(
             model: model.clone(),
             background_color: MGlobalColor::None,
             custom_image: UFOption::None,
-            request_focus,
-            name_buffer: (*m.name).clone(),
-            comment_buffer: (*m.comment).clone(),
+            temporaries: NetworkContainerAdapterTemporaries {
+                request_focus,
+                name_buffer: (*m.name).clone(),
+                comment_buffer: (*m.comment).clone(),
+            },
         },
         Vec::new(),
         canvas::Highlight::from_selected(request_focus),
@@ -2074,11 +2076,15 @@ pub struct NetworkContainerAdapter {
     background_color: MGlobalColor,
     custom_image: UFOption<ResourceUuid>,
 
+    #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
+    temporaries: NetworkContainerAdapterTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct NetworkContainerAdapterTemporaries {
     request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
     name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
 
@@ -2139,23 +2145,27 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         >,
     ) {
         if ui
-            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
     }
@@ -2235,8 +2245,8 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn deep_copy_init(
@@ -2258,9 +2268,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
             model,
             background_color: self.background_color,
             custom_image: self.custom_image,
-            request_focus: false,
-            name_buffer: self.name_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
+            temporaries: self.temporaries.clone(),
         }
     }
 
@@ -2375,13 +2383,14 @@ fn new_network_node_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        name_buffer: (*m.name).to_owned(),
-        kind_buffer: m.kind,
-        comment_buffer: (*m.comment).to_owned(),
-
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+        temporaries: NetworkNodeViewTemporaries {
+            request_focus,
+            name_buffer: (*m.name).to_owned(),
+            kind_buffer: m.kind,
+            comment_buffer: (*m.comment).to_owned(),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+        },
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -2397,22 +2406,22 @@ pub struct NetworkNodeView {
     pub model: ERef<NetworkNode>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    kind_buffer: NetworkNodeKind,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: NetworkNodeViewTemporaries,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
     custom_image: UFOption<ResourceUuid>,
+}
+
+#[derive(Clone, Default)]
+struct NetworkNodeViewTemporaries {
+    request_focus: bool,
+    name_buffer: String,
+    kind_buffer: NetworkNodeKind,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
 }
 
 impl Entity for NetworkNodeView {
@@ -2456,47 +2465,51 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
     ) -> PropertiesStatus<NetworkDomain> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("node kind")
-            .selected_text(self.kind_buffer.as_str())
+            .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkNodeKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str())
                         .changed()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::NodeKindChange(self.kind_buffer),
+                            NetworkPropChange::NodeKindChange(self.temporaries.kind_buffer),
                         ));
                     }
                 }
             });
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
 
@@ -2558,12 +2571,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             egui::CornerRadius::ZERO,
             egui::Color32::TRANSPARENT,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_text(
             self.position + egui::Vec2::new(0.0, OUTER_SIZE.y / 2.0),
             egui::Align2::CENTER_TOP,
-            &self.name_buffer,
+            &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
@@ -2578,7 +2591,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             canvas.draw_image(inner_rect, &e);
         } else {
             // draw icons based on kind
-            match self.kind_buffer {
+            match self.temporaries.kind_buffer {
                 NetworkNodeKind::Cloud => {
                     const SIZE: egui::Vec2 = egui::Vec2::new(15.0, 8.0);
                     let color = color.unwrap_or(egui::Color32::from_rgb(0xD0, 0xED, 0xEB));
@@ -3286,7 +3299,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         }
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
         }
 
@@ -3327,19 +3343,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && let Some(f) = handle_element_button_click(
                         settings,
                         self.bounds_rect.right_top(),
@@ -3366,10 +3382,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -3381,7 +3398,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 };
                 let coerced_delta = coerced_pos - self.position;
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -3414,15 +3431,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -3493,9 +3511,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
-        self.kind_buffer = model.kind;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.kind_buffer = model.kind;
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -3504,7 +3522,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -3532,12 +3550,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer,
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
@@ -3575,13 +3588,14 @@ fn new_network_user_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        name_buffer: (*m.name).to_owned(),
-        kind_buffer: m.kind,
-        comment_buffer: (*m.comment).to_owned(),
-
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+        temporaries: NetworkUserViewTemporaries {
+            request_focus,
+            name_buffer: (*m.name).to_owned(),
+            kind_buffer: m.kind,
+            comment_buffer: (*m.comment).to_owned(),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+        },
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -3597,22 +3611,22 @@ pub struct NetworkUserView {
     pub model: ERef<NetworkUser>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    kind_buffer: NetworkUserKind,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: NetworkUserViewTemporaries,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
     custom_image: UFOption<ResourceUuid>,
+}
+
+#[derive(Clone, Default)]
+struct NetworkUserViewTemporaries {
+    request_focus: bool,
+    name_buffer: String,
+    kind_buffer: NetworkUserKind,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
 }
 
 impl Entity for NetworkUserView {
@@ -3656,47 +3670,51 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
     ) -> PropertiesStatus<NetworkDomain> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("user kind")
-            .selected_text(self.kind_buffer.as_str())
+            .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkUserKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str())
                         .changed()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::UserKindChange(self.kind_buffer),
+                            NetworkPropChange::UserKindChange(self.temporaries.kind_buffer),
                         ));
                     }
                 }
             });
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
 
@@ -3761,7 +3779,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             egui::CornerRadius::ZERO,
             egui::Color32::TRANSPARENT,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_ellipse(
             self.position + egui::Vec2::new(0.0, -5.0),
@@ -3792,7 +3810,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         {
             canvas.draw_image(inner_rect, &e);
         } else {
-            match self.kind_buffer {
+            match self.temporaries.kind_buffer {
                 NetworkUserKind::Normal => {}
                 NetworkUserKind::Sysadmin => {
                     let screen_rect = egui::Rect::from_two_pos(
@@ -3913,7 +3931,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 NetworkUserKind::BlackHat
                 | NetworkUserKind::GrayHat
                 | NetworkUserKind::WhiteHat => {
-                    let (hat_main, hat_detail) = match self.kind_buffer {
+                    let (hat_main, hat_detail) = match self.temporaries.kind_buffer {
                         NetworkUserKind::BlackHat => (egui::Color32::BLACK, egui::Color32::WHITE),
                         NetworkUserKind::GrayHat => {
                             (egui::Color32::LIGHT_GRAY, egui::Color32::DARK_GRAY)
@@ -3966,14 +3984,17 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         canvas.draw_text(
             self.position + egui::Vec2::new(0.0, OUTER_SIZE.y / 2.0),
             egui::Align2::CENTER_TOP,
-            &self.name_buffer,
+            &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
         self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
         }
 
@@ -4014,19 +4035,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && let Some(f) = handle_element_button_click(
                         settings,
                         self.bounds_rect.right_top(),
@@ -4053,10 +4074,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -4068,7 +4090,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 };
                 let coerced_delta = coerced_pos - self.position;
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -4100,15 +4122,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -4179,9 +4202,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
-        self.kind_buffer = model.kind;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.kind_buffer = model.kind;
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -4190,7 +4213,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -4218,12 +4241,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer,
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
@@ -4261,13 +4279,14 @@ fn new_network_file_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        name_buffer: (*m.name).to_owned(),
-        kind_buffer: m.kind,
-        comment_buffer: (*m.comment).to_owned(),
-
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+        temporaries: NetworkFileViewTemporaries {
+            request_focus,
+            name_buffer: (*m.name).to_owned(),
+            kind_buffer: m.kind,
+            comment_buffer: (*m.comment).to_owned(),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+        },
         position,
         bounds_rect: egui::Rect::ZERO,
         background_color,
@@ -4283,22 +4302,22 @@ pub struct NetworkFileView {
     pub model: ERef<NetworkFile>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    kind_buffer: NetworkFileKind,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: NetworkFileViewTemporaries,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
     custom_image: UFOption<ResourceUuid>,
+}
+
+#[derive(Clone, Default)]
+struct NetworkFileViewTemporaries {
+    request_focus: bool,
+    name_buffer: String,
+    kind_buffer: NetworkFileKind,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
 }
 
 impl Entity for NetworkFileView {
@@ -4342,47 +4361,51 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
     ) -> PropertiesStatus<NetworkDomain> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("file kind")
-            .selected_text(self.kind_buffer.as_str())
+            .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkFileKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str())
                         .changed()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::FileKindChange(self.kind_buffer),
+                            NetworkPropChange::FileKindChange(self.temporaries.kind_buffer),
                         ));
                     }
                 }
             });
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
 
@@ -4447,7 +4470,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             egui::CornerRadius::ZERO,
             egui::Color32::TRANSPARENT,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         const FILE_SIZE: egui::Vec2 = egui::Vec2::new(21.0, 29.0);
         let file_rect = egui::Rect::from_center_size(self.position, FILE_SIZE);
@@ -4473,7 +4496,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         {
             canvas.draw_image(inner_rect, &e);
         } else {
-            match self.kind_buffer {
+            match self.temporaries.kind_buffer {
                 NetworkFileKind::Unspecified => {}
                 NetworkFileKind::Document => {
                     const MARGIN: f32 = 3.0;
@@ -4534,14 +4557,17 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         canvas.draw_text(
             self.position + egui::Vec2::new(0.0, OUTER_SIZE.y / 2.0),
             egui::Align2::CENTER_TOP,
-            &self.name_buffer,
+            &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
         self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
         }
 
@@ -4582,19 +4608,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && let Some(f) = handle_element_button_click(
                         settings,
                         self.bounds_rect.right_top(),
@@ -4621,10 +4647,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -4636,7 +4663,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                 };
                 let coerced_delta = coerced_pos - self.position;
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -4668,15 +4695,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -4747,9 +4775,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
-        self.kind_buffer = model.kind;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.kind_buffer = model.kind;
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -4758,7 +4786,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -4786,12 +4814,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer,
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
@@ -4826,13 +4849,14 @@ fn new_network_location_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        name_buffer: (*m.name).to_owned(),
-        kind_buffer: m.kind,
-        comment_buffer: (*m.comment).to_owned(),
-
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+        temporaries: NetworkLocationViewTemporaries {
+            request_focus,
+            name_buffer: (*m.name).to_owned(),
+            kind_buffer: m.kind,
+            comment_buffer: (*m.comment).to_owned(),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+        },
         position,
         bounds_rect: egui::Rect::ZERO,
         custom_image: UFOption::None,
@@ -4847,21 +4871,21 @@ pub struct NetworkLocationView {
     pub model: ERef<NetworkLocation>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    kind_buffer: NetworkLocationKind,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: NetworkLocationViewTemporaries,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     custom_image: UFOption<ResourceUuid>,
+}
+
+#[derive(Clone, Default)]
+struct NetworkLocationViewTemporaries {
+    request_focus: bool,
+    name_buffer: String,
+    kind_buffer: NetworkLocationKind,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
 }
 
 impl Entity for NetworkLocationView {
@@ -4905,47 +4929,51 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
     ) -> PropertiesStatus<NetworkDomain> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("location kind")
-            .selected_text(self.kind_buffer.as_str())
+            .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkLocationKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str())
                         .changed()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::LocationKindChange(self.kind_buffer),
+                            NetworkPropChange::LocationKindChange(self.temporaries.kind_buffer),
                         ));
                     }
                 }
             });
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
 
@@ -4997,7 +5025,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
             egui::CornerRadius::ZERO,
             egui::Color32::TRANSPARENT,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
 
         fn draw_house(canvas: &mut dyn NHCanvas, position: egui::Pos2, scale: f32) {
@@ -5090,7 +5118,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         {
             canvas.draw_image(inner_rect, &e);
         } else {
-            match self.kind_buffer {
+            match self.temporaries.kind_buffer {
                 NetworkLocationKind::Home => {
                     draw_house(canvas, self.position, 1.0);
                 }
@@ -5168,14 +5196,17 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         canvas.draw_text(
             self.position + egui::Vec2::new(0.0, OUTER_SIZE.y / 2.0),
             egui::Align2::CENTER_TOP,
-            &self.name_buffer,
+            &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
         self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
         }
 
@@ -5216,19 +5247,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && let Some(f) = handle_element_button_click(
                         settings,
                         self.bounds_rect.right_top(),
@@ -5255,10 +5286,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -5270,7 +5302,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
                 };
                 let coerced_delta = coerced_pos - self.position;
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -5302,15 +5334,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -5371,9 +5404,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
-        self.kind_buffer = model.kind;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.kind_buffer = model.kind;
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -5382,7 +5415,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -5410,12 +5443,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer,
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             custom_image: self.custom_image,
@@ -5993,11 +6021,12 @@ pub fn new_network_note_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        text_buffer: (*m.text).clone(),
-
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+        temporaries: NetworkNoteViewTemporaries {
+            request_focus,
+            text_buffer: (*m.text).clone(),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+        },
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -6013,18 +6042,20 @@ pub struct NetworkNoteView {
     pub model: ERef<NetworkNote>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    text_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: NetworkNoteViewTemporaries,
     pub position: egui::Pos2,
     align: egui::Align2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+}
+
+#[derive(Clone, Default)]
+struct NetworkNoteViewTemporaries {
+    request_focus: bool,
+    text_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
 }
 
 impl NetworkNoteView {
@@ -6072,22 +6103,26 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
     ) -> PropertiesStatus<NetworkDomain> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Text:",
+                &mut self.temporaries.text_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                NetworkPropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         ui.label("View properties");
 
@@ -6212,7 +6247,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_polygon(
             [
@@ -6236,7 +6271,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_text(
             self.position + align_offset,
@@ -6247,12 +6282,15 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         );
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
         }
 
         if canvas.ui_scale().is_some() {
-            if self.dragged_shape.is_some() {
+            if self.temporaries.dragged_shape.is_some() {
                 canvas.draw_line(
                     [
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
@@ -6323,19 +6361,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && let Some(f) = handle_element_button_click(
                         settings,
                         self.bounds_rect.right_top(),
@@ -6364,18 +6402,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
                         .hold_selection
                         .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                     {
-                        self.highlight.selected = true;
+                        self.temporaries.highlight.selected = true;
                     } else {
-                        self.highlight.selected = !self.highlight.selected;
+                        self.temporaries.highlight.selected = !self.temporaries.highlight.selected;
                     }
                 }
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -6387,7 +6426,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
                 };
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -6420,15 +6459,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -6493,7 +6533,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.text_buffer = (*model.text).clone();
+        self.temporaries.text_buffer = (*model.text).clone();
     }
 
     fn head_count(
@@ -6502,7 +6542,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -6530,10 +6570,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            text_buffer: self.text_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             align: self.align,
             bounds_rect: self.bounds_rect,

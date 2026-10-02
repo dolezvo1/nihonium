@@ -1382,9 +1382,11 @@ fn new_rdf_graph_view(
         RdfGraphAdapter {
             model: model.clone(),
             background_color,
-            request_focus,
-            iri_buffer: (*m.iri).clone(),
-            comment_buffer: (*m.comment).clone(),
+            temporaries: RdfGraphAdapterTemporaries {
+                request_focus,
+                iri_buffer: (*m.iri).clone(),
+                comment_buffer: (*m.comment).clone(),
+            },
         },
         Vec::new(),
         canvas::Highlight::from_selected(request_focus),
@@ -1400,11 +1402,15 @@ pub struct RdfGraphAdapter {
     model: ERef<RdfGraph>,
     background_color: MGlobalColor,
 
+    #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
+    temporaries: RdfGraphAdapterTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct RdfGraphAdapterTemporaries {
     request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
     iri_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
 
@@ -1450,23 +1456,27 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         >,
     ) {
         if ui
-            .labeled_text_edit_singleline2("IRI:", &mut self.iri_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "IRI:",
+                &mut self.temporaries.iri_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
+                RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
     }
@@ -1524,8 +1534,8 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.iri_buffer = (*model.iri).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.iri_buffer = (*model.iri).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn deep_copy_init(&self, new_uuid: ModelUuid, m: &mut HashMap<ModelUuid, RdfElement>) -> Self
@@ -1542,9 +1552,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         Self {
             model,
             background_color: self.background_color,
-            request_focus: false,
-            iri_buffer: self.iri_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
+            temporaries: self.temporaries.clone(),
         }
     }
 
@@ -1573,14 +1581,15 @@ fn new_rdf_node_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        iri_buffer: (*m.iri).to_owned(),
-        comment_buffer: (*m.comment).to_owned(),
-
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+        temporaries: RdfNodeViewTemporaries {
+            request_focus,
+            iri_buffer: (*m.iri).to_owned(),
+            comment_buffer: (*m.comment).to_owned(),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+            bounds_radius: egui::Vec2::ZERO,
+        },
         position,
-        bounds_radius: egui::Vec2::ZERO,
         background_color,
     })
 }
@@ -1593,20 +1602,20 @@ pub struct RdfNodeView {
     pub model: ERef<RdfNode>,
 
     #[nh_context_serde(skip_and_default)]
+    temporaries: RdfNodeViewTemporaries,
+    pub position: egui::Pos2,
+    background_color: MGlobalColor,
+}
+
+#[derive(Clone, Default)]
+struct RdfNodeViewTemporaries {
     request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
     iri_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
-    #[nh_context_serde(skip_and_default)]
     dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
-    pub position: egui::Pos2,
-    #[nh_context_serde(skip_and_default)]
-    pub bounds_radius: egui::Vec2,
-    background_color: MGlobalColor,
+    bounds_radius: egui::Vec2,
 }
 
 impl RdfNodeView {
@@ -1614,8 +1623,8 @@ impl RdfNodeView {
     fn predicate_button_rect(&self, ui_scale: f32) -> egui::Rect {
         let b_center = self.position
             + egui::Vec2::new(
-                self.bounds_radius.x + Self::BUTTON_RADIUS / ui_scale,
-                -self.bounds_radius.y + Self::BUTTON_RADIUS / ui_scale,
+                self.temporaries.bounds_radius.x + Self::BUTTON_RADIUS / ui_scale,
+                -self.temporaries.bounds_radius.y + Self::BUTTON_RADIUS / ui_scale,
             );
         egui::Rect::from_center_size(
             b_center,
@@ -1625,8 +1634,8 @@ impl RdfNodeView {
     fn literal_button_rect(&self, ui_scale: f32) -> egui::Rect {
         let b_center = self.position
             + egui::Vec2::new(
-                self.bounds_radius.x + Self::BUTTON_RADIUS / ui_scale,
-                -self.bounds_radius.y + 3.0 * Self::BUTTON_RADIUS / ui_scale,
+                self.temporaries.bounds_radius.x + Self::BUTTON_RADIUS / ui_scale,
+                -self.temporaries.bounds_radius.y + 3.0 * Self::BUTTON_RADIUS / ui_scale,
             );
         egui::Rect::from_center_size(
             b_center,
@@ -1636,8 +1645,8 @@ impl RdfNodeView {
     fn node_button_rect(&self, ui_scale: f32) -> egui::Rect {
         let b_center = self.position
             + egui::Vec2::new(
-                self.bounds_radius.x + 3.0 * Self::BUTTON_RADIUS / ui_scale,
-                -self.bounds_radius.y + 3.0 * Self::BUTTON_RADIUS / ui_scale,
+                self.temporaries.bounds_radius.x + 3.0 * Self::BUTTON_RADIUS / ui_scale,
+                -self.temporaries.bounds_radius.y + 3.0 * Self::BUTTON_RADIUS / ui_scale,
             );
         egui::Rect::from_center_size(
             b_center,
@@ -1669,7 +1678,7 @@ impl ElementController<RdfElement> for RdfNodeView {
     fn min_shape(&self) -> NHShape {
         NHShape::Ellipse {
             position: self.position,
-            bounds_radius: self.bounds_radius,
+            bounds_radius: self.temporaries.bounds_radius,
         }
     }
 
@@ -1688,30 +1697,34 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
         >,
     ) -> PropertiesStatus<RdfDomain> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_singleline2("IRI:", &mut self.iri_buffer, self.request_focus)
+            .labeled_text_edit_singleline2(
+                "IRI:",
+                &mut self.temporaries.iri_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
+                RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
 
@@ -1763,16 +1776,16 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             &self.model.read().iri,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
-        self.bounds_radius = text_bounds.expand(2.0).size() / 1.5;
+        self.temporaries.bounds_radius = text_bounds.expand(2.0).size() / 1.5;
 
         canvas.draw_ellipse(
             self.position,
-            self.bounds_radius,
+            self.temporaries.bounds_radius,
             gdc.global_colors
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
 
         canvas.draw_text(
@@ -1784,7 +1797,10 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         );
 
         // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
             let b_rect = self.predicate_button_rect(ui_scale);
             canvas.draw_rectangle(
                 b_rect,
@@ -1841,7 +1857,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         {
             canvas.draw_ellipse(
                 self.position,
-                self.bounds_radius,
+                self.temporaries.bounds_radius,
                 t.targetting_for_section(Ok(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
@@ -1869,19 +1885,19 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && self.predicate_button_rect(ehc.ui_scale).contains(pos) =>
             {
                 *tool = Some(NaiveRdfTool {
@@ -1901,7 +1917,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos)
-                if self.highlight.selected
+                if self.temporaries.highlight.selected
                     && self.literal_button_rect(ehc.ui_scale).contains(pos) =>
             {
                 let stage = RdfToolStage::Literal {
@@ -1923,7 +1939,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos)
-                if self.highlight.selected && self.node_button_rect(ehc.ui_scale).contains(pos) =>
+                if self.temporaries.highlight.selected
+                    && self.node_button_rect(ehc.ui_scale).contains(pos) =>
             {
                 let stage = RdfToolStage::Node {
                     iri: "".to_owned(),
@@ -1948,10 +1965,11 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -1963,7 +1981,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 };
                 let coerced_delta = coerced_pos - self.position;
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -1991,15 +2009,16 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -2056,8 +2075,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.iri_buffer = (*model.iri).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.iri_buffer = (*model.iri).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -2066,7 +2085,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -2094,13 +2113,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            iri_buffer: self.iri_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
-            bounds_radius: self.bounds_radius,
             background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -2137,14 +2151,16 @@ fn new_rdf_literal_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        request_focus,
-        content_buffer: (*m.content).to_owned(),
-        datatype_buffer: (*m.datatype).to_owned(),
-        langtag_buffer: (*m.langtag).to_owned(),
-        comment_buffer: (*m.comment).to_owned(),
+        temporaries: RdfLiteralViewTemporaries {
+            request_focus,
+            content_buffer: (*m.content).to_owned(),
+            datatype_buffer: (*m.datatype).to_owned(),
+            langtag_buffer: (*m.langtag).to_owned(),
+            comment_buffer: (*m.comment).to_owned(),
 
-        dragged_shape: None,
-        highlight: canvas::Highlight::from_selected(request_focus),
+            dragged_shape: None,
+            highlight: canvas::Highlight::from_selected(request_focus),
+        },
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -2159,23 +2175,22 @@ pub struct RdfLiteralView {
     pub model: ERef<RdfLiteral>,
 
     #[nh_context_serde(skip_and_default)]
-    request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
-    content_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    datatype_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    langtag_buffer: String,
-    #[nh_context_serde(skip_and_default)]
-    comment_buffer: String,
-
-    #[nh_context_serde(skip_and_default)]
-    dragged_shape: Option<NHShape>,
-    #[nh_context_serde(skip_and_default)]
-    highlight: canvas::Highlight,
+    temporaries: RdfLiteralViewTemporaries,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+}
+
+#[derive(Clone, Default)]
+struct RdfLiteralViewTemporaries {
+    request_focus: bool,
+    content_buffer: String,
+    datatype_buffer: String,
+    langtag_buffer: String,
+    comment_buffer: String,
+
+    dragged_shape: Option<NHShape>,
+    highlight: canvas::Highlight,
 }
 
 impl Entity for RdfLiteralView {
@@ -2219,49 +2234,53 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
         >,
     ) -> PropertiesStatus<RdfDomain> {
-        if !self.highlight.selected {
+        if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline2("Content:", &mut self.content_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Content:",
+                &mut self.temporaries.content_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::ContentChange(Arc::new(self.content_buffer.clone())),
+                RdfPropChange::ContentChange(Arc::new(self.temporaries.content_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
         if ui
-            .labeled_text_edit_singleline("Datatype:", &mut self.datatype_buffer)
+            .labeled_text_edit_singleline("Datatype:", &mut self.temporaries.datatype_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::DataTypeChange(Arc::new(self.datatype_buffer.clone())),
+                RdfPropChange::DataTypeChange(Arc::new(self.temporaries.datatype_buffer.clone())),
             ));
         };
 
         if ui
-            .labeled_text_edit_singleline("Language:", &mut self.langtag_buffer)
+            .labeled_text_edit_singleline("Language:", &mut self.temporaries.langtag_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::LangTagChange(Arc::new(self.langtag_buffer.clone())),
+                RdfPropChange::LangTagChange(Arc::new(self.temporaries.langtag_buffer.clone())),
             ));
         }
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
 
@@ -2312,7 +2331,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             .measure_text(
                 self.position,
                 egui::Align2::CENTER_CENTER,
-                &self.content_buffer,
+                &self.temporaries.content_buffer,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             )
             .expand(5.0);
@@ -2323,12 +2342,12 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                 .get(&self.background_color)
                 .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            self.temporaries.highlight,
         );
         canvas.draw_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.content_buffer,
+            &self.temporaries.content_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
@@ -2370,12 +2389,12 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged_shape = Some(self.min_shape());
+                self.temporaries.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
+                if self.temporaries.dragged_shape.is_some() {
+                    self.temporaries.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -2388,10 +2407,11 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
-                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
-                self.dragged_shape = Some(translated_real_shape);
-                let coerced_pos = if self.highlight.selected {
+            InputEvent::Drag { delta, .. } if self.temporaries.dragged_shape.is_some() => {
+                let translated_real_shape =
+                    self.temporaries.dragged_shape.unwrap().translate(delta);
+                self.temporaries.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
                         !ehc.all_elements
                             .get(e)
@@ -2403,7 +2423,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                 };
                 let coerced_delta = coerced_pos - self.position;
 
-                if self.highlight.selected {
+                if self.temporaries.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(
                         q.selected_views(),
                         coerced_delta,
@@ -2432,15 +2452,16 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     ) {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
-                self.highlight = self.highlight.combine(*set, *h);
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight = self.highlight.combine(*set, *h);
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected = (self.highlight.selected && *retain)
+                self.temporaries.highlight.selected = (self.temporaries.highlight.selected
+                    && *retain)
                     || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -2511,10 +2532,10 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.content_buffer = (*model.content).clone();
-        self.datatype_buffer = (*model.datatype).clone();
-        self.langtag_buffer = (*model.langtag).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.content_buffer = (*model.content).clone();
+        self.temporaries.datatype_buffer = (*model.datatype).clone();
+        self.temporaries.langtag_buffer = (*model.langtag).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -2523,7 +2544,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_views_status.insert(*self.uuid(), self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
 
@@ -2551,13 +2572,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            request_focus: false,
-            content_buffer: self.content_buffer.clone(),
-            datatype_buffer: self.datatype_buffer.clone(),
-            langtag_buffer: self.langtag_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
-            dragged_shape: None,
-            highlight: self.highlight,
+            temporaries: self.temporaries.clone(),
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
