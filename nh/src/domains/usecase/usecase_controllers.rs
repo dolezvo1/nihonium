@@ -138,6 +138,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 200.0),
         UmlClassRenderStyle::StickFigure,
         MGlobalColor::None,
+        false,
     );
     let (bank_model, bank_view) = new_umlclass_class(
         "Bank Customer",
@@ -148,6 +149,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 400.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
     let (usecase_model, usecase_view) = new_uml_usecase(
         "Registration",
@@ -156,6 +158,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(550.0, 200.0),
         UseCaseRenderStyle::Ellipse,
         MGlobalColor::None,
+        false,
     );
 
     let (gen_model, gen_view) = new_umlclass_generalization(
@@ -179,6 +182,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "business",
         UmlClassPackageKind::Rectangle,
         egui::Rect::from_x_y_ranges(400.0..=750.0, 100.0..=500.0),
+        false,
     );
 
     let diagram = ERef::new(UmlClassDiagram::new(

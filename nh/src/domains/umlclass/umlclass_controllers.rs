@@ -32,9 +32,8 @@ use crate::domains::umlclass::umlclass_models::{
     UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization,
 };
 use crate::{
-    CustomModal, CustomModalResult, CustomTab, DefaultNameF, DefaultSettingsF,
-    DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData,
-    DiagramInfo, SetShortcut,
+    CustomModal, CustomTab, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
+    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -436,44 +435,51 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         element: UmlClassElement,
     ) -> Result<UmlClassElementView<P>, HashSet<ModelUuid>> {
         let v = match element {
-            UmlClassElement::Package(inner) => {
-                UmlClassElementView::from(new_umlclass_package_view(
-                    inner,
-                    egui::Rect {
-                        min: egui::Pos2::ZERO,
-                        max: egui::Pos2::new(100.0, 100.0),
-                    },
-                ))
+            UmlClassElement::Package(inner) => new_umlclass_package_view(
+                inner,
+                egui::Rect {
+                    min: egui::Pos2::ZERO,
+                    max: egui::Pos2::new(100.0, 100.0),
+                },
+                false,
+            )
+            .into(),
+            UmlClassElement::Instance(inner) => {
+                new_umlclass_instance_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false)
+                    .into()
             }
-            UmlClassElement::Instance(inner) => UmlClassElementView::from(
-                new_umlclass_instance_view(inner, egui::Pos2::ZERO, MGlobalColor::None),
-            ),
             UmlClassElement::Class(inner) => {
                 let (properties_views, operations_views) = {
                     let r = inner.read();
                     (
                         r.properties
                             .iter()
-                            .map(|e| new_umlclass_property_view(e.clone()))
+                            .map(|e| new_umlclass_property_view(e.clone(), false))
                             .collect(),
                         r.operations
                             .iter()
-                            .map(|e| new_umlclass_operation_view(e.clone()))
+                            .map(|e| new_umlclass_operation_view(e.clone(), false))
                             .collect(),
                     )
                 };
 
-                UmlClassElementView::from(new_umlclass_class_view(
+                new_umlclass_class_view(
                     inner,
                     properties_views,
                     operations_views,
                     egui::Pos2::ZERO,
                     UmlClassRenderStyle::Class,
                     MGlobalColor::None,
-                ))
+                    false,
+                )
+                .into()
             }
-            UmlClassElement::Property(inner) => new_umlclass_property_view(inner.clone()).into(),
-            UmlClassElement::Operation(inner) => new_umlclass_operation_view(inner.clone()).into(),
+            UmlClassElement::Property(inner) => {
+                new_umlclass_property_view(inner.clone(), false).into()
+            }
+            UmlClassElement::Operation(inner) => {
+                new_umlclass_operation_view(inner.clone(), false).into()
+            }
             UmlClassElement::UseCase(inner) => {
                 let r = inner.read();
                 new_uml_usecase_view(
@@ -484,6 +490,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                         false => UseCaseRenderStyle::RectangleWithEllipseIcon,
                     },
                     MGlobalColor::None,
+                    false,
                 )
                 .into()
             }
@@ -506,12 +513,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                         .chain(m.targets.iter().map(|e| *e.read().uuid))
                         .collect());
                 };
-                UmlClassElementView::from(new_umlclass_generalization_view(
-                    inner.clone(),
-                    None,
-                    sv,
-                    tv,
-                ))
+                new_umlclass_generalization_view(inner.clone(), None, sv, tv).into()
             }
             UmlClassElement::Dependency(inner) => {
                 let m = inner.read();
@@ -521,12 +523,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                UmlClassElementView::from(new_umlclass_dependency_view(
-                    inner.clone(),
-                    None,
-                    source_view,
-                    target_view,
-                ))
+                new_umlclass_dependency_view(inner.clone(), None, source_view, target_view).into()
             }
             UmlClassElement::Association(inner) => {
                 let m = inner.read();
@@ -536,12 +533,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                UmlClassElementView::from(new_umlclass_association_view(
-                    inner.clone(),
-                    None,
-                    source_view,
-                    target_view,
-                ))
+                new_umlclass_association_view(inner.clone(), None, source_view, target_view).into()
             }
             UmlClassElement::UseCaseGeneralization(inner) => {
                 let m = inner.read();
@@ -562,18 +554,14 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                         .chain(m.targets.iter().map(|e| *e.read().uuid))
                         .collect());
                 };
-                UmlClassElementView::from(new_uml_usecasegeneralization_view(
-                    inner.clone(),
-                    None,
-                    sv,
-                    tv,
-                ))
+                new_uml_usecasegeneralization_view(inner.clone(), None, sv, tv).into()
             }
             UmlClassElement::Note(inner) => new_umlclass_note_view(
                 inner,
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
             UmlClassElement::NoteLink(inner) => {
@@ -584,12 +572,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                UmlClassElementView::from(new_umlclass_notelink_view(
-                    inner.clone(),
-                    None,
-                    source_view,
-                    target_view,
-                ))
+                new_umlclass_notelink_view(inner.clone(), None, source_view, target_view).into()
             }
         };
 
@@ -936,6 +919,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
                 "",
                 e.1,
                 "",
+                false,
             );
             if is_abstract {
                 e.0.write().is_abstract = true;
@@ -955,6 +939,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(200.0, 150.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
 
     let (class_cfx, class_cfx_view) = new_umlclass_class(
@@ -966,6 +951,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(100.0, 250.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
 
     let (class_cfy, class_cfy_view) = new_umlclass_class(
@@ -977,6 +963,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 250.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
 
     let (realization_cfx, realization_cfx_view) = new_umlclass_dependency(
@@ -1006,6 +993,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 50.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
 
     let (usage_client_af, usage_client_af_view) = new_umlclass_dependency(
@@ -1029,6 +1017,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(450.0, 150.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
 
     let (usage_client_producta, usage_client_producta_view) = new_umlclass_dependency(
@@ -1055,6 +1044,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(650.0, 150.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
 
     let (usage_client_productb, usage_client_productb_view) = new_umlclass_dependency(
@@ -1078,6 +1068,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(650.0, 250.0),
         egui::Align2::CENTER_CENTER,
         MGlobalColor::None,
+        false,
     );
     let (notelink1, notelink1_view) = new_umlclass_notelink(
         None,
@@ -1103,6 +1094,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             "",
             "",
             "",
+            false,
         );
         let m = new_umlclass_operation(
             UFOption::Some(UmlClassVisibilityKind::Public),
@@ -1110,6 +1102,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             "",
             "",
             "",
+            false,
         );
         vec![d, m]
     };
@@ -1122,6 +1115,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(200.0, 400.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
     let (polygon_model, polygon_view) = new_umlclass_class(
         "Polygon",
@@ -1132,6 +1126,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(100.0, 550.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
     let circle_properties = {
         let r = new_umlclass_property(
@@ -1141,6 +1136,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             "",
             "",
             "",
+            false,
         );
         let c = new_umlclass_property(
             UFOption::Some(UmlClassVisibilityKind::Private),
@@ -1149,6 +1145,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             "",
             "",
             "",
+            false,
         );
         vec![r, c]
     };
@@ -1161,6 +1158,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 550.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
     let (gen_model, gen_view) = new_umlclass_generalization(
         "",
@@ -1179,6 +1177,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             "",
             "",
             "",
+            false,
         );
         let y = new_umlclass_property(
             UFOption::Some(UmlClassVisibilityKind::Private),
@@ -1187,6 +1186,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             "",
             "",
             "",
+            false,
         );
         vec![x, y]
     };
@@ -1199,6 +1199,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(100.0, 700.0),
         UmlClassRenderStyle::Class,
         MGlobalColor::None,
+        false,
     );
     let (point_assoc_model, point_assoc_view) = new_umlclass_association(
         "",
@@ -1219,6 +1220,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 650.0),
         egui::Align2::CENTER_CENTER,
         MGlobalColor::None,
+        false,
     );
     let (_notelink3, notelink3_view) = new_umlclass_notelink(
         None,
@@ -1231,6 +1233,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         UmlClassPackageKind::Folder,
         egui::Rect::from_x_y_ranges(25.0..=375.0, 350.0..=750.0),
+        false,
     );
 
     let (instance, instance_view) = new_umlclass_instance(
@@ -1240,6 +1243,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "firstName = \"Vojtěch\"\nlastName = \"Doležal\"",
         egui::Pos2::new(650.0, 400.0),
         MGlobalColor::None,
+        false,
     );
 
     let diagram2 = ERef::new(UmlClassDiagram::new(
@@ -1892,6 +1896,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 "",
                 egui::Pos2::ZERO,
                 *background_color,
+                false,
             )
             .1;
             instance_view.write().refresh_buffers();
@@ -1913,6 +1918,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 egui::Pos2::ZERO,
                 *render_style,
                 *background_color,
+                false,
             )
             .1;
             class_view.write().refresh_buffers();
@@ -1923,8 +1929,16 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             property_type,
             stereotype,
         } => {
-            let property_view =
-                new_umlclass_property(UFOption::None, name, property_type, "", "", stereotype).1;
+            let property_view = new_umlclass_property(
+                UFOption::None,
+                name,
+                property_type,
+                "",
+                "",
+                stereotype,
+                false,
+            )
+            .1;
             property_view.write().refresh_buffers();
             property_view.into()
         }
@@ -1933,7 +1947,8 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             return_type,
             stereotype,
         } => {
-            let view = new_umlclass_operation(UFOption::None, name, "", return_type, stereotype).1;
+            let view =
+                new_umlclass_operation(UFOption::None, name, "", return_type, stereotype, false).1;
             view.write().refresh_buffers();
             view.into()
         }
@@ -1951,6 +1966,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 egui::Pos2::ZERO,
                 *render_style,
                 *background_color,
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1966,6 +1982,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 egui::Pos2::ZERO,
                 UmlClassRenderStyle::Class,
                 MGlobalColor::None,
+                false,
             );
             let d2 = new_umlclass_class(
                 "dummy",
@@ -1976,6 +1993,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 egui::Pos2::new(100.0, 50.0),
                 UmlClassRenderStyle::Class,
                 MGlobalColor::None,
+                false,
             );
 
             match link_type {
@@ -2037,6 +2055,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 50.0),
                 },
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -2054,6 +2073,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 egui::Pos2::ZERO,
                 *align,
                 *background_color,
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -2066,6 +2086,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             );
             let d2 = new_umlclass_class(
                 "dummy",
@@ -2076,6 +2097,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
                 egui::Pos2::new(100.0, 50.0),
                 UmlClassRenderStyle::Class,
                 MGlobalColor::None,
+                false,
             );
             let view =
                 new_umlclass_notelink(None, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
@@ -2780,6 +2802,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     "",
                     pos,
                     *background_color,
+                    true,
                 )
                 .1;
                 self.result = PartialUmlClassElement::Some(view.into());
@@ -2804,6 +2827,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     pos,
                     *render_style,
                     *background_color,
+                    true,
                 )
                 .1;
                 self.result = PartialUmlClassElement::Some(view.into());
@@ -2826,6 +2850,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     pos,
                     *render_style,
                     *background_color,
+                    true,
                 )
                 .1;
                 self.result = PartialUmlClassElement::Some(view.into());
@@ -2849,7 +2874,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 },
                 _,
             ) => {
-                let view = new_umlclass_note(text, stereotype, pos, *align, *background_color).1;
+                let view =
+                    new_umlclass_note(text, stereotype, pos, *align, *background_color, true).1;
                 self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -2913,6 +2939,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         "",
                         "",
                         stereotype,
+                        true,
                     );
                     self.result = PartialUmlClassElement::Some(property_view.into());
                     self.event_lock = true;
@@ -2925,8 +2952,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     },
                     PartialUmlClassElement::None,
                 ) => {
-                    let (_operation, operation_view) =
-                        new_umlclass_operation(UFOption::None, name, "", return_type, stereotype);
+                    let (_operation, operation_view) = new_umlclass_operation(
+                        UFOption::None,
+                        name,
+                        "",
+                        return_type,
+                        stereotype,
+                        true,
+                    );
                     self.result = PartialUmlClassElement::Some(operation_view.into());
                     self.event_lock = true;
                 }
@@ -3077,36 +3110,11 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             }
             PartialUmlClassElement::Some(element) => {
                 let element = element.clone();
-                let esm: Option<Box<dyn CustomModal>> = match &element {
-                    UmlClassElementView::Instance(inner) => {
-                        Some(Box::new(UmlClassInstanceSetupModal::<
-                            P::InstanceStereotypeController,
-                        >::from(
-                            &inner.read().model
-                        )))
-                    }
-                    UmlClassElementView::Class(inner) => Some(Box::new(UmlClassSetupModal::<
-                        P::ClassStereotypeController,
-                    >::from(
-                        &inner.read().model
-                    ))),
-                    UmlClassElementView::ClassProperty(inner) => {
-                        Some(Box::new(UmlClassPropertySetupModal::<
-                            P::ClassPropertyStereotypeController,
-                        >::from(
-                            &inner.read().model
-                        )))
-                    }
-                    UmlClassElementView::ClassOperation(inner) => {
-                        Some(Box::new(UmlClassOperationSetupModal::<
-                            P::ClassOperationStereotypeController,
-                        >::from(
-                            &inner.read().model
-                        )))
-                    }
-                    _ => None,
-                };
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -3114,7 +3122,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     element: element.into(),
                     into_model: true,
                 });
-                Ok(esm)
+                Ok(None)
             }
             PartialUmlClassElement::Link {
                 source,
@@ -3245,10 +3253,19 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             {
                 self.current_stage = self.initial_stage.clone();
 
-                let (_package_model, package_view) =
-                    new_umlclass_package(name, stereotype, *kind, egui::Rect::from_two_pos(*a, *b));
+                let (_package_model, package_view) = new_umlclass_package(
+                    name,
+                    stereotype,
+                    *kind,
+                    egui::Rect::from_two_pos(*a, *b),
+                    true,
+                );
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -3389,6 +3406,7 @@ pub fn new_umlclass_package<P: UmlClassProfile>(
     stereotype: &str,
     kind: UmlClassPackageKind,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (ERef<UmlClassPackage>, ERef<PackageViewT<P>>) {
     let package_model = ERef::new(UmlClassPackage::new(
         ModelUuid::now_v7(),
@@ -3397,13 +3415,14 @@ pub fn new_umlclass_package<P: UmlClassProfile>(
         kind,
         Vec::new(),
     ));
-    let package_view = new_umlclass_package_view(package_model.clone(), bounds_rect);
+    let package_view = new_umlclass_package_view(package_model.clone(), bounds_rect, request_focus);
 
     (package_model, package_view)
 }
 pub fn new_umlclass_package_view<P: UmlClassProfile>(
     model: ERef<UmlClassPackage>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<PackageViewT<P>> {
     let m = model.read();
     PackageView::new(
@@ -3411,6 +3430,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
         UmlClassPackageAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
+            request_focus,
             display_text: Arc::new("".to_owned()),
             name_buffer: (*m.name).clone(),
             visibility_buffer: m.visibility,
@@ -3420,7 +3440,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
             _profile: PhantomData,
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -3433,6 +3453,8 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     model: ERef<UmlClassPackage>,
     background_color: MGlobalColor,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: Arc<String>,
     #[nh_context_serde(skip_and_default)]
@@ -3849,7 +3871,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3857,6 +3879,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if let Some(e) = show_visibility_selectbox(ui, &self.visibility_buffer) {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4015,6 +4038,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         Self {
             model,
             background_color: self.background_color,
+            request_focus: false,
             display_text: self.display_text.clone(),
             stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -4035,6 +4059,7 @@ fn new_umlclass_instance<P: UmlClassProfile>(
     instance_slots: &str,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlClassInstance>, ERef<UmlClassInstanceView<P>>) {
     let instance_model = ERef::new(UmlClassInstance::new(
         ModelUuid::now_v7(),
@@ -4043,8 +4068,12 @@ fn new_umlclass_instance<P: UmlClassProfile>(
         stereotype.to_owned(),
         instance_slots.to_owned(),
     ));
-    let instance_view =
-        new_umlclass_instance_view(instance_model.clone(), position, background_color);
+    let instance_view = new_umlclass_instance_view(
+        instance_model.clone(),
+        position,
+        background_color,
+        request_focus,
+    );
 
     (instance_model, instance_view)
 }
@@ -4052,11 +4081,13 @@ fn new_umlclass_instance_view<P: UmlClassProfile>(
     model: ERef<UmlClassInstance>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlClassInstanceView<P>> {
     let m = model.read();
     ERef::new(UmlClassInstanceView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
+        request_focus,
         stereotype_in_guillemets: String::new(),
         main_text: String::new(),
         name_buffer: (*m.instance_name).clone(),
@@ -4065,72 +4096,12 @@ fn new_umlclass_instance_view<P: UmlClassProfile>(
         slots_buffer: (*m.instance_slots).clone(),
         comment_buffer: (*m.comment).clone(),
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color,
         _profile: PhantomData,
     })
-}
-
-struct UmlClassInstanceSetupModal<SC: StereotypeController> {
-    model: ERef<UmlClassInstance>,
-    first_frame: bool,
-    name_buffer: String,
-    type_buffer: String,
-    stereotype_controller: SC,
-}
-
-impl<SC: StereotypeController> From<&ERef<UmlClassInstance>> for UmlClassInstanceSetupModal<SC> {
-    fn from(model: &ERef<UmlClassInstance>) -> Self {
-        let m = model.read();
-        let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&m.stereotype);
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            name_buffer: (*m.instance_name).clone(),
-            type_buffer: (*m.instance_type).clone(),
-            stereotype_controller,
-        }
-    }
-}
-
-impl<SC: StereotypeController> CustomModal for UmlClassInstanceSetupModal<SC> {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        self.stereotype_controller.show(ui);
-        ui.label("Name:");
-        let r = ui.text_edit_singleline(&mut self.name_buffer);
-        ui.label("Type:");
-        ui.text_edit_singleline(&mut self.type_buffer);
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.instance_name = Arc::new(self.name_buffer.clone());
-                m.instance_type = Arc::new(self.type_buffer.clone());
-                m.stereotype = self.stereotype_controller.get_arc();
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -4140,6 +4111,8 @@ pub struct UmlClassInstanceView<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassInstance>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: String,
     #[nh_context_serde(skip_and_default)]
@@ -4241,7 +4214,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4249,6 +4222,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 UmlClassPropChange::InstanceName(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_singleline("Type:", &mut self.type_buffer)
@@ -4722,6 +4696,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             main_text: self.main_text.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -4748,6 +4723,7 @@ fn new_umlclass_property<P: UmlClassProfile>(
     multiplicity: &str,
     default_value: &str,
     stereotype: &str,
+    request_focus: bool,
 ) -> (ERef<UmlClassProperty>, ERef<UmlClassPropertyView<P>>) {
     let model = ERef::new(UmlClassProperty::new(
         ModelUuid::now_v7(),
@@ -4758,19 +4734,21 @@ fn new_umlclass_property<P: UmlClassProfile>(
         default_value.to_owned(),
         stereotype.to_owned(),
     ));
-    let view = new_umlclass_property_view(model.clone());
+    let view = new_umlclass_property_view(model.clone(), request_focus);
 
     (model, view)
 }
 
 fn new_umlclass_property_view<P: UmlClassProfile>(
     model: ERef<UmlClassProperty>,
+    request_focus: bool,
 ) -> ERef<UmlClassPropertyView<P>> {
     let m = model.read();
     ERef::new(UmlClassPropertyView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         display_text: String::new(),
         visibility_buffer: m.visibility,
         stereotype_controller: Default::default(),
@@ -4786,140 +4764,10 @@ fn new_umlclass_property_view<P: UmlClassProfile>(
         is_unique_buffer: m.is_unique,
         is_id_buffer: m.is_id,
 
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         bounds_rect: egui::Rect::ZERO,
         _profile: PhantomData,
     })
-}
-
-struct UmlClassPropertySetupModal<SC: StereotypeController> {
-    model: ERef<UmlClassProperty>,
-    first_frame: bool,
-
-    stereotype_controller: SC,
-    name_buffer: String,
-    value_type_buffer: String,
-    multiplicity_buffer: String,
-    default_value_buffer: String,
-
-    visibility_buffer: UFOption<UmlClassVisibilityKind>,
-    is_static_buffer: bool,
-    is_derived_buffer: bool,
-    is_read_only_buffer: bool,
-    is_ordered_buffer: bool,
-    is_unique_buffer: bool,
-    is_id_buffer: bool,
-}
-
-impl<SC: StereotypeController> From<&ERef<UmlClassProperty>> for UmlClassPropertySetupModal<SC> {
-    fn from(model: &ERef<UmlClassProperty>) -> Self {
-        let m = model.read();
-        let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&m.stereotype);
-        Self {
-            model: model.clone(),
-            first_frame: true,
-
-            stereotype_controller,
-            name_buffer: (*m.name).clone(),
-            value_type_buffer: (*m.value_type).clone(),
-            multiplicity_buffer: (*m.multiplicity).clone(),
-            default_value_buffer: (*m.default_value).clone(),
-
-            visibility_buffer: m.visibility,
-            is_static_buffer: m.is_static,
-            is_derived_buffer: m.is_derived,
-            is_read_only_buffer: m.is_read_only,
-            is_ordered_buffer: m.is_ordered,
-            is_unique_buffer: m.is_unique,
-            is_id_buffer: m.is_id,
-        }
-    }
-}
-
-impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        self.stereotype_controller.show(ui);
-        ui.label("Name:");
-        let r = ui.text_edit_singleline(&mut self.name_buffer);
-        ui.label("Type:");
-        ui.text_edit_singleline(&mut self.value_type_buffer);
-        ui.label("Multiplicity:");
-        ui.text_edit_singleline(&mut self.multiplicity_buffer);
-        ui.label("Default value:");
-        ui.text_edit_singleline(&mut self.default_value_buffer);
-
-        ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("visibility")
-            .selected_text(
-                self.visibility_buffer
-                    .as_ref()
-                    .map(|e| e.as_str())
-                    .unwrap_or("Unspecified"),
-            )
-            .show_ui(ui, |ui| {
-                for e in [
-                    UFOption::None,
-                    UFOption::Some(UmlClassVisibilityKind::Public),
-                    UFOption::Some(UmlClassVisibilityKind::PackagePrivate),
-                    UFOption::Some(UmlClassVisibilityKind::Protected),
-                    UFOption::Some(UmlClassVisibilityKind::Private),
-                ] {
-                    ui.selectable_value(
-                        &mut self.visibility_buffer,
-                        e,
-                        e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"),
-                    );
-                }
-            });
-
-        ui.checkbox(&mut self.is_static_buffer, "isStatic");
-        ui.checkbox(&mut self.is_derived_buffer, "isDerived");
-        ui.checkbox(&mut self.is_read_only_buffer, "isReadOnly");
-        ui.checkbox(&mut self.is_ordered_buffer, "isOrdered");
-        ui.checkbox(&mut self.is_unique_buffer, "isUnique");
-        ui.checkbox(&mut self.is_id_buffer, "isID");
-
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-
-                m.stereotype = self.stereotype_controller.get_arc();
-                m.name = Arc::new(self.name_buffer.clone());
-                m.value_type = Arc::new(self.value_type_buffer.clone());
-                m.multiplicity = Arc::new(self.multiplicity_buffer.clone());
-                m.default_value = Arc::new(self.default_value_buffer.clone());
-
-                m.visibility = self.visibility_buffer;
-                m.is_static = self.is_static_buffer;
-                m.is_derived = self.is_derived_buffer;
-                m.is_read_only = self.is_read_only_buffer;
-                m.is_ordered = self.is_ordered_buffer;
-                m.is_unique = self.is_unique_buffer;
-                m.is_id = self.is_id_buffer;
-
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -4929,6 +4777,8 @@ pub struct UmlClassPropertyView<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassProperty>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: String,
     #[nh_context_serde(skip_and_default)]
@@ -5111,7 +4961,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -5119,6 +4969,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_singleline("Type:", &mut self.value_type_buffer)
@@ -5541,6 +5392,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             uuid: view_uuid.into(),
             model: modelish,
 
+            request_focus: false,
             display_text: self.display_text.clone(),
             visibility_buffer: self.visibility_buffer,
             stereotype_controller: self.stereotype_controller.clone(),
@@ -5571,6 +5423,7 @@ fn new_umlclass_operation<P: UmlClassProfile>(
     parameters: &str,
     return_type: &str,
     stereotype: &str,
+    request_focus: bool,
 ) -> (ERef<UmlClassOperation>, ERef<UmlClassOperationView<P>>) {
     let model = ERef::new(UmlClassOperation::new(
         ModelUuid::now_v7(),
@@ -5580,19 +5433,21 @@ fn new_umlclass_operation<P: UmlClassProfile>(
         return_type.to_owned(),
         stereotype.to_owned(),
     ));
-    let view = new_umlclass_operation_view(model.clone());
+    let view = new_umlclass_operation_view(model.clone(), request_focus);
 
     (model, view)
 }
 
 fn new_umlclass_operation_view<P: UmlClassProfile>(
     model: ERef<UmlClassOperation>,
+    request_focus: bool,
 ) -> ERef<UmlClassOperationView<P>> {
     let m = model.read();
     ERef::new(UmlClassOperationView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         display_text: String::new(),
         visibility_buffer: m.visibility,
         stereotype_controller: Default::default(),
@@ -5606,131 +5461,11 @@ fn new_umlclass_operation_view<P: UmlClassProfile>(
         is_ordered_buffer: m.is_ordered,
         is_unique_buffer: m.is_unique,
 
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         bounds_rect: egui::Rect::ZERO,
 
         _profile: PhantomData,
     })
-}
-
-struct UmlClassOperationSetupModal<SC: StereotypeController> {
-    model: ERef<UmlClassOperation>,
-    first_frame: bool,
-
-    stereotype_controller: SC,
-    name_buffer: String,
-    parameters_buffer: String,
-    return_type_buffer: String,
-
-    visibility_buffer: UFOption<UmlClassVisibilityKind>,
-    is_static_buffer: bool,
-    is_abstract_buffer: bool,
-    is_query_buffer: bool,
-    is_ordered_buffer: bool,
-    is_unique_buffer: bool,
-}
-
-impl<SC: StereotypeController> From<&ERef<UmlClassOperation>> for UmlClassOperationSetupModal<SC> {
-    fn from(model: &ERef<UmlClassOperation>) -> Self {
-        let m = model.read();
-        let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&m.stereotype);
-        Self {
-            model: model.clone(),
-            first_frame: true,
-
-            stereotype_controller,
-            name_buffer: (*m.name).clone(),
-            parameters_buffer: (*m.parameters).clone(),
-            return_type_buffer: (*m.return_type).clone(),
-
-            visibility_buffer: m.visibility,
-            is_static_buffer: m.is_static,
-            is_abstract_buffer: m.is_abstract,
-            is_query_buffer: m.is_query,
-            is_ordered_buffer: m.is_ordered,
-            is_unique_buffer: m.is_unique,
-        }
-    }
-}
-
-impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        self.stereotype_controller.show(ui);
-        ui.label("Name:");
-        let r = ui.text_edit_singleline(&mut self.name_buffer);
-        ui.label("Parameters:");
-        ui.text_edit_singleline(&mut self.parameters_buffer);
-        ui.label("Return type:");
-        ui.text_edit_singleline(&mut self.return_type_buffer);
-
-        ui.label("Visibility:");
-        egui::ComboBox::from_id_salt("visibility")
-            .selected_text(
-                self.visibility_buffer
-                    .as_ref()
-                    .map(|e| e.as_str())
-                    .unwrap_or("Unspecified"),
-            )
-            .show_ui(ui, |ui| {
-                for e in [
-                    UFOption::None,
-                    UFOption::Some(UmlClassVisibilityKind::Public),
-                    UFOption::Some(UmlClassVisibilityKind::PackagePrivate),
-                    UFOption::Some(UmlClassVisibilityKind::Protected),
-                    UFOption::Some(UmlClassVisibilityKind::Private),
-                ] {
-                    ui.selectable_value(
-                        &mut self.visibility_buffer,
-                        e,
-                        e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"),
-                    );
-                }
-            });
-
-        ui.checkbox(&mut self.is_static_buffer, "isStatic");
-        ui.checkbox(&mut self.is_abstract_buffer, "isAbstract");
-        ui.checkbox(&mut self.is_query_buffer, "isQuery");
-        ui.checkbox(&mut self.is_ordered_buffer, "isOrdered");
-        ui.checkbox(&mut self.is_unique_buffer, "isUnique");
-
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.stereotype = self.stereotype_controller.get_arc();
-                m.name = Arc::new(self.name_buffer.clone());
-                m.parameters = Arc::new(self.parameters_buffer.clone());
-                m.return_type = Arc::new(self.return_type_buffer.clone());
-
-                m.visibility = self.visibility_buffer;
-                m.is_static = self.is_static_buffer;
-                m.is_abstract = self.is_abstract_buffer;
-                m.is_query = self.is_query_buffer;
-                m.is_ordered = self.is_ordered_buffer;
-                m.is_unique = self.is_unique_buffer;
-
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -5740,6 +5475,8 @@ pub struct UmlClassOperationView<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassOperation>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: String,
     #[nh_context_serde(skip_and_default)]
@@ -5923,7 +5660,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -5931,6 +5668,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_singleline("Parameters:", &mut self.parameters_buffer)
@@ -6303,6 +6041,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             uuid: view_uuid.into(),
             model: modelish,
 
+            request_focus: false,
             display_text: self.display_text.clone(),
             visibility_buffer: self.visibility_buffer,
             stereotype_controller: self.stereotype_controller.clone(),
@@ -6334,6 +6073,7 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
     position: egui::Pos2,
     render_style: UmlClassRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlClass>, ERef<UmlClassView<P>>) {
     let class_model = ERef::new(UmlClass::new(
         ModelUuid::now_v7(),
@@ -6351,6 +6091,7 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
         position,
         render_style,
         background_color,
+        request_focus,
     );
 
     (class_model, class_view)
@@ -6362,6 +6103,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
     position: egui::Pos2,
     render_style: UmlClassRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlClassView<P>> {
     let m = model.read();
     ERef::new(UmlClassView {
@@ -6370,6 +6112,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         properties_views,
         operations_views,
 
+        request_focus,
         stereotype_in_guillemets: None,
         stereotype_controller: Default::default(),
         name_buffer: (*m.name).clone(),
@@ -6379,7 +6122,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         comment_buffer: (*m.comment).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color,
@@ -6391,61 +6134,6 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
 
         _profile: PhantomData,
     })
-}
-
-struct UmlClassSetupModal<SC: StereotypeController> {
-    model: ERef<UmlClass>,
-    first_frame: bool,
-    stereotype_controller: SC,
-    name_buffer: String,
-}
-
-impl<SC: StereotypeController> From<&ERef<UmlClass>> for UmlClassSetupModal<SC> {
-    fn from(model: &ERef<UmlClass>) -> Self {
-        let m = model.read();
-        let mut stereotype_controller: SC = Default::default();
-        stereotype_controller.refresh(&m.stereotype);
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            stereotype_controller,
-            name_buffer: (*m.name).clone(),
-        }
-    }
-}
-
-impl<SC: StereotypeController> CustomModal for UmlClassSetupModal<SC> {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        self.stereotype_controller.show(ui);
-        ui.label("Name:");
-        let r = ui.text_edit_singleline(&mut self.name_buffer);
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.stereotype = self.stereotype_controller.get_arc();
-                m.name = Arc::new(self.name_buffer.clone());
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -6474,6 +6162,8 @@ pub struct UmlClassView<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     pub operations_views: Vec<ERef<UmlClassOperationView<P>>>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: Option<Arc<String>>,
     #[nh_context_serde(skip_and_default)]
@@ -6820,7 +6510,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -6828,6 +6518,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline(
@@ -7905,7 +7596,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 views_map
                     .get(&e.read().uuid)
                     .cloned()
-                    .unwrap_or_else(|| new_umlclass_property_view(e.clone()))
+                    .unwrap_or_else(|| new_umlclass_property_view(e.clone(), false))
             })
             .collect();
         let views_map = self
@@ -7920,7 +7611,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 views_map
                     .get(&e.read().uuid)
                     .cloned()
-                    .unwrap_or_else(|| new_umlclass_operation_view(e.clone()))
+                    .unwrap_or_else(|| new_umlclass_operation_view(e.clone(), false))
             })
             .collect();
     }
@@ -8026,6 +7717,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             model: modelish,
             properties_views,
             operations_views,
+            request_focus: false,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -8056,6 +7748,7 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
     position: egui::Pos2,
     render_style: UseCaseRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlUseCase>, ERef<UmlUseCaseView<P>>) {
     let usecase_model = ERef::new(UmlUseCase::new(
         ModelUuid::now_v7(),
@@ -8068,6 +7761,7 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
         position,
         render_style,
         background_color,
+        request_focus,
     );
 
     (usecase_model, usecase_view)
@@ -8077,12 +7771,14 @@ pub fn new_uml_usecase_view<P: UmlClassProfile>(
     position: egui::Pos2,
     render_style: UseCaseRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlUseCaseView<P>> {
     let m = model.read();
     ERef::new(UmlUseCaseView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         stereotype_in_guillemets: None,
         stereotype_controller: Default::default(),
         name_buffer: (*m.name).clone(),
@@ -8091,7 +7787,7 @@ pub fn new_uml_usecase_view<P: UmlClassProfile>(
         comment_buffer: (*m.comment).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -8123,6 +7819,8 @@ pub struct UmlUseCaseView<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlUseCase>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: Option<Arc<String>>,
     #[nh_context_serde(skip_and_default)]
@@ -8215,7 +7913,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -8223,6 +7921,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .checkbox(&mut self.is_abstract_buffer, "isAbstract")
@@ -8723,6 +8422,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -10449,13 +10149,20 @@ pub fn new_umlclass_note<P: UmlClassProfile>(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlClassNote>, ERef<UmlClassNoteView<P>>) {
     let model = ERef::new(UmlClassNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let view = new_umlclass_note_view(model.clone(), position, align, background_color);
+    let view = new_umlclass_note_view(
+        model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (model, view)
 }
@@ -10464,18 +10171,20 @@ pub fn new_umlclass_note_view<P: UmlClassProfile>(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlClassNoteView<P>> {
     let m = model.read();
     ERef::new(UmlClassNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         display_text: String::new(),
         stereotype_controller: Default::default(),
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -10491,6 +10200,8 @@ pub struct UmlClassNoteView<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: String,
     #[nh_context_serde(skip_and_default)]
@@ -10580,7 +10291,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         }
 
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -10588,6 +10299,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
                 UmlClassPropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -11067,6 +10779,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             display_text: self.display_text.clone(),
             stereotype_controller: self.stereotype_controller.clone(),
             text_buffer: self.text_buffer.clone(),

@@ -2060,10 +2060,7 @@ fn new_network_container_view(
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
-        match request_focus {
-            false => canvas::Highlight::NONE,
-            true => canvas::Highlight::SELECTED,
-        },
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -2384,10 +2381,7 @@ fn new_network_node_view(
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: match request_focus {
-            false => canvas::Highlight::NONE,
-            true => canvas::Highlight::SELECTED,
-        },
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -3587,10 +3581,7 @@ fn new_network_user_view(
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: match request_focus {
-            false => canvas::Highlight::NONE,
-            true => canvas::Highlight::SELECTED,
-        },
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -4276,10 +4267,7 @@ fn new_network_file_view(
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: match request_focus {
-            false => canvas::Highlight::NONE,
-            true => canvas::Highlight::SELECTED,
-        },
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::ZERO,
         background_color,
@@ -4844,10 +4832,7 @@ fn new_network_location_view(
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: match request_focus {
-            false => canvas::Highlight::NONE,
-            true => canvas::Highlight::SELECTED,
-        },
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::ZERO,
         custom_image: UFOption::None,
@@ -6012,10 +5997,7 @@ pub fn new_network_note_view(
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: match request_focus {
-            false => canvas::Highlight::NONE,
-            true => canvas::Highlight::SELECTED,
-        },
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),

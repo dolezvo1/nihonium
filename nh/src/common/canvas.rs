@@ -881,6 +881,14 @@ impl Highlight {
         warning: true,
         ..Highlight::NONE
     };
+    pub const fn from_selected(selected: bool) -> Self {
+        Self {
+            selected,
+            valid: false,
+            invalid: false,
+            warning: false,
+        }
+    }
 
     pub fn count(&self) -> u8 {
         (if self.selected { 1 } else { 0 })

@@ -25,8 +25,8 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::{
-    CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
-    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -262,24 +262,22 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         element: RdfElement,
     ) -> Result<RdfElementView, HashSet<ModelUuid>> {
         let v = match element {
-            RdfElement::Graph(inner) => RdfElementView::from(new_rdf_graph_view(
+            RdfElement::Graph(inner) => new_rdf_graph_view(
                 inner,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 100.0),
                 },
                 MGlobalColor::None,
-            )),
-            RdfElement::Literal(inner) => RdfElementView::from(new_rdf_literal_view(
-                inner,
-                egui::Pos2::ZERO,
-                MGlobalColor::None,
-            )),
-            RdfElement::Node(inner) => RdfElementView::from(new_rdf_node_view(
-                inner,
-                egui::Pos2::ZERO,
-                MGlobalColor::None,
-            )),
+                false,
+            )
+            .into(),
+            RdfElement::Literal(inner) => {
+                new_rdf_literal_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false).into()
+            }
+            RdfElement::Node(inner) => {
+                new_rdf_node_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false).into()
+            }
             RdfElement::Predicate(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
@@ -288,11 +286,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                RdfElementView::from(new_rdf_predicate_view(
-                    inner.clone(),
-                    source_view,
-                    target_view,
-                ))
+                new_rdf_predicate_view(inner.clone(), source_view, target_view).into()
             }
         };
 
@@ -519,6 +513,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
         MGlobalColor::None,
+        false,
     );
 
     let (literal_model, literal_view) = new_rdf_literal(
@@ -527,6 +522,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "en",
         egui::Pos2::new(300.0, 200.0),
         MGlobalColor::None,
+        false,
     );
 
     let (predicate, predicate_view) = new_rdf_predicate(
@@ -539,6 +535,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "http://subgraph",
         egui::Rect::from_x_y_ranges(100.0..=500.0, 300.0..=500.0),
         MGlobalColor::None,
+        false,
     );
 
     let diagram = ERef::new(RdfDiagram::new(
@@ -574,6 +571,7 @@ pub fn stress_test<const N1: usize, const DX: u32, const DY: u32>(
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(100.0 + xx as f32 * DX as f32, 200.0 + yy as f32 * DY as f32),
                 MGlobalColor::None,
+                false,
             );
             models.push(node_st.into());
             views.push(node_st_view.into());
@@ -899,6 +897,7 @@ fn view_for_stage(s: &RdfToolStage) -> RdfElementView {
                 language,
                 egui::Pos2::ZERO,
                 *background_color,
+                false,
             )
             .1;
             literal_view.into()
@@ -908,17 +907,18 @@ fn view_for_stage(s: &RdfToolStage) -> RdfElementView {
             background_color,
             with_predicate_from: _,
         } => {
-            let node_view = new_rdf_node(iri, egui::Pos2::ZERO, *background_color).1;
+            let node_view = new_rdf_node(iri, egui::Pos2::ZERO, *background_color, false).1;
             node_view.into()
         }
         RdfToolStage::PredicateStart { iri } => {
-            let d1 = new_rdf_node("dummy", egui::Pos2::ZERO, MGlobalColor::None);
+            let d1 = new_rdf_node("dummy", egui::Pos2::ZERO, MGlobalColor::None, false);
             let d2 = new_rdf_literal(
                 "dummy",
                 "",
                 "",
                 egui::Pos2::new(100.0, 75.0),
                 MGlobalColor::None,
+                false,
             );
             let predicate_view =
                 new_rdf_predicate(iri, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
@@ -935,6 +935,7 @@ fn view_for_stage(s: &RdfToolStage) -> RdfElementView {
                     max: egui::Pos2::new(100.0, 50.0),
                 },
                 *background_color,
+                false,
             )
             .1;
             graph_view.into()
@@ -1160,7 +1161,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 _,
             ) => {
                 let (_literal_model, literal_view) =
-                    new_rdf_literal(content, datatype, language, pos, *background_color);
+                    new_rdf_literal(content, datatype, language, pos, *background_color, true);
 
                 self.result = PartialRdfElement::Some(literal_view.into());
                 self.event_lock = true;
@@ -1173,7 +1174,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 },
                 _,
             ) => {
-                let (_node, node_view) = new_rdf_node(iri, pos, *background_color);
+                let (_node, node_view) = new_rdf_node(iri, pos, *background_color, true);
                 self.result = PartialRdfElement::Some(node_view.into());
                 self.event_lock = true;
             }
@@ -1236,15 +1237,6 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         match &self.result {
             PartialRdfElement::Some(element) => {
                 let element = element.clone();
-                let esm: Option<Box<dyn CustomModal>> = match &element {
-                    RdfElementView::Literal(inner) => {
-                        Some(Box::new(RdfLiteralSetupModal::from(&inner.read().model)))
-                    }
-                    RdfElementView::Node(inner) => Some(Box::new(RdfIriBasedSetupModal::from(
-                        RdfElement::from(inner.read().model.clone()),
-                    ))),
-                    RdfElementView::Predicate(..) | RdfElementView::Graph(..) => unreachable!(),
-                };
                 let additional_predicate = match self.initial_stage {
                     RdfToolStage::Literal {
                         with_predicate_from: Some(source),
@@ -1270,6 +1262,10 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
                 self.try_spend();
 
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1286,7 +1282,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                         into_model: true,
                     });
                 }
-                Ok(esm)
+                Ok(None)
             }
             PartialRdfElement::Predicate {
                 source,
@@ -1302,7 +1298,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let (predicate_model, predicate_view) = new_rdf_predicate(
+                    let (_, predicate_view) = new_rdf_predicate(
                         iri,
                         (source.clone(), source_controller),
                         (dest.clone(), dest_controller),
@@ -1316,9 +1312,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                         element: RdfElementView::from(predicate_view).into(),
                         into_model: true,
                     });
-                    Ok(Some(Box::new(RdfIriBasedSetupModal::from(
-                        RdfElement::from(predicate_model),
-                    ))))
+                    Ok(None)
                 } else {
                     Err(())
                 }
@@ -1331,10 +1325,18 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             {
                 self.current_stage = self.initial_stage.clone();
 
-                let (graph_model, graph_view) =
-                    new_rdf_graph(iri, egui::Rect::from_two_pos(*a, *b), *background_color);
+                let (_, graph_view) = new_rdf_graph(
+                    iri,
+                    egui::Rect::from_two_pos(*a, *b),
+                    *background_color,
+                    true,
+                );
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1342,9 +1344,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     element: RdfElementView::from(graph_view).into(),
                     into_model: true,
                 });
-                Ok(Some(Box::new(RdfIriBasedSetupModal::from(
-                    RdfElement::from(graph_model),
-                ))))
+                Ok(None)
             }
             _ => Err(()),
         }
@@ -1355,76 +1355,18 @@ impl Tool<RdfDomain> for NaiveRdfTool {
     }
 }
 
-struct RdfIriBasedSetupModal {
-    model: RdfElement,
-    first_frame: bool,
-    iri_buffer: String,
-}
-
-impl From<RdfElement> for RdfIriBasedSetupModal {
-    fn from(model: RdfElement) -> Self {
-        let iri_buffer = match &model {
-            RdfElement::Graph(eref) => (*eref.read().iri).clone(),
-            RdfElement::Node(eref) => (*eref.read().iri).clone(),
-            RdfElement::Predicate(eref) => (*eref.read().iri).clone(),
-            RdfElement::Literal(..) => unreachable!(),
-        };
-        Self {
-            model,
-            first_frame: true,
-            iri_buffer,
-        }
-    }
-}
-
-impl CustomModal for RdfIriBasedSetupModal {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("IRI:");
-        let r = ui.text_edit_singleline(&mut self.iri_buffer);
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let iri = Arc::new(self.iri_buffer.clone());
-                match &self.model {
-                    RdfElement::Graph(inner) => inner.write().iri = iri,
-                    RdfElement::Node(inner) => inner.write().iri = iri,
-                    RdfElement::Predicate(inner) => inner.write().iri = iri,
-                    RdfElement::Literal(_inner) => unreachable!(),
-                }
-                result = CustomModalResult::CloseModified(*self.model.uuid());
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
-}
-
 fn new_rdf_graph(
     iri: &str,
     bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
     let model = ERef::new(RdfGraph::new(
         ModelUuid::now_v7(),
         iri.to_owned(),
         Vec::new(),
     ));
-    let view = new_rdf_graph_view(model.clone(), bounds_rect, background_color);
+    let view = new_rdf_graph_view(model.clone(), bounds_rect, background_color, request_focus);
 
     (model, view)
 }
@@ -1432,6 +1374,7 @@ fn new_rdf_graph_view(
     model: ERef<RdfGraph>,
     bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageView::new(
@@ -1439,11 +1382,12 @@ fn new_rdf_graph_view(
         RdfGraphAdapter {
             model: model.clone(),
             background_color,
+            request_focus,
             iri_buffer: (*m.iri).clone(),
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -1456,6 +1400,8 @@ pub struct RdfGraphAdapter {
     model: ERef<RdfGraph>,
     background_color: MGlobalColor,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     iri_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1504,7 +1450,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         >,
     ) {
         if ui
-            .labeled_text_edit_singleline("IRI:", &mut self.iri_buffer)
+            .labeled_text_edit_singleline2("IRI:", &mut self.iri_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1512,6 +1458,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
@@ -1595,6 +1542,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         Self {
             model,
             background_color: self.background_color,
+            request_focus: false,
             iri_buffer: self.iri_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
         }
@@ -1607,15 +1555,17 @@ fn new_rdf_node(
     iri: &str,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<RdfNode>, ERef<RdfNodeView>) {
     let model = ERef::new(RdfNode::new(ModelUuid::now_v7(), iri.to_owned()));
-    let view = new_rdf_node_view(model.clone(), position, background_color);
+    let view = new_rdf_node_view(model.clone(), position, background_color, request_focus);
     (model, view)
 }
 fn new_rdf_node_view(
     model: ERef<RdfNode>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<RdfNodeView> {
     let m = model.read();
 
@@ -1623,11 +1573,12 @@ fn new_rdf_node_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         iri_buffer: (*m.iri).to_owned(),
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_radius: egui::Vec2::ZERO,
         background_color,
@@ -1641,6 +1592,8 @@ pub struct RdfNodeView {
     #[nh_context_serde(entity)]
     pub model: ERef<RdfNode>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     iri_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1742,7 +1695,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_singleline("IRI:", &mut self.iri_buffer)
+            .labeled_text_edit_singleline2("IRI:", &mut self.iri_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1750,6 +1703,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
@@ -2140,6 +2094,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             iri_buffer: self.iri_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
@@ -2159,6 +2114,7 @@ fn new_rdf_literal(
     langtag: &str,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<RdfLiteral>, ERef<RdfLiteralView>) {
     let model = ERef::new(RdfLiteral::new(
         ModelUuid::now_v7(),
@@ -2166,13 +2122,14 @@ fn new_rdf_literal(
         datatype.to_owned(),
         langtag.to_owned(),
     ));
-    let view = new_rdf_literal_view(model.clone(), position, background_color);
+    let view = new_rdf_literal_view(model.clone(), position, background_color, request_focus);
     (model, view)
 }
 fn new_rdf_literal_view(
     model: ERef<RdfLiteral>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<RdfLiteralView> {
     let m = model.read();
 
@@ -2180,76 +2137,18 @@ fn new_rdf_literal_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         content_buffer: (*m.content).to_owned(),
         datatype_buffer: (*m.datatype).to_owned(),
         langtag_buffer: (*m.langtag).to_owned(),
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
     })
-}
-
-struct RdfLiteralSetupModal {
-    model: ERef<RdfLiteral>,
-    first_frame: bool,
-    content_buffer: String,
-    datatype_buffer: String,
-    langtag_buffer: String,
-}
-
-impl From<&ERef<RdfLiteral>> for RdfLiteralSetupModal {
-    fn from(model: &ERef<RdfLiteral>) -> Self {
-        let m = model.read();
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            content_buffer: (*m.content).clone(),
-            datatype_buffer: (*m.datatype).clone(),
-            langtag_buffer: (*m.langtag).clone(),
-        }
-    }
-}
-
-impl CustomModal for RdfLiteralSetupModal {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("Content:");
-        let r = ui.text_edit_multiline(&mut self.content_buffer);
-        ui.label("Datatype:");
-        ui.text_edit_singleline(&mut self.datatype_buffer);
-        ui.label("Langtag:");
-        ui.text_edit_singleline(&mut self.langtag_buffer);
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.content = Arc::new(self.content_buffer.clone());
-                m.datatype = Arc::new(self.datatype_buffer.clone());
-                m.langtag = Arc::new(self.langtag_buffer.clone());
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -2259,6 +2158,8 @@ pub struct RdfLiteralView {
     #[nh_context_serde(entity)]
     pub model: ERef<RdfLiteral>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     content_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2325,7 +2226,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline("Content:", &mut self.content_buffer)
+            .labeled_text_edit_multiline2("Content:", &mut self.content_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2333,6 +2234,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                 RdfPropChange::ContentChange(Arc::new(self.content_buffer.clone())),
             ));
         }
+        self.request_focus = false;
         if ui
             .labeled_text_edit_singleline("Datatype:", &mut self.datatype_buffer)
             .changed()
@@ -2649,6 +2551,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             content_buffer: self.content_buffer.clone(),
             datatype_buffer: self.datatype_buffer.clone(),
             langtag_buffer: self.langtag_buffer.clone(),

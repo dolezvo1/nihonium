@@ -158,6 +158,25 @@ pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
+    fn new_ontouml_class(
+        name: &str,
+        stereotype: &str,
+        is_abstract: bool,
+        position: egui::Pos2,
+    ) -> (ERef<UmlClass>, ERef<UmlClassView<OntoUmlProfile>>) {
+        new_umlclass_class(
+            name,
+            stereotype,
+            is_abstract,
+            Vec::new(),
+            Vec::new(),
+            position,
+            UmlClassRenderStyle::Class,
+            MGlobalColor::None,
+            false,
+        )
+    }
+
     let (animal_model, animal_view) = new_ontouml_class(
         "Animal",
         ontouml_models::KIND,
@@ -677,24 +696,6 @@ impl StereotypeController for OntoUmlClassStereotypeController {
             format!("«{}»", self.buffer)
         };
     }
-}
-
-pub fn new_ontouml_class(
-    name: &str,
-    stereotype: &str,
-    is_abstract: bool,
-    position: egui::Pos2,
-) -> (ERef<UmlClass>, ERef<UmlClassView<OntoUmlProfile>>) {
-    new_umlclass_class(
-        name,
-        stereotype,
-        is_abstract,
-        Vec::new(),
-        Vec::new(),
-        position,
-        UmlClassRenderStyle::Class,
-        MGlobalColor::None,
-    )
 }
 
 #[derive(Clone, Default)]
