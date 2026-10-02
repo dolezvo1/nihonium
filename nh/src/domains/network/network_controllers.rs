@@ -556,36 +556,42 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         NetworkNodeKind::Cloud,
         egui::Pos2::new(200.0, 200.0),
         MGlobalColor::None,
+        false,
     );
     let (router, router_view) = new_network_node(
         "Router",
         NetworkNodeKind::Router,
         egui::Pos2::new(300.0, 400.0),
         MGlobalColor::None,
+        false,
     );
     let (swtch, swtch_view) = new_network_node(
         "Switch",
         NetworkNodeKind::Switch,
         egui::Pos2::new(400.0, 200.0),
         MGlobalColor::None,
+        false,
     );
     let (workstation, workstation_view) = new_network_node(
         "Workstation",
         NetworkNodeKind::Workstation,
         egui::Pos2::new(500.0, 400.0),
         MGlobalColor::None,
+        false,
     );
     let (user, user_view) = new_network_user(
         "User",
         NetworkUserKind::Normal,
         egui::Pos2::new(600.0, 200.0),
         MGlobalColor::None,
+        false,
     );
     let (file, file_view) = new_network_file(
         "File",
         NetworkFileKind::Certificate,
         egui::Pos2::new(700.0, 400.0),
         MGlobalColor::None,
+        false,
     );
 
     let (e1, e1_view) = new_network_association(
@@ -1420,7 +1426,8 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             background_color,
             with_edge_from: _,
         } => {
-            let node_view = new_network_node(name, *kind, egui::Pos2::ZERO, *background_color).1;
+            let node_view =
+                new_network_node(name, *kind, egui::Pos2::ZERO, *background_color, false).1;
             node_view.into()
         }
         NetworkToolStage::User {
@@ -1429,7 +1436,8 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             background_color,
             with_edge_from: _,
         } => {
-            let user_view = new_network_user(name, *kind, egui::Pos2::ZERO, *background_color).1;
+            let user_view =
+                new_network_user(name, *kind, egui::Pos2::ZERO, *background_color, false).1;
             user_view.into()
         }
         NetworkToolStage::File {
@@ -1438,7 +1446,8 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             background_color,
             with_edge_from: _,
         } => {
-            let file_view = new_network_file(name, *kind, egui::Pos2::ZERO, *background_color).1;
+            let file_view =
+                new_network_file(name, *kind, egui::Pos2::ZERO, *background_color, false).1;
             file_view.into()
         }
         NetworkToolStage::Location {
@@ -1446,7 +1455,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             kind,
             with_edge_from: _,
         } => {
-            let view = new_network_location(name, *kind, egui::Pos2::ZERO).1;
+            let view = new_network_location(name, *kind, egui::Pos2::ZERO, false).1;
             view.into()
         }
         NetworkToolStage::AssociationStart {
@@ -1460,12 +1469,14 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
                 NetworkUserKind::Normal,
                 egui::Pos2::ZERO,
                 MGlobalColor::None,
+                false,
             );
             let d2 = new_network_node(
                 "dummy",
                 NetworkNodeKind::Workstation,
                 egui::Pos2::new(100.0, 75.0),
                 MGlobalColor::None,
+                false,
             );
 
             let association_view = new_network_association(
@@ -1486,6 +1497,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 50.0),
                 },
+                false,
             )
             .1;
             container_view.into()
@@ -1495,7 +1507,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             align,
             background_color,
             with_edge_from: _,
-        } => new_network_note(text, egui::Pos2::ZERO, *align, *background_color)
+        } => new_network_note(text, egui::Pos2::ZERO, *align, *background_color, false)
             .1
             .into(),
         NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => unreachable!(),
@@ -1746,7 +1758,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 },
                 _,
             ) => {
-                let (_, node_view) = new_network_node(name, *kind, pos, *background_color);
+                let (_, node_view) = new_network_node(name, *kind, pos, *background_color, true);
                 self.result = PartialNetworkElement::Some(node_view.into());
                 self.event_lock = true;
             }
@@ -1759,7 +1771,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 },
                 _,
             ) => {
-                let (_, user_view) = new_network_user(name, *kind, pos, *background_color);
+                let (_, user_view) = new_network_user(name, *kind, pos, *background_color, true);
                 self.result = PartialNetworkElement::Some(user_view.into());
                 self.event_lock = true;
             }
@@ -1772,7 +1784,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 },
                 _,
             ) => {
-                let (_, file_view) = new_network_file(name, *kind, pos, *background_color);
+                let (_, file_view) = new_network_file(name, *kind, pos, *background_color, true);
                 self.result = PartialNetworkElement::Some(file_view.into());
                 self.event_lock = true;
             }
@@ -1784,7 +1796,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 },
                 _,
             ) => {
-                let (_, view) = new_network_location(name, *kind, pos);
+                let (_, view) = new_network_location(name, *kind, pos, true);
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1805,7 +1817,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 },
                 _,
             ) => {
-                let view = new_network_note(text, pos, *align, *background_color).1;
+                let view = new_network_note(text, pos, *align, *background_color, true).1;
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1991,7 +2003,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.current_stage = self.initial_stage.clone();
 
                 let container_view =
-                    new_network_container(name, egui::Rect::from_two_pos(*a, *b)).1;
+                    new_network_container(name, egui::Rect::from_two_pos(*a, *b), true).1;
 
                 self.try_spend();
                 commands.push(InsensitiveCommand::HighlightAll(
@@ -2019,13 +2031,15 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
 fn new_network_container(
     name: &str,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (ERef<NetworkContainer>, ERef<PackageViewT>) {
     let container_model = ERef::new(NetworkContainer::new(
         ModelUuid::now_v7(),
         name.to_owned(),
         Vec::new(),
     ));
-    let container_view = new_network_container_view(container_model.clone(), bounds_rect, true);
+    let container_view =
+        new_network_container_view(container_model.clone(), bounds_rect, request_focus);
 
     (container_model, container_view)
 }
@@ -2127,17 +2141,16 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
     ) {
-        let main_input_r = ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer);
-        if self.request_focus {
-            main_input_r.request_focus();
-            self.request_focus = false;
-        }
-        if main_input_r.changed() {
+        if ui
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
@@ -2348,9 +2361,10 @@ fn new_network_node(
     kind: NetworkNodeKind,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<NetworkNode>, ERef<NetworkNodeView>) {
     let model = ERef::new(NetworkNode::new(ModelUuid::now_v7(), name.to_owned(), kind));
-    let view = new_network_node_view(model.clone(), position, background_color, true);
+    let view = new_network_node_view(model.clone(), position, background_color, request_focus);
     (model, view)
 }
 fn new_network_node_view(
@@ -2454,17 +2468,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
         ui.label("Model properties");
 
-        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
-        if self.request_focus {
-            main_input_r.request_focus();
-            self.request_focus = false;
-        }
-        if main_input_r.changed() {
+        if ui
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("node kind")
@@ -3546,9 +3559,15 @@ fn new_network_user(
     kind: NetworkUserKind,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<NetworkUser>, ERef<NetworkUserView>) {
     let user_model = ERef::new(NetworkUser::new(ModelUuid::now_v7(), name.to_owned(), kind));
-    let user_view = new_network_user_view(user_model.clone(), position, background_color, true);
+    let user_view = new_network_user_view(
+        user_model.clone(),
+        position,
+        background_color,
+        request_focus,
+    );
     (user_model, user_view)
 }
 fn new_network_user_view(
@@ -3652,17 +3671,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
         ui.label("Model properties");
 
-        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
-        if self.request_focus {
-            main_input_r.request_focus();
-            self.request_focus = false;
-        }
-        if main_input_r.changed() {
+        if ui
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("user kind")
@@ -4230,9 +4248,15 @@ fn new_network_file(
     kind: NetworkFileKind,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<NetworkFile>, ERef<NetworkFileView>) {
     let user_model = ERef::new(NetworkFile::new(ModelUuid::now_v7(), name.to_owned(), kind));
-    let user_view = new_network_file_view(user_model.clone(), position, background_color, true);
+    let user_view = new_network_file_view(
+        user_model.clone(),
+        position,
+        background_color,
+        request_focus,
+    );
     (user_model, user_view)
 }
 fn new_network_file_view(
@@ -4336,17 +4360,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
 
         ui.label("Model properties");
 
-        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
-        if self.request_focus {
-            main_input_r.request_focus();
-            self.request_focus = false;
-        }
-        if main_input_r.changed() {
+        if ui
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("file kind")
@@ -4795,13 +4818,14 @@ fn new_network_location(
     name: &str,
     kind: NetworkLocationKind,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> (ERef<NetworkLocation>, ERef<NetworkLocationView>) {
     let model = ERef::new(NetworkLocation::new(
         ModelUuid::now_v7(),
         name.to_owned(),
         kind,
     ));
-    let view = new_network_location_view(model.clone(), position, true);
+    let view = new_network_location_view(model.clone(), position, request_focus);
     (model, view)
 }
 fn new_network_location_view(
@@ -4902,17 +4926,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
 
         ui.label("Model properties");
 
-        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
-        if self.request_focus {
-            main_input_r.request_focus();
-            self.request_focus = false;
-        }
-        if main_input_r.changed() {
+        if ui
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("location kind")
@@ -5960,9 +5983,16 @@ pub fn new_network_note(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<NetworkNote>, ERef<NetworkNoteView>) {
     let model = ERef::new(NetworkNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_network_note_view(model.clone(), position, align, background_color, true);
+    let view = new_network_note_view(
+        model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (model, view)
 }
@@ -6066,17 +6096,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
 
         ui.label("Model properties");
 
-        let main_input_r = ui.labeled_text_edit_multiline("Text:", &mut self.text_buffer);
-        if self.request_focus {
-            main_input_r.request_focus();
-            self.request_focus = false;
-        }
-        if main_input_r.changed() {
+        if ui
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
