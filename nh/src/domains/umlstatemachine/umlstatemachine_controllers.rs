@@ -2307,6 +2307,7 @@ pub fn new_umlstatemachine_statemachine_view(
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
+        canvas::Highlight::NONE,
         bounds_rect,
     )
 }

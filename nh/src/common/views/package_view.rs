@@ -146,6 +146,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
         uuid: Arc<ViewUuid>,
         adapter: AdapterT,
         owned_views: Vec<DomainT::CommonElementViewT>,
+        highlight: canvas::Highlight,
         bounds_rect: egui::Rect,
     ) -> ERef<Self> {
         ERef::new(Self {
@@ -155,7 +156,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
             all_children_status: HashMap::new(),
 
             dragged_type_and_shape: None,
-            highlight: canvas::Highlight::NONE,
+            highlight,
             label_rect: egui::Rect::NOTHING,
             bounds_rect,
         })

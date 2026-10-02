@@ -2557,6 +2557,7 @@ pub fn new_umlactivity_activity_view(
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
+        canvas::Highlight::NONE,
         bounds_rect,
     )
 }
@@ -2877,6 +2878,7 @@ pub fn new_umlactivity_interruptibleregion_view(
             name_buffer: (*m.name).clone(),
         },
         Vec::new(),
+        canvas::Highlight::NONE,
         bounds_rect,
     )
 }

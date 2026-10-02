@@ -3420,6 +3420,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
             _profile: PhantomData,
         },
         Vec::new(),
+        canvas::Highlight::NONE,
         bounds_rect,
     )
 }

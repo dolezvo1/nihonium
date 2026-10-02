@@ -1443,6 +1443,7 @@ fn new_rdf_graph_view(
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
+        canvas::Highlight::NONE,
         bounds_rect,
     )
 }

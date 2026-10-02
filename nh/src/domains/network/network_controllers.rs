@@ -273,19 +273,20 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 100.0),
                 },
+                false,
             )
             .into(),
             NetworkElement::Node(inner) => {
-                new_network_node_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
+                new_network_node_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false).into()
             }
             NetworkElement::User(inner) => {
-                new_network_user_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
+                new_network_user_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false).into()
             }
             NetworkElement::File(inner) => {
-                new_network_file_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
+                new_network_file_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false).into()
             }
             NetworkElement::Location(inner) => {
-                new_network_location_view(inner, egui::Pos2::ZERO).into()
+                new_network_location_view(inner, egui::Pos2::ZERO, false).into()
             }
             NetworkElement::Association(inner) => {
                 let m = inner.read();
@@ -308,6 +309,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
         };
@@ -1804,7 +1806,6 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 _,
             ) => {
                 let view = new_network_note(text, pos, *align, *background_color).1;
-
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1916,6 +1917,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
 
                 self.try_spend();
 
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1964,6 +1969,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     .1;
 
                     self.try_spend();
+                    commands.push(InsensitiveCommand::HighlightAll(
+                        false,
+                        canvas::Highlight::SELECTED,
+                    ));
                     commands.push(InsensitiveCommand::AddDependency {
                         target: *preferred_container,
                         bucket: preferred_bucket,
@@ -1985,6 +1994,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     new_network_container(name, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2012,13 +2025,14 @@ fn new_network_container(
         name.to_owned(),
         Vec::new(),
     ));
-    let container_view = new_network_container_view(container_model.clone(), bounds_rect);
+    let container_view = new_network_container_view(container_model.clone(), bounds_rect, true);
 
     (container_model, container_view)
 }
 fn new_network_container_view(
     model: ERef<NetworkContainer>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageView::new(
@@ -2027,10 +2041,15 @@ fn new_network_container_view(
             model: model.clone(),
             background_color: MGlobalColor::None,
             custom_image: UFOption::None,
+            request_focus,
             name_buffer: (*m.name).clone(),
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
+        match request_focus {
+            false => canvas::Highlight::NONE,
+            true => canvas::Highlight::SELECTED,
+        },
         bounds_rect,
     )
 }
@@ -2044,6 +2063,8 @@ pub struct NetworkContainerAdapter {
     background_color: MGlobalColor,
     custom_image: UFOption<ResourceUuid>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2106,10 +2127,12 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
     ) {
-        if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
-            .changed()
-        {
+        let main_input_r = ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer);
+        if self.request_focus {
+            main_input_r.request_focus();
+            self.request_focus = false;
+        }
+        if main_input_r.changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -2225,6 +2248,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
             model,
             background_color: self.background_color,
             custom_image: self.custom_image,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
         }
@@ -2326,25 +2350,30 @@ fn new_network_node(
     background_color: MGlobalColor,
 ) -> (ERef<NetworkNode>, ERef<NetworkNodeView>) {
     let model = ERef::new(NetworkNode::new(ModelUuid::now_v7(), name.to_owned(), kind));
-    let view = new_network_node_view(model.clone(), position, background_color);
+    let view = new_network_node_view(model.clone(), position, background_color, true);
     (model, view)
 }
 fn new_network_node_view(
     model: ERef<NetworkNode>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<NetworkNodeView> {
     let m = model.read();
     ERef::new(NetworkNodeView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         name_buffer: (*m.name).to_owned(),
         kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: match request_focus {
+            false => canvas::Highlight::NONE,
+            true => canvas::Highlight::SELECTED,
+        },
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -2359,6 +2388,8 @@ pub struct NetworkNodeView {
     #[nh_context_serde(entity)]
     pub model: ERef<NetworkNode>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2423,10 +2454,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
         ui.label("Model properties");
 
-        if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
-            .changed()
-        {
+        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
+        if self.request_focus {
+            main_input_r.request_focus();
+            self.request_focus = false;
+        }
+        if main_input_r.changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -3492,6 +3525,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -3514,25 +3548,30 @@ fn new_network_user(
     background_color: MGlobalColor,
 ) -> (ERef<NetworkUser>, ERef<NetworkUserView>) {
     let user_model = ERef::new(NetworkUser::new(ModelUuid::now_v7(), name.to_owned(), kind));
-    let user_view = new_network_user_view(user_model.clone(), position, background_color);
+    let user_view = new_network_user_view(user_model.clone(), position, background_color, true);
     (user_model, user_view)
 }
 fn new_network_user_view(
     model: ERef<NetworkUser>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<NetworkUserView> {
     let m = model.read();
     ERef::new(NetworkUserView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         name_buffer: (*m.name).to_owned(),
         kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: match request_focus {
+            false => canvas::Highlight::NONE,
+            true => canvas::Highlight::SELECTED,
+        },
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -3547,6 +3586,8 @@ pub struct NetworkUserView {
     #[nh_context_serde(entity)]
     pub model: ERef<NetworkUser>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -3611,10 +3652,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
         ui.label("Model properties");
 
-        if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
-            .changed()
-        {
+        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
+        if self.request_focus {
+            main_input_r.request_focus();
+            self.request_focus = false;
+        }
+        if main_input_r.changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -4166,6 +4209,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -4188,25 +4232,30 @@ fn new_network_file(
     background_color: MGlobalColor,
 ) -> (ERef<NetworkFile>, ERef<NetworkFileView>) {
     let user_model = ERef::new(NetworkFile::new(ModelUuid::now_v7(), name.to_owned(), kind));
-    let user_view = new_network_file_view(user_model.clone(), position, background_color);
+    let user_view = new_network_file_view(user_model.clone(), position, background_color, true);
     (user_model, user_view)
 }
 fn new_network_file_view(
     model: ERef<NetworkFile>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<NetworkFileView> {
     let m = model.read();
     ERef::new(NetworkFileView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         name_buffer: (*m.name).to_owned(),
         kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: match request_focus {
+            false => canvas::Highlight::NONE,
+            true => canvas::Highlight::SELECTED,
+        },
         position,
         bounds_rect: egui::Rect::ZERO,
         background_color,
@@ -4221,6 +4270,8 @@ pub struct NetworkFileView {
     #[nh_context_serde(entity)]
     pub model: ERef<NetworkFile>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -4285,10 +4336,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
 
         ui.label("Model properties");
 
-        if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
-            .changed()
-        {
+        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
+        if self.request_focus {
+            main_input_r.request_focus();
+            self.request_focus = false;
+        }
+        if main_input_r.changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -4722,6 +4775,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -4747,24 +4801,29 @@ fn new_network_location(
         name.to_owned(),
         kind,
     ));
-    let view = new_network_location_view(model.clone(), position);
+    let view = new_network_location_view(model.clone(), position, true);
     (model, view)
 }
 fn new_network_location_view(
     model: ERef<NetworkLocation>,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> ERef<NetworkLocationView> {
     let m = model.read();
     ERef::new(NetworkLocationView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         name_buffer: (*m.name).to_owned(),
         kind_buffer: m.kind,
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: match request_focus {
+            false => canvas::Highlight::NONE,
+            true => canvas::Highlight::SELECTED,
+        },
         position,
         bounds_rect: egui::Rect::ZERO,
         custom_image: UFOption::None,
@@ -4778,6 +4837,8 @@ pub struct NetworkLocationView {
     #[nh_context_serde(entity)]
     pub model: ERef<NetworkLocation>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -4841,10 +4902,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
 
         ui.label("Model properties");
 
-        if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
-            .changed()
-        {
+        let main_input_r = ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer);
+        if self.request_focus {
+            main_input_r.request_focus();
+            self.request_focus = false;
+        }
+        if main_input_r.changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -5339,6 +5402,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -5898,7 +5962,7 @@ pub fn new_network_note(
     background_color: MGlobalColor,
 ) -> (ERef<NetworkNote>, ERef<NetworkNoteView>) {
     let model = ERef::new(NetworkNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_network_note_view(model.clone(), position, align, background_color);
+    let view = new_network_note_view(model.clone(), position, align, background_color, true);
 
     (model, view)
 }
@@ -5907,16 +5971,21 @@ pub fn new_network_note_view(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<NetworkNoteView> {
     let m = model.read();
     ERef::new(NetworkNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: match request_focus {
+            false => canvas::Highlight::NONE,
+            true => canvas::Highlight::SELECTED,
+        },
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -5931,6 +6000,8 @@ pub struct NetworkNoteView {
     #[nh_context_serde(entity)]
     pub model: ERef<NetworkNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -5995,10 +6066,12 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
 
         ui.label("Model properties");
 
-        if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
-            .changed()
-        {
+        let main_input_r = ui.labeled_text_edit_multiline("Text:", &mut self.text_buffer);
+        if self.request_focus {
+            main_input_r.request_focus();
+            self.request_focus = false;
+        }
+        if main_input_r.changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.text_buffer.clone())),
@@ -6446,6 +6519,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             text_buffer: self.text_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,

@@ -1919,6 +1919,7 @@ fn new_demopsd_package_view(
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
+        canvas::Highlight::NONE,
         bounds_rect,
     )
 }
