@@ -915,6 +915,7 @@ impl DiagramSettings for NetworkSettings {
                                 text,
                                 align,
                                 background_color,
+                                with_edge_from: _,
                             } => {
                                 modified |= columns[1]
                                     .labeled_text_edit_singleline("Text", text)
@@ -1154,6 +1155,22 @@ mod buttons {
         };
         (stage.clone(), stage, PartialNetworkElement::None, true)
     }
+    fn element_note(
+        m: NetworkElement,
+    ) -> (
+        NetworkToolStage,
+        NetworkToolStage,
+        PartialNetworkElement,
+        bool,
+    ) {
+        let stage = NetworkToolStage::Note {
+            text: "a note".to_owned(),
+            align: egui::Align2::CENTER_CENTER,
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialNetworkElement::None, true)
+    }
 
     pub const ELEMENT_BUTTONS: LazyLock<
         Vec<(usize, usize, &'static str, &'static ElementButtonF)>,
@@ -1165,6 +1182,7 @@ mod buttons {
             (1, 1, "U", &element_user as &ElementButtonF),
             (1, 2, "F", &element_file as &ElementButtonF),
             (1, 3, "L", &element_location as &ElementButtonF),
+            (2, 0, "📝", &element_note as &ElementButtonF),
         ]
     });
 }
@@ -1359,6 +1377,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         text: "a note".to_owned(),
                         align: egui::Align2::CENTER_CENTER,
                         background_color: MGlobalColor::None,
+                        with_edge_from: None,
                     },
                     "Note",
                     Some(egui::KeyboardShortcut::new(
@@ -1473,6 +1492,7 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             text,
             align,
             background_color,
+            with_edge_from: _,
         } => new_network_note(text, egui::Pos2::ZERO, *align, *background_color)
             .1
             .into(),
@@ -1548,6 +1568,7 @@ pub enum NetworkToolStage {
         text: String,
         align: egui::Align2,
         background_color: MGlobalColor,
+        with_edge_from: Option<ModelUuid>,
     },
 }
 
@@ -1690,6 +1711,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::Location {
                     with_edge_from: Some(source_uuid),
                     ..
+                }
+                | NetworkToolStage::Note {
+                    with_edge_from: Some(source_uuid),
+                    ..
                 },
             ) => {
                 if let Some(source_view) = q.get_view_for(source_uuid) {
@@ -1774,6 +1799,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     text,
                     align,
                     background_color,
+                    with_edge_from: _,
                 },
                 _,
             ) => {
@@ -1859,6 +1885,10 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                         ..
                     }
                     | NetworkToolStage::Location {
+                        with_edge_from: Some(source_uuid),
+                        ..
+                    }
+                    | NetworkToolStage::Note {
                         with_edge_from: Some(source_uuid),
                         ..
                     } if let Some(source) = q.get_view_for(source_uuid)
@@ -6044,9 +6074,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
 
     fn draw_in(
         &mut self,
-        _: &<NetworkDomain as Domain>::QueryableT<'_>,
+        _q: &<NetworkDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        _settings: &<NetworkDomain as Domain>::SettingsT,
+        settings: &<NetworkDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveNetworkTool)>,
     ) -> TargettingStatus {
@@ -6132,6 +6162,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
             egui::Color32::BLACK,
         );
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_element_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
+
         if canvas.ui_scale().is_some() {
             if self.dragged_shape.is_some() {
                 canvas.draw_line(
@@ -6191,7 +6226,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<NetworkDomain as Domain>::SettingsT,
+        settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -6214,6 +6249,27 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos)
+                if self.highlight.selected
+                    && let Some(f) = handle_element_button_click(
+                        settings,
+                        self.bounds_rect.right_top(),
+                        ehc.ui_scale,
+                        pos,
+                    ) =>
+            {
+                let (initial_stage, current_stage, result, event_lock) =
+                    f(self.model.clone().into());
+                *tool = Some(NaiveNetworkTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
