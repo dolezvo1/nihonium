@@ -6,6 +6,7 @@ use super::demoofd_models::{
     DemoOfdDiagram, DemoOfdElement, DemoOfdEntityType, DemoOfdEventType, DemoOfdPackage,
     DemoOfdPropertyType,
 };
+use crate::DefaultNameF;
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
     ColorBundle, ColorChangeData, ControllerAdapter, DiagramAdapter, DiagramController,
@@ -36,8 +37,8 @@ use crate::domains::demoofd::demoofd_models::{
     DemoOfdType,
 };
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
-    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF,
+    DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -1837,7 +1838,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 <DemoOfdDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &mut self.result {
             PartialDemoOfdElement::AggregationEnding {
                 agg_model,
@@ -1854,7 +1855,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     into_model: true,
                 });
                 *new_model = None;
-                Ok(None)
+                Ok(())
             }
             PartialDemoOfdElement::Some(element) => {
                 let element = element.clone();
@@ -1870,7 +1871,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     element: element.into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialDemoOfdElement::Event {
                 source,
@@ -1918,7 +1919,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         element: DemoOfdElementView::from(event_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -1976,7 +1977,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         element: link_view.into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2016,7 +2017,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         element: link_view.into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2056,7 +2057,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         element: link_view.into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2081,7 +2082,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     element: DemoOfdElementView::from(package_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             _ => Err(()),
         }
@@ -2693,7 +2694,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         _settings: &<DemoOfdDomain as Domain>::SettingsT,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
         >,
@@ -3344,7 +3344,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         settings: &<DemoOfdDomain as Domain>::SettingsT,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
         >,
@@ -3362,14 +3361,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
 
-                    if !self.specialization_view.is_some()
-                        && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
+                    if !self.specialization_view.is_some() {
+                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -3389,15 +3382,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InputEvent::Click(pos) if !self.min_shape().contains(pos) => {
                 if let UFOption::Some(s) = &self.specialization_view {
-                    let r = s.write().handle_event(
-                        event,
-                        ehc,
-                        settings,
-                        q,
-                        tool,
-                        element_setup_modal,
-                        commands,
-                    );
+                    let r = s
+                        .write()
+                        .handle_event(event, ehc, settings, q, tool, commands);
                     match r {
                         EventHandlingStatus::HandledByElement => {
                             let s = s.read();
@@ -3463,15 +3450,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 .specialization_view
                 .as_ref()
                 .map(|t| {
-                    t.write().handle_event(
-                        event,
-                        ehc,
-                        settings,
-                        q,
-                        tool,
-                        element_setup_modal,
-                        commands,
-                    )
+                    t.write()
+                        .handle_event(event, ehc, settings, q, tool, commands)
                 })
                 .unwrap_or(EventHandlingStatus::NotHandled),
         }
@@ -5355,7 +5335,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
         _settings: &<DemoOfdDomain as Domain>::SettingsT,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
         >,

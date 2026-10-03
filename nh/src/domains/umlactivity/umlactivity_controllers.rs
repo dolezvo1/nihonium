@@ -31,7 +31,7 @@ use crate::domains::umlactivity::umlactivity_models::{
     UmlActivityPartitionSection,
 };
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
@@ -2270,7 +2270,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 <UmlActivityDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &self.result {
             PartialUmlActivityElement::Some(element) => {
                 let element = element.clone();
@@ -2331,7 +2331,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         into_model: true,
                     });
                 }
-                Ok(None)
+                Ok(())
             }
             PartialUmlActivityElement::ForkNode { a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
@@ -2353,7 +2353,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     element: UmlActivityElementView::from(fork_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlActivityElement::Link {
                 source,
@@ -2396,7 +2396,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         element: link_view.into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2426,7 +2426,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     element: UmlActivityElementView::from(activity_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlActivityElement::InterruptibleRegion { a, b: Some(b) }
                 if let UmlActivityToolStage::InterruptibleRegionStart { stereotype, name } =
@@ -2449,7 +2449,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     element: UmlActivityElementView::from(interruptible_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlActivityElement::Partition { a, b: Some(b) }
                 if let UmlActivityToolStage::PartitionStart {
@@ -2471,7 +2471,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     element: UmlActivityElementView::from(partition_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlActivityElement::NoteLink {
                 source,
@@ -2509,7 +2509,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         element: UmlActivityElementView::from(link_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -3223,7 +3223,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlActivityDomain as Domain>::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 <UmlActivityDomain as Domain>::OrdinalMovementT,
@@ -3241,15 +3240,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         let mut w = e.write();
                         (
                             *w.uuid,
-                            w.handle_event(
-                                event,
-                                ehc,
-                                settings,
-                                q,
-                                tool,
-                                element_setup_modal,
-                                commands,
-                            ),
+                            w.handle_event(event, ehc, settings, q, tool, commands),
                         )
                     })
                     .find(|e| e.1 != EventHandlingStatus::NotHandled);
@@ -3295,15 +3286,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         let mut w = e.write();
                         (
                             *w.uuid,
-                            w.handle_event(
-                                event,
-                                ehc,
-                                settings,
-                                q,
-                                tool,
-                                element_setup_modal,
-                                commands,
-                            ),
+                            w.handle_event(event, ehc, settings, q, tool, commands),
                         )
                     })
                     .find(|e| e.1 != EventHandlingStatus::NotHandled);
@@ -4305,7 +4288,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,
@@ -4315,7 +4297,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         >,
     ) -> EventHandlingStatus {
         let k_status = self.contained_elements.event_order_find_mut(|v| {
-            let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+            let s = v.handle_event(event, ehc, settings, q, tool, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
@@ -4380,15 +4362,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 if let Some(tool) = tool {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
-
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
@@ -5308,7 +5282,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,
@@ -5721,7 +5694,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
         settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlActivityDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,
@@ -6137,7 +6109,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
         _settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,
@@ -6548,7 +6519,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
         settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,
@@ -6953,7 +6923,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
         settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,
@@ -7415,7 +7384,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,
@@ -8295,7 +8263,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
         _settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlActivityOrdinalMovement,

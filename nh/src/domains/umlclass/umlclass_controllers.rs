@@ -32,8 +32,8 @@ use crate::domains::umlclass::umlclass_models::{
     UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization,
 };
 use crate::{
-    CustomModal, CustomTab, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
-    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomTab, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -3084,7 +3084,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 <UmlClassDomain<P> as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &mut self.result {
             PartialUmlClassElement::LinkEnding {
                 gen_model,
@@ -3106,7 +3106,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     into_model: true,
                 });
                 *new_model = None;
-                Ok(None)
+                Ok(())
             }
             PartialUmlClassElement::Some(element) => {
                 let element = element.clone();
@@ -3122,7 +3122,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     element: element.into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlClassElement::Link {
                 source,
@@ -3207,7 +3207,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         element: link_view.into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -3239,7 +3239,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         element: UmlClassElementView::from(link_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -3273,7 +3273,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     element: UmlClassElementView::from(package_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             _ => Err(()),
         }
@@ -4441,7 +4441,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlClassOrdinalMovement,
@@ -5115,7 +5114,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 UmlClassOrdinalMovement,
@@ -5781,7 +5779,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 UmlClassOrdinalMovement,
@@ -6921,7 +6918,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlClassOrdinalMovement,
@@ -6970,14 +6966,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                 }
 
                 EventHandlingStatus::HandledByContainer
@@ -6991,15 +6980,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         (
                             *w.uuid,
                             w.temporaries.highlight.selected,
-                            w.handle_event(
-                                event,
-                                ehc,
-                                settings,
-                                q,
-                                tool,
-                                element_setup_modal,
-                                commands,
-                            ),
+                            w.handle_event(event, ehc, settings, q, tool, commands),
                         )
                     })
                     .find(|e| e.2 != EventHandlingStatus::NotHandled)
@@ -7011,15 +6992,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                 (
                                     *w.uuid,
                                     w.temporaries.highlight.selected,
-                                    w.handle_event(
-                                        event,
-                                        ehc,
-                                        settings,
-                                        q,
-                                        tool,
-                                        element_setup_modal,
-                                        commands,
-                                    ),
+                                    w.handle_event(event, ehc, settings, q, tool, commands),
                                 )
                             })
                             .find(|e| e.2 != EventHandlingStatus::NotHandled)
@@ -7060,13 +7033,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         tool.initial_stage,
                         UmlClassToolStage::ClassProperty { .. }
                             | UmlClassToolStage::ClassOperation { .. }
-                    ) && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
+                    ) {
+                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                     }
                 } else {
                     if ehc
@@ -8176,7 +8144,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlClassOrdinalMovement,
@@ -10527,7 +10494,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlClassOrdinalMovement,

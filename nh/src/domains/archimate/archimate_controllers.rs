@@ -27,7 +27,7 @@ use crate::domains::archimate::archimate_models::{
     ArchiMateRelationshipEnding, ArchiMateRelationshipKind,
 };
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
@@ -1664,7 +1664,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                 <ArchiMateDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &mut self.result {
             PartialArchiMateElement::Some(element) => {
                 let element = element.clone();
@@ -1716,7 +1716,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                         into_model: true,
                     });
                 }
-                Ok(None)
+                Ok(())
             }
             PartialArchiMateElement::Relationship {
                 source,
@@ -1756,7 +1756,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                         element: ArchiMateElementView::from(association_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -1780,7 +1780,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                     into_model: true,
                 });
                 *new_model = None;
-                Ok(None)
+                Ok(())
             }
             _ => Err(()),
         }
@@ -3240,7 +3240,6 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         settings: &<ArchiMateDomain as Domain>::SettingsT,
         q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveArchiMateTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 ArchiMateOrdinalMovement,
@@ -3250,7 +3249,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         >,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {
-            let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+            let s = v.handle_event(event, ehc, settings, q, tool, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
@@ -3309,14 +3308,8 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
-                    if !tool.result_references(&self.model.read().uuid)
-                        && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
+                    if !tool.result_references(&self.model.read().uuid) {
+                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                     }
 
                     EventHandlingStatus::HandledByContainer

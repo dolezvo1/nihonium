@@ -30,7 +30,7 @@ use crate::domains::umlstatemachine::umlstatemachine_models::{
     UmlStateMachineNoteLink, UmlStateMachineStandaloneElement, UmlStateMachineTerminatePseudostate,
 };
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::{egui, epaint};
@@ -2061,7 +2061,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 <UmlStateMachineDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &self.result {
             PartialUmlStateMachineElement::Some(element) => {
                 let element = element.clone();
@@ -2117,7 +2117,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                         into_model: true,
                     });
                 }
-                Ok(None)
+                Ok(())
             }
             PartialUmlStateMachineElement::Link {
                 link_type,
@@ -2160,7 +2160,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                         element: link_view.into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2190,7 +2190,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     element: UmlStateMachineElementView::from(view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlStateMachineElement::CompositeState { a, b: Some(b) }
                 if let UmlStateMachineToolStage::CompositeStateStart {
@@ -2221,7 +2221,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     element: UmlStateMachineElementView::from(view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlStateMachineElement::NoteLink {
                 source,
@@ -2259,7 +2259,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                         element: UmlStateMachineElementView::from(link_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -3052,7 +3052,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlStateMachineDomain as Domain>::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 <UmlStateMachineDomain as Domain>::OrdinalMovementT,
@@ -3066,8 +3065,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             .iter()
             .flat_map(|v| {
                 let mut w = v.write();
-                let s =
-                    w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+                let s = w.handle_event(event, ehc, settings, q, tool, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*w.uuid(), s))
                 } else {
@@ -3080,15 +3078,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     .iter()
                     .flat_map(|v| {
                         let mut w = v.write();
-                        let s = w.handle_event(
-                            event,
-                            ehc,
-                            settings,
-                            q,
-                            tool,
-                            element_setup_modal,
-                            commands,
-                        );
+                        let s = w.handle_event(event, ehc, settings, q, tool, commands);
                         if s != EventHandlingStatus::NotHandled {
                             Some((*w.uuid(), s))
                         } else {
@@ -3168,14 +3158,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                 }
 
                 EventHandlingStatus::HandledByContainer
@@ -3188,15 +3171,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 }
 
                 if let Some(tool) = tool {
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
-                    }
-
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
@@ -4444,7 +4419,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlStateMachineTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlStateMachineOrdinalMovement,
@@ -4454,7 +4428,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         >,
     ) -> EventHandlingStatus {
         let k_status = self.contained_elements.event_order_find_mut(|v| {
-            let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+            let s = v.handle_event(event, ehc, settings, q, tool, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
@@ -4501,15 +4475,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 if let Some(tool) = tool {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
-
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
@@ -5250,7 +5216,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTra
         _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         _q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlStateMachineDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 UmlStateMachineOrdinalMovement,
@@ -5602,7 +5567,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInitialPseu
         settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlStateMachineDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlStateMachineOrdinalMovement,
@@ -5972,7 +5936,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineTerminatePs
         _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlStateMachineTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlStateMachineOrdinalMovement,
@@ -6317,7 +6280,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineFinalStateV
         _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlStateMachineTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlStateMachineOrdinalMovement,
@@ -7105,7 +7067,6 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
         _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         q: &<UmlStateMachineDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlStateMachineTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlStateMachineOrdinalMovement,

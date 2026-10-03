@@ -25,7 +25,7 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
@@ -1233,7 +1233,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 <RdfDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &self.result {
             PartialRdfElement::Some(element) => {
                 let element = element.clone();
@@ -1282,7 +1282,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                         into_model: true,
                     });
                 }
-                Ok(None)
+                Ok(())
             }
             PartialRdfElement::Predicate {
                 source,
@@ -1312,7 +1312,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                         element: RdfElementView::from(predicate_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -1344,7 +1344,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     element: RdfElementView::from(graph_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             _ => Err(()),
         }
@@ -1875,7 +1875,6 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         _settings: &<RdfDomain as Domain>::SettingsT,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveRdfTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
         >,
@@ -2379,7 +2378,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         _settings: &<RdfDomain as Domain>::SettingsT,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveRdfTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
         >,

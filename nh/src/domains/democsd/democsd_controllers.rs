@@ -33,7 +33,7 @@ use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::demo::DemoPackageKind;
 use crate::domains::democsd::democsd_models::DemoCsdNote;
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
@@ -1563,7 +1563,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 <DemoCsdDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &self.result {
             PartialDemoCsdElement::Some(element) => {
                 let element = element.clone();
@@ -1632,7 +1632,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         into_model: true,
                     });
                 }
-                Ok(None)
+                Ok(())
             }
             PartialDemoCsdElement::Link {
                 source,
@@ -1667,7 +1667,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         element: DemoCsdElementView::from(link_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -1692,7 +1692,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     element: DemoCsdElementView::from(package_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             _ => Err(()),
         }
@@ -2403,7 +2403,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         settings: &<DemoCsdDomain as Domain>::SettingsT,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
         >,
@@ -2413,7 +2412,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             .as_ref()
             .map(|t| {
                 t.write()
-                    .handle_event(event, ehc, settings, q, tool, element_setup_modal, commands)
+                    .handle_event(event, ehc, settings, q, tool, commands)
             })
             .filter(|e| *e != EventHandlingStatus::NotHandled);
 
@@ -2547,15 +2546,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
                     if self.transaction_view.as_ref().is_none() {
                         tool.add_position(*event.mouse_position());
-
-                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                            && ehc
-                                .modifier_settings
-                                .alternative_tool_mode
-                                .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -3285,7 +3276,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         _settings: &<DemoCsdDomain as Domain>::SettingsT,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
         >,
@@ -4090,7 +4080,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
         _settings: &<DemoCsdDomain as Domain>::SettingsT,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
         >,

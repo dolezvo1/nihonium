@@ -837,7 +837,6 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         settings: &dyn DiagramSettings,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 DomainT::OrdinalMovementT,
@@ -1012,7 +1011,6 @@ pub trait DiagramController: Any + NHContextSerialize {
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         settings: &dyn DiagramSettings,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
 
@@ -1665,7 +1663,7 @@ pub trait Tool<DomainT: Domain> {
                 DomainT::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()>;
+    ) -> Result<(), ()>;
 
     fn reset_event_lock(&mut self);
 }
@@ -1752,7 +1750,6 @@ pub trait ElementControllerGen2<DomainT: Domain>:
         settings: &DomainT::SettingsT,
         q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 DomainT::OrdinalMovementT,
@@ -2431,19 +2428,12 @@ where
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         settings: &dyn DiagramSettings,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(uuid).unwrap();
         let mut commands = Vec::new();
-        view.write().handle_input(
-            ui,
-            response,
-            modifier_settings,
-            settings,
-            element_setup_modal,
-            &mut commands,
-        );
+        view.write()
+            .handle_input(ui, response, modifier_settings, settings, &mut commands);
         self.apply_commands(uuid, commands, true, affected_models);
     }
 
@@ -3063,7 +3053,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
         modifier_settings: ModifierSettings,
         modifiers: ModifierKeys,
         settings: &DomainT::SettingsT,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands_accumulator: &mut Vec<
             InsensitiveCommand<
                 DomainT::OrdinalMovementT,
@@ -3105,7 +3094,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 settings,
                 &q,
                 &mut self.temporaries.current_tool,
-                element_setup_modal,
                 &mut commands,
             );
             if r != EventHandlingStatus::NotHandled {
@@ -3189,17 +3177,10 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 }
 
                 let mut tool = self.temporaries.current_tool.take();
-                if let Some(esm) = tool
+                if let Some(_) = tool
                     .as_mut()
                     .and_then(|e| e.try_flush(&q, &self.uuid, 0, None, &mut commands).ok())
                 {
-                    if ehc
-                        .modifier_settings
-                        .alternative_tool_mode
-                        .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
-                    }
                     handled = true;
                 }
                 self.temporaries.current_tool = tool;
@@ -3670,8 +3651,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         settings: &dyn DiagramSettings,
-        // TODO: remove, handle as a command
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 DomainT::OrdinalMovementT,
@@ -3708,7 +3687,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                         modifier_settings,
                         modifiers,
                         settings,
-                        element_setup_modal,
                         commands,
                     );
                 }
@@ -3728,7 +3706,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                 modifier_settings,
                 modifiers,
                 settings,
-                element_setup_modal,
                 commands,
             );
             self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
@@ -3741,7 +3718,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                 modifier_settings,
                 modifiers,
                 settings,
-                element_setup_modal,
                 commands,
             );
         }
@@ -3758,7 +3734,6 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                         modifier_settings,
                         modifiers,
                         settings,
-                        element_setup_modal,
                         commands,
                     );
                     self.temporaries.last_unhandled_mouse_pos = None;

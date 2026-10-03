@@ -34,7 +34,7 @@ use crate::domains::umlsequence::umlsequence_models::{
     VERTICALS_BUCKET,
 };
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::{egui, epaint};
@@ -303,7 +303,6 @@ impl UmlSequenceHorizontalElementView {
         settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlSequenceOrdinalMovement,
@@ -313,36 +312,17 @@ impl UmlSequenceHorizontalElementView {
         >,
     ) -> EventHandlingStatus {
         match self {
-            UmlSequenceHorizontalElementView::CombinedFragment(inner) => {
-                inner.write().handle_event_inner(
-                    lifeline_views,
-                    event,
-                    ehc,
-                    settings,
-                    q,
-                    tool,
-                    element_setup_modal,
-                    commands,
-                )
+            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner
+                .write()
+                .handle_event_inner(lifeline_views, event, ehc, settings, q, tool, commands),
+            UmlSequenceHorizontalElementView::Message(inner) => inner
+                .write()
+                .handle_event(event, ehc, settings, q, tool, commands),
+            UmlSequenceHorizontalElementView::Ref(inner) => {
+                inner
+                    .write()
+                    .handle_event_inner(lifeline_views, event, ehc, q, tool, commands)
             }
-            UmlSequenceHorizontalElementView::Message(inner) => inner.write().handle_event(
-                event,
-                ehc,
-                settings,
-                q,
-                tool,
-                element_setup_modal,
-                commands,
-            ),
-            UmlSequenceHorizontalElementView::Ref(inner) => inner.write().handle_event_inner(
-                lifeline_views,
-                event,
-                ehc,
-                q,
-                tool,
-                element_setup_modal,
-                commands,
-            ),
         }
     }
 
@@ -2246,7 +2226,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 <UmlSequenceDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &self.result {
             PartialUmlSequenceElement::Some(element) => {
                 let element = element.clone();
@@ -2258,7 +2238,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     element: element.into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlSequenceElement::Diagram { a, b: Some(b), .. } => {
                 self.current_stage = UmlSequenceToolStage::DiagramStart;
@@ -2280,7 +2260,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     element: UmlSequenceElementView::from(diagram_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialUmlSequenceElement::CombinedFragment {
                 source,
@@ -2323,7 +2303,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         element: UmlSequenceElementView::from(cf_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2380,7 +2360,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         element: link_view.into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2415,7 +2395,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         element: UmlSequenceElementView::from(ref_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2448,7 +2428,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         element: UmlSequenceElementView::from(dc_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2477,7 +2457,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         element: UmlSequenceElementView::from(link_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -3123,7 +3103,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlSequenceOrdinalMovement,
@@ -3137,8 +3116,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             .iter_mut()
             .flat_map(|v| {
                 let mut w = v.write();
-                let s =
-                    w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+                let s = w.handle_event(event, ehc, settings, q, tool, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*w.uuid(), s))
                 } else {
@@ -3157,7 +3135,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             settings,
                             q,
                             tool,
-                            element_setup_modal,
                             commands,
                         );
                         if s != EventHandlingStatus::NotHandled {
@@ -3172,15 +3149,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 self.standalone_views
                     .iter_mut()
                     .flat_map(|v| {
-                        let s = v.handle_event(
-                            event,
-                            ehc,
-                            settings,
-                            q,
-                            tool,
-                            element_setup_modal,
-                            commands,
-                        );
+                        let s = v.handle_event(event, ehc, settings, q, tool, commands);
                         if s != EventHandlingStatus::NotHandled {
                             Some((*v.uuid(), s))
                         } else {
@@ -3268,14 +3237,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         }
                         _ => None,
                     };
-                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, pos, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, pos, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
@@ -4467,7 +4429,6 @@ impl UmlSequenceCombinedFragmentView {
         settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 <UmlSequenceDomain as Domain>::OrdinalMovementT,
@@ -4504,7 +4465,6 @@ impl UmlSequenceCombinedFragmentView {
                                 settings,
                                 q,
                                 tool,
-                                element_setup_modal,
                                 commands,
                             ),
                         )
@@ -4743,7 +4703,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 <UmlSequenceDomain as Domain>::OrdinalMovementT,
@@ -5383,7 +5342,6 @@ impl UmlSequenceCombinedFragmentSectionView {
         settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlSequenceOrdinalMovement,
@@ -5407,7 +5365,6 @@ impl UmlSequenceCombinedFragmentSectionView {
                                 settings,
                                 q,
                                 tool,
-                                element_setup_modal,
                                 commands,
                             ),
                         )
@@ -5426,15 +5383,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                             element: h.1.clone().into(),
                             end: false,
                         });
-
-                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, h.0, commands)
-                            && ehc
-                                .modifier_settings
-                                .alternative_tool_mode
-                                .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                        let _ = tool.try_flush(q, &self.uuid, 0, h.0, commands);
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -5944,7 +5893,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<NaiveUmlSequenceTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 UmlSequenceOrdinalMovement,
@@ -6797,7 +6745,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 UmlSequenceOrdinalMovement,
@@ -7482,7 +7429,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 <UmlSequenceDomain as Domain>::OrdinalMovementT,
@@ -7971,7 +7917,6 @@ impl UmlSequenceRefView {
         _ehc: &EventHandlingContext,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 <UmlSequenceDomain as Domain>::OrdinalMovementT,
@@ -8092,7 +8037,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         _commands: &mut Vec<
             InsensitiveCommand<
                 <UmlSequenceDomain as Domain>::OrdinalMovementT,
@@ -8476,7 +8420,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 <UmlSequenceDomain as Domain>::OrdinalMovementT,
@@ -8992,7 +8935,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
         _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 UmlSequenceOrdinalMovement,

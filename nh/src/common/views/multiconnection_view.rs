@@ -4,23 +4,20 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    CustomModal,
-    common::{
-        canvas::{self, Highlight},
-        controller::{
-            ColorBundle, DeleteKind, Domain, ElementController, ElementControllerGen2,
-            EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
-            InsensitiveCommand, LabelProvider, PropertiesStatus, Queryable, SelectionStatus,
-            SnapManager, TargettingStatus, View,
-        },
-        entity::{Entity, EntityUuid},
-        eref::ERef,
-        model::{BucketNoT, DiagramModel},
-        project_serde::{NHContextDeserialize, NHContextSerialize},
-        ufoption::UFOption,
-        uuid::{ModelUuid, ViewUuid},
+use crate::common::{
+    canvas::{self, Highlight},
+    controller::{
+        ColorBundle, DeleteKind, Domain, ElementController, ElementControllerGen2,
+        EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
+        InsensitiveCommand, LabelProvider, PropertiesStatus, Queryable, SelectionStatus,
+        SnapManager, TargettingStatus, View,
     },
+    entity::{Entity, EntityUuid},
+    eref::ERef,
+    model::{BucketNoT, DiagramModel},
+    project_serde::{NHContextDeserialize, NHContextSerialize},
+    ufoption::UFOption,
+    uuid::{ModelUuid, ViewUuid},
 };
 
 #[derive(Clone)]
@@ -905,7 +902,6 @@ where
         _settings: &DomainT::SettingsT,
         q: &DomainT::QueryableT<'_>,
         _tool: &mut Option<DomainT::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 DomainT::OrdinalMovementT,

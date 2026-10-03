@@ -29,7 +29,7 @@ use crate::domains::network::network_models::{
     NetworkUserKind,
 };
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
@@ -1880,7 +1880,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 <NetworkDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &self.result {
             PartialNetworkElement::Some(element) => {
                 let element = element.clone();
@@ -1949,7 +1949,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                         into_model: true,
                     });
                 }
-                Ok(None)
+                Ok(())
             }
             PartialNetworkElement::Association {
                 source,
@@ -1992,7 +1992,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                         element: NetworkElementView::from(association_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -2017,7 +2017,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     element: NetworkElementView::from(container_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             _ => Err(()),
         }
@@ -3333,7 +3333,6 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
@@ -4025,7 +4024,6 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
@@ -4598,7 +4596,6 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
@@ -5237,7 +5234,6 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,
@@ -6351,7 +6347,6 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         settings: &<NetworkDomain as Domain>::SettingsT,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
         >,

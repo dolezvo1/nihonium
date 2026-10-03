@@ -5,23 +5,20 @@ use std::{
 
 use eframe::{egui, epaint};
 
-use crate::{
-    CustomModal,
-    common::{
-        canvas::{self, NHIcon},
-        controller::{
-            ColorChangeData, DeleteKind, Domain, ElementController, ElementControllerGen2,
-            EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
-            InsensitiveCommand, PropertiesStatus, Queryable, SelectionStatus, SnapManager,
-            TargettingStatus, Tool, View,
-        },
-        entity::{Entity, EntityUuid},
-        eref::ERef,
-        model::{BucketNoT, DiagramModel, PositionNoT},
-        project_serde::{NHContextDeserialize, NHContextSerialize},
-        uuid::{ModelUuid, ViewUuid},
-        views::ordered_views::OrderedViews,
+use crate::common::{
+    canvas::{self, NHIcon},
+    controller::{
+        ColorChangeData, DeleteKind, Domain, ElementController, ElementControllerGen2,
+        EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
+        InsensitiveCommand, PropertiesStatus, Queryable, SelectionStatus, SnapManager,
+        TargettingStatus, Tool, View,
     },
+    entity::{Entity, EntityUuid},
+    eref::ERef,
+    model::{BucketNoT, DiagramModel, PositionNoT},
+    project_serde::{NHContextDeserialize, NHContextSerialize},
+    uuid::{ModelUuid, ViewUuid},
+    views::ordered_views::OrderedViews,
 };
 
 pub trait PackageAdapter<DomainT: Domain>:
@@ -483,7 +480,6 @@ where
         settings: &DomainT::SettingsT,
         q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<
                 DomainT::OrdinalMovementT,
@@ -493,7 +489,7 @@ where
         >,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {
-            let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+            let s = v.handle_event(event, ehc, settings, q, tool, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
@@ -563,14 +559,8 @@ where
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.adapter.model_section());
 
-                    if !tool.result_references(&self.adapter.model_uuid())
-                        && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands)
-                        && ehc
-                            .modifier_settings
-                            .alternative_tool_mode
-                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                    {
-                        *element_setup_modal = esm;
+                    if !tool.result_references(&self.adapter.model_uuid()) {
+                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                     }
 
                     EventHandlingStatus::HandledByContainer

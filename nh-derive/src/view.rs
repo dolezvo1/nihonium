@@ -116,7 +116,10 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
         .iter()
         .map(|e| quote! { #e.collect_allignment(am) })
         .collect::<Vec<_>>();
-    let arms_handle_event = arms_mutable.iter().map(|e| quote! { #e.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands) }).collect::<Vec<_>>();
+    let arms_handle_event = arms_mutable
+        .iter()
+        .map(|e| quote! { #e.handle_event(event, ehc, settings, q, tool, commands) })
+        .collect::<Vec<_>>();
     let arms_apply_command = arms_mutable
         .iter()
         .map(|e| quote! { #e.apply_command(diagram_model, command, undo_accumulator, affected_models) })
@@ -233,7 +236,6 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                 settings: &<#domain as crate::common::controller::Domain> :: SettingsT,
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
                 tool: &mut Option<<#domain as crate::common::controller::Domain> :: ToolT>,
-                element_setup_modal: &mut Option<Box<dyn CustomModal>>,
                 commands: &mut Vec<InsensitiveCommand<
                     <#domain as crate::common::controller::Domain> :: OrdinalMovementT,
                     <#domain as crate::common::controller::Domain> :: AddCommandElementT,

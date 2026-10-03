@@ -3163,7 +3163,6 @@ impl NHContext {
             &response,
             self.modifier_settings,
             settings.as_ref(),
-            &mut self.custom_modal,
             &mut self.affected_models,
         );
     }
@@ -4701,10 +4700,10 @@ impl eframe::App for NHApp {
             self.context.svg_export_menu = None;
         }
 
-        if let Some(element_setup_modal) = self.context.custom_modal.as_mut() {
+        if let Some(custom_modal) = self.context.custom_modal.as_mut() {
             let result = egui::Modal::new("Custom Modal".into())
                 .show(ui.ctx(), |ui| {
-                    element_setup_modal.show(&mut self.context.drawing_context, ui, &mut commands)
+                    custom_modal.show(&mut self.context.drawing_context, ui, &mut commands)
                 })
                 .inner;
 

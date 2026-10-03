@@ -33,7 +33,7 @@ use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::demo::DemoPackageKind;
 use crate::domains::demopsd::demopsd_models::{DemoPsdNote, DemoPsdState, DemoPsdStateInfo};
 use crate::{
-    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
     DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::{egui, epaint};
@@ -1645,7 +1645,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 <DemoPsdDomain as Domain>::PropChangeT,
             >,
         >,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
+    ) -> Result<(), ()> {
         match &self.result {
             PartialDemoPsdElement::Some(element) => {
                 let element = element.clone();
@@ -1661,7 +1661,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     element: element.into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             PartialDemoPsdElement::Link {
                 source,
@@ -1697,7 +1697,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                         element: DemoPsdElementView::from(link_view).into(),
                         into_model: true,
                     });
-                    Ok(None)
+                    Ok(())
                 } else {
                     Err(())
                 }
@@ -1722,7 +1722,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     element: DemoPsdElementView::from(package_view).into(),
                     into_model: true,
                 });
-                Ok(None)
+                Ok(())
             }
             _ => Err(()),
         }
@@ -2545,7 +2545,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         settings: &<DemoPsdDomain as Domain>::SettingsT,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
         >,
@@ -2554,15 +2553,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             .before_views
             .iter_mut()
             .flat_map(|e| {
-                let s = e.view.handle_event(
-                    event,
-                    ehc,
-                    settings,
-                    q,
-                    tool,
-                    element_setup_modal,
-                    commands,
-                );
+                let s = e.view.handle_event(event, ehc, settings, q, tool, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*e.view.uuid(), s))
                 } else {
@@ -2573,8 +2564,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         let child_status = child_status.or_else(|| {
             self.p_act_view.as_ref().and_then(|e| {
                 let mut w = e.write();
-                let s =
-                    w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+                let s = w.handle_event(event, ehc, settings, q, tool, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*w.uuid(), s))
                 } else {
@@ -2586,15 +2576,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             self.after_views
                 .iter_mut()
                 .flat_map(|e| {
-                    let s = e.view.handle_event(
-                        event,
-                        ehc,
-                        settings,
-                        q,
-                        tool,
-                        element_setup_modal,
-                        commands,
-                    );
+                    let s = e.view.handle_event(event, ehc, settings, q, tool, commands);
                     if s != EventHandlingStatus::NotHandled {
                         Some((*e.view.uuid(), s))
                     } else {
@@ -2679,16 +2661,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             _ => unreachable!(),
                         };
                         let pos = self.state_insertion_place(quadrant, pos).0;
-
-                        if let Ok(esm) =
-                            tool.try_flush(q, &self.uuid, quadrant_no, Some(pos), commands)
-                            && ehc
-                                .modifier_settings
-                                .alternative_tool_mode
-                                .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
-                        {
-                            *element_setup_modal = esm;
-                        }
+                        let _ = tool.try_flush(q, &self.uuid, quadrant_no, Some(pos), commands);
                     }
 
                     EventHandlingStatus::HandledByContainer
@@ -3795,7 +3768,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         _settings: &<DemoPsdDomain as Domain>::SettingsT,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
         >,
@@ -4281,7 +4253,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         _settings: &<DemoPsdDomain as Domain>::SettingsT,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
         >,
@@ -5083,7 +5054,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
         _settings: &<DemoPsdDomain as Domain>::SettingsT,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
-        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<
             InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
         >,
