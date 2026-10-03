@@ -670,6 +670,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                     Vec::new(),
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
                     true,
+                    false,
                 )
                 .into()
             }
@@ -708,6 +709,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 inner.clone(),
                 UmlSequenceLifelineRenderStyle::Object,
                 MGlobalColor::None,
+                false,
             )
             .into(),
             UmlSequenceElement::Message(inner) => {
@@ -728,7 +730,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 )
                 .into()
             }
-            UmlSequenceElement::Ref(inner) => new_umlsequence_ref_view(inner.clone()).into(),
+            UmlSequenceElement::Ref(inner) => new_umlsequence_ref_view(inner.clone(), false).into(),
             UmlSequenceElement::DurationConstraint(inner) => {
                 let r = inner.read();
                 let source_end = r.source.end;
@@ -753,6 +755,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
             UmlSequenceElement::NoteLink(_inner) => todo!(),
@@ -1042,18 +1045,21 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         UmlSequenceLifelineRenderStyle::StickFigure,
         MGlobalColor::None,
+        false,
     );
     let (service1_model, service1_view) = new_umlsequence_lifeline(
         "Auth server",
         "",
         UmlSequenceLifelineRenderStyle::Object,
         MGlobalColor::None,
+        false,
     );
     let (service2_model, service2_view) = new_umlsequence_lifeline(
         "Database",
         "",
         UmlSequenceLifelineRenderStyle::Database,
         MGlobalColor::None,
+        false,
     );
 
     let (message1_model, message1_view) = new_umlsequence_message(
@@ -1090,6 +1096,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         ]
         .into_iter()
         .collect(),
+        false,
     );
 
     let (combined_fragment_section1_model, combined_fragment_section1_view) =
@@ -1153,6 +1160,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![(dc_model.into(), dc_view.into())],
         egui::Rect::from_min_size(egui::Pos2::new(100.0, 100.0), egui::Vec2::splat(500.0)),
         true,
+        false,
     );
 
     let diagram = ERef::new(UmlSequenceDiagramBoard::new(
@@ -1695,6 +1703,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                 Vec::new(),
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(150.0, 75.0)),
                 true,
+                false,
             )
             .1;
             diagram_view.write().refresh_buffers();
@@ -1726,7 +1735,8 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             background_color,
         } => {
             let lifeline_view =
-                new_umlsequence_lifeline(name, stereotype, *render_style, *background_color).1;
+                new_umlsequence_lifeline(name, stereotype, *render_style, *background_color, false)
+                    .1;
             lifeline_view.into()
         }
         UmlSequenceToolStage::LinkStart { link_type } => {
@@ -1735,12 +1745,14 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                 "",
                 UmlSequenceLifelineRenderStyle::StickFigure,
                 MGlobalColor::None,
+                false,
             );
             let d2 = new_umlsequence_lifeline(
                 "dummy",
                 "",
                 UmlSequenceLifelineRenderStyle::Object,
                 MGlobalColor::None,
+                false,
             );
             d2.1.write().bounds_rect = egui::Rect::from_x_y_ranges(150.0..=150.0, 0.0..=0.0);
 
@@ -1773,12 +1785,12 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             }
         }
         UmlSequenceToolStage::RefStart { text } => {
-            let ref_view = new_umlsequence_ref(text, HashSet::new()).1;
+            let ref_view = new_umlsequence_ref(text, HashSet::new(), false).1;
             ref_view.write().refresh_buffers();
             ref_view.into()
         }
         UmlSequenceToolStage::DurationConstraintY1 { text } => {
-            let d = new_umlsequence_ref("dummy", HashSet::new());
+            let d = new_umlsequence_ref("dummy", HashSet::new(), false);
             d.1.write().refresh_buffers();
             d.1.write().bounds_rect = egui::Rect::from_x_y_ranges(20.0..=40.0, 0.0..=50.0);
             let view = new_umlsequence_durationconstraint(
@@ -1795,7 +1807,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             text,
             align,
             background_color,
-        } => new_umlsequence_note(text, egui::Pos2::ZERO, *align, *background_color)
+        } => new_umlsequence_note(text, egui::Pos2::ZERO, *align, *background_color, false)
             .1
             .into(),
         UmlSequenceToolStage::NoteLinkStart => todo!(),
@@ -2099,8 +2111,13 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 },
                 _,
             ) => {
-                let (_class_model, class_view) =
-                    new_umlsequence_lifeline(name, stereotype, *render_style, *background_color);
+                let (_class_model, class_view) = new_umlsequence_lifeline(
+                    name,
+                    stereotype,
+                    *render_style,
+                    *background_color,
+                    true,
+                );
                 self.result = PartialUmlSequenceElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -2128,7 +2145,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 },
                 PartialUmlSequenceElement::None,
             ) => {
-                let view = new_umlsequence_note(text, pos, *align, *background_color).1;
+                let view = new_umlsequence_note(text, pos, *align, *background_color, true).1;
                 self.result = PartialUmlSequenceElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -2231,6 +2248,10 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
             PartialUmlSequenceElement::Some(element) => {
                 let element = element.clone();
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2250,9 +2271,14 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     Vec::new(),
                     egui::Rect::from_two_pos(*a, *b),
                     true,
+                    true,
                 );
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2296,6 +2322,10 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     .1;
 
                     self.try_spend();
+                    commands.push(InsensitiveCommand::HighlightAll(
+                        false,
+                        canvas::Highlight::SELECTED,
+                    ));
                     commands.push(InsensitiveCommand::AddDependency {
                         target: *preferred_container,
                         bucket: preferred_bucket,
@@ -2383,11 +2413,18 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let ref_view =
-                        new_umlsequence_ref(text, [source_uuid, target_uuid].into_iter().collect())
-                            .1;
+                    let ref_view = new_umlsequence_ref(
+                        text,
+                        [source_uuid, target_uuid].into_iter().collect(),
+                        true,
+                    )
+                    .1;
 
                     self.try_spend();
+                    commands.push(InsensitiveCommand::HighlightAll(
+                        false,
+                        canvas::Highlight::SELECTED,
+                    ));
                     commands.push(InsensitiveCommand::AddDependency {
                         target: *preferred_container,
                         bucket: preferred_bucket,
@@ -2484,6 +2521,7 @@ pub fn new_umlsequence_diagram(
     )>,
     bounds_rect: egui::Rect,
     show_activations: bool,
+    request_focus: bool,
 ) -> (ERef<UmlSequenceDiagram>, ERef<UmlSequenceDiagramView>) {
     let (lifeline_models, lifeline_views) = lifelines.into_iter().collect();
     let (horizontal_models, horizontal_views) = horizontals.into_iter().collect();
@@ -2502,6 +2540,7 @@ pub fn new_umlsequence_diagram(
         standalone_views,
         bounds_rect,
         show_activations,
+        request_focus,
     );
 
     (diagram_model, package_view)
@@ -2513,14 +2552,21 @@ pub fn new_umlsequence_diagram_view(
     standalone_views: Vec<UmlSequenceElementView>,
     bounds_rect: egui::Rect,
     show_activations: bool,
+    request_focus: bool,
 ) -> ERef<UmlSequenceDiagramView> {
+    let r = model.read();
     ERef::new(UmlSequenceDiagramView {
         uuid: ViewUuid::now_v7().into(),
-        model,
+        model: model.clone(),
         lifeline_views,
         horizontal_element_views,
         standalone_views,
-        temporaries: Default::default(),
+        temporaries: UmlSequenceDiagramViewTemporaries {
+            request_focus,
+            name_buffer: (*r.name).clone(),
+            highlight: canvas::Highlight::from_selected(request_focus),
+            ..Default::default()
+        },
         bounds_rect,
         show_activations,
     })
@@ -2548,6 +2594,7 @@ pub struct UmlSequenceDiagramView {
 
 #[derive(Clone, Default)]
 struct UmlSequenceDiagramViewTemporaries {
+    request_focus: bool,
     display_text: String,
     name_buffer: String,
     comment_buffer: String,
@@ -2730,7 +2777,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             ui.label("Model properties");
 
             if ui
-                .labeled_text_edit_multiline("Name:", &mut self.temporaries.name_buffer)
+                .labeled_text_edit_multiline2(
+                    "Name:",
+                    &mut self.temporaries.name_buffer,
+                    self.temporaries.request_focus,
+                )
                 .changed()
             {
                 commands.push(InsensitiveCommand::PropertyChange(
@@ -2740,6 +2791,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     )),
                 ));
             }
+            self.temporaries.request_focus = false;
 
             if ui
                 .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
@@ -6041,14 +6093,19 @@ pub fn new_umlsequence_lifeline(
     stereotype: &str,
     render_style: UmlSequenceLifelineRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlSequenceLifeline>, ERef<UmlSequenceLifelineView>) {
     let class_model = ERef::new(UmlSequenceLifeline::new(
         ModelUuid::now_v7(),
         name.to_owned(),
         stereotype.to_owned(),
     ));
-    let class_view =
-        new_umlsequence_lifeline_view(class_model.clone(), render_style, background_color);
+    let class_view = new_umlsequence_lifeline_view(
+        class_model.clone(),
+        render_style,
+        background_color,
+        request_focus,
+    );
 
     (class_model, class_view)
 }
@@ -6056,18 +6113,20 @@ pub fn new_umlsequence_lifeline_view(
     model: ERef<UmlSequenceLifeline>,
     render_style: UmlSequenceLifelineRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlSequenceLifelineView> {
     let m = model.read();
     ERef::new(UmlSequenceLifelineView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         stereotype_in_guillemets: None,
         stereotype_buffer: (*m.stereotype).clone(),
         name_buffer: (*m.name).clone(),
         comment_buffer: (*m.comment).clone(),
 
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         bounds_rect: egui::Rect::ZERO,
         background_color,
         render_style,
@@ -6119,6 +6178,8 @@ pub struct UmlSequenceLifelineView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlSequenceLifeline>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: Option<Arc<String>>,
     #[nh_context_serde(skip_and_default)]
@@ -6659,7 +6720,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -6667,6 +6728,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
                 UmlSequencePropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.horizontal(|ui| {
             if ui.button("Move left").clicked() {
@@ -6915,6 +6977,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -7708,22 +7771,32 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 pub fn new_umlsequence_ref(
     text: &str,
     horizontal_span: HashSet<ModelUuid>,
+    request_focus: bool,
 ) -> (ERef<UmlSequenceRef>, ERef<UmlSequenceRefView>) {
     let model = ERef::new(UmlSequenceRef::new(
         ModelUuid::now_v7(),
         text.to_owned(),
         horizontal_span,
     ));
-    let view = new_umlsequence_ref_view(model.clone());
+    let view = new_umlsequence_ref_view(model.clone(), request_focus);
 
     (model, view)
 }
-pub fn new_umlsequence_ref_view(model: ERef<UmlSequenceRef>) -> ERef<UmlSequenceRefView> {
+pub fn new_umlsequence_ref_view(
+    model: ERef<UmlSequenceRef>,
+    request_focus: bool,
+) -> ERef<UmlSequenceRefView> {
+    let r = model.read();
     ERef::new(UmlSequenceRefView {
         uuid: ViewUuid::now_v7().into(),
-        model,
+        model: model.clone(),
 
-        temporaries: Default::default(),
+        temporaries: UmlSequenceRefViewTemporaries {
+            request_focus,
+            text_buffer: (*r.text).clone(),
+            highlight: canvas::Highlight::from_selected(request_focus),
+            ..Default::default()
+        },
         bounds_rect: egui::Rect::ZERO,
         background_color: MGlobalColor::None,
     })
@@ -7744,6 +7817,7 @@ pub struct UmlSequenceRefView {
 
 #[derive(Clone, Default)]
 struct UmlSequenceRefViewTemporaries {
+    request_focus: bool,
     text_buffer: String,
 
     spanned_lifelines: HashSet<ViewUuid>,
@@ -8003,7 +8077,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         }
 
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.temporaries.text_buffer)
+            .labeled_text_edit_multiline2(
+                "Text:",
+                &mut self.temporaries.text_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -8011,6 +8089,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
                 UmlSequencePropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
             ));
         }
+        self.temporaries.request_focus = false;
 
         ui.horizontal(|ui| {
             if ui.button("Move up").clicked() {
@@ -8598,9 +8677,16 @@ pub fn new_umlsequence_note(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlSequenceNote>, ERef<UmlSequenceNoteView>) {
     let model = ERef::new(UmlSequenceNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_umlsequence_note_view(model.clone(), position, align, background_color);
+    let view = new_umlsequence_note_view(
+        model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (model, view)
 }
@@ -8609,16 +8695,18 @@ pub fn new_umlsequence_note_view(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlSequenceNoteView> {
     let m = model.read();
     ERef::new(UmlSequenceNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -8633,6 +8721,8 @@ pub struct UmlSequenceNoteView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlSequenceNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -8702,7 +8792,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -8710,6 +8800,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
                 UmlSequencePropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -9139,6 +9230,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             text_buffer: self.text_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,

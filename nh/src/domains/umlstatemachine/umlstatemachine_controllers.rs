@@ -297,6 +297,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
             UmlStateMachineElement::StateMachine(inner) => new_umlstatemachine_statemachine_view(
                 inner,
                 egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                false,
             )
             .into(),
             UmlStateMachineElement::CompositeState(inner) => {
@@ -304,7 +305,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 let internal_transition_views = r
                     .internal_transitions
                     .iter()
-                    .map(|e| new_umlstatemachine_internaltransition_view(e.clone()))
+                    .map(|e| new_umlstatemachine_internaltransition_view(e.clone(), false))
                     .collect();
                 let section_views: Result<Vec<_>, _> = r
                     .regions
@@ -323,6 +324,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                     section_views?,
                     egui::Pos2::ZERO,
                     MGlobalColor::None,
+                    false,
                 )
                 .into()
             }
@@ -330,11 +332,12 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 new_umlstatemachine_compositestateregion_view(
                     inner,
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                    false,
                 )
                 .into()
             }
             UmlStateMachineElement::InternalTransition(inner) => {
-                new_umlstatemachine_internaltransition_view(inner).into()
+                new_umlstatemachine_internaltransition_view(inner, false).into()
             }
             UmlStateMachineElement::InitialPseudostate(inner) => {
                 new_umlstatemachine_initialpseudostate_view(inner, egui::Pos2::ZERO).into()
@@ -360,6 +363,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
             UmlStateMachineElement::NoteLink(inner) => {
@@ -677,6 +681,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         egui::Pos2::new(450.0, 275.0),
         MGlobalColor::None,
+        false,
     );
     let (opentered, opentered_view) = new_umlstatemachine_compositestate(
         "opEntered",
@@ -685,6 +690,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         egui::Pos2::new(300.0, 400.0),
         MGlobalColor::None,
+        false,
     );
     let (operand2, operand2_view) = new_umlstatemachine_compositestate(
         "operand2",
@@ -693,6 +699,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         egui::Pos2::new(450.0, 525.0),
         MGlobalColor::None,
+        false,
     );
     let (result, result_view) = new_umlstatemachine_compositestate(
         "result",
@@ -701,6 +708,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         egui::Pos2::new(575.0, 400.0),
         MGlobalColor::None,
+        false,
     );
 
     let (_e1, e1_view) = new_umlstatemachine_edge(
@@ -742,6 +750,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (composite_region, composite_region_view) = new_umlstatemachine_compositestateregion(
         egui::Rect::from_x_y_ranges(200.0..=700.0, 200.0..=600.0),
+        false,
     );
     let (composite, composite_view) = new_umlstatemachine_compositestate(
         "on",
@@ -750,6 +759,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![(composite_region, composite_region_view.clone())],
         egui::Pos2::ZERO,
         MGlobalColor::None,
+        false,
     );
 
     let (initial2, initial2_view) =
@@ -774,6 +784,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         false,
         egui::Rect::from_x_y_ranges(100.0..=900.0, 100.0..=800.0),
+        false,
     );
 
     let diagram = ERef::new(UmlStateMachineDiagram::new(
@@ -1444,6 +1455,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
                 Vec::new(),
                 egui::Pos2::ZERO,
                 *background_color,
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1454,7 +1466,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
             guard,
             behavior,
         } => {
-            let view = new_umlstatemachine_internaltransition(trigger, guard, behavior).1;
+            let view = new_umlstatemachine_internaltransition(trigger, guard, behavior, false).1;
             view.write().refresh_buffers();
             view.into()
         }
@@ -1505,6 +1517,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(200.0, 100.0),
                 },
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1515,10 +1528,13 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
             name,
             background_color,
         } => {
-            let ps = new_umlstatemachine_compositestateregion(egui::Rect {
-                min: egui::Pos2::ZERO,
-                max: egui::Pos2::new(175.0, 75.0),
-            });
+            let ps = new_umlstatemachine_compositestateregion(
+                egui::Rect {
+                    min: egui::Pos2::ZERO,
+                    max: egui::Pos2::new(175.0, 75.0),
+                },
+                false,
+            );
             ps.1.write().refresh_buffers();
             let view = new_umlstatemachine_compositestate(
                 name,
@@ -1527,6 +1543,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
                 vec![ps],
                 egui::Pos2::ZERO,
                 *background_color,
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1544,6 +1561,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
                 egui::Pos2::ZERO,
                 *align,
                 *background_color,
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1556,6 +1574,7 @@ fn view_for_stage(s: &UmlStateMachineToolStage) -> UmlStateMachineElementView {
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             );
             let (d, dv) = new_umlstatemachine_terminatepseudostate(egui::Pos2::new(200.0, 150.0));
             let dummy_2_element = (d.into(), dv.into());
@@ -1895,6 +1914,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     Vec::new(),
                     pos,
                     *background_color,
+                    true,
                 );
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
@@ -1923,8 +1943,14 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 },
                 _,
             ) => {
-                let (_model, view) =
-                    new_umlstatemachine_note(text, stereotype, pos, *align, *background_color);
+                let (_model, view) = new_umlstatemachine_note(
+                    text,
+                    stereotype,
+                    pos,
+                    *align,
+                    *background_color,
+                    true,
+                );
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1966,6 +1992,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
             {
                 let (_model, view) = new_umlstatemachine_compositestateregion(
                     egui::Rect::from_x_y_ranges(0.0..=50.0, 0.0..=100.0),
+                    true,
                 );
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
@@ -1977,7 +2004,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 behavior,
             } if let UmlStateMachineElement::CompositeState(_) = element => {
                 let (_model, view) =
-                    new_umlstatemachine_internaltransition(trigger, guard, behavior);
+                    new_umlstatemachine_internaltransition(trigger, guard, behavior, true);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
                 return;
@@ -2101,6 +2128,10 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
 
                 self.try_spend();
 
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2179,10 +2210,15 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     stereotype,
                     *is_protocol,
                     egui::Rect::from_two_pos(*a, *b),
+                    true,
                 )
                 .1;
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2202,7 +2238,7 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 self.current_stage = self.initial_stage.clone();
 
                 let r = egui::Rect::from_two_pos(*a, *b);
-                let s = new_umlstatemachine_compositestateregion(r);
+                let s = new_umlstatemachine_compositestateregion(r, false);
                 let view = new_umlstatemachine_compositestate(
                     name,
                     stereotype,
@@ -2210,10 +2246,15 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     vec![s],
                     egui::Pos2::ZERO,
                     *background_color,
+                    true,
                 )
                 .1;
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2278,6 +2319,7 @@ pub fn new_umlstatemachine_statemachine(
     stereotype: &str,
     is_protocol: bool,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (ERef<UmlStateMachine>, ERef<StateMachineViewT>) {
     let package_model = ERef::new(UmlStateMachine::new(
         ModelUuid::now_v7(),
@@ -2286,13 +2328,15 @@ pub fn new_umlstatemachine_statemachine(
         is_protocol,
         Vec::new(),
     ));
-    let package_view = new_umlstatemachine_statemachine_view(package_model.clone(), bounds_rect);
+    let package_view =
+        new_umlstatemachine_statemachine_view(package_model.clone(), bounds_rect, request_focus);
 
     (package_model, package_view)
 }
 pub fn new_umlstatemachine_statemachine_view(
     model: ERef<UmlStateMachine>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<StateMachineViewT> {
     let m = model.read();
     PackageView::new(
@@ -2300,6 +2344,7 @@ pub fn new_umlstatemachine_statemachine_view(
         UmlStateMachineAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
+            request_focus,
             display_text: Arc::new("".to_owned()),
             stereotype_buffer: (*m.stereotype).clone(),
             name_buffer: (*m.name).clone(),
@@ -2307,7 +2352,7 @@ pub fn new_umlstatemachine_statemachine_view(
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -2320,6 +2365,8 @@ pub struct UmlStateMachineAdapter {
     model: ERef<UmlStateMachine>,
     background_color: MGlobalColor,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: Arc<String>,
     #[nh_context_serde(skip_and_default)]
@@ -2433,7 +2480,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2441,6 +2488,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
                 UmlStateMachinePropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .checkbox(&mut self.is_protocol_buffer, "isProtocol")
@@ -2583,6 +2631,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         Self {
             model,
             background_color: self.background_color,
+            request_focus: false,
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -2607,6 +2656,7 @@ pub fn new_umlstatemachine_compositestate(
     )>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (
     ERef<UmlStateMachineCompositeState>,
     ERef<UmlStateMachineCompositeStateView>,
@@ -2626,6 +2676,7 @@ pub fn new_umlstatemachine_compositestate(
         region_views,
         position,
         background_color,
+        request_focus,
     );
 
     (model, view)
@@ -2636,15 +2687,22 @@ pub fn new_umlstatemachine_compositestate_view(
     region_views: Vec<ERef<UmlStateMachineCompositeStateRegionView>>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlStateMachineCompositeStateView> {
+    let r = model.read();
     ERef::new(UmlStateMachineCompositeStateView {
         uuid: ViewUuid::now_v7().into(),
-        model,
+        model: model.clone(),
         internal_transition_views,
         region_views,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
-        temporaries: Default::default(),
+        temporaries: UmlStateMachineCompositeStateViewTemporaries {
+            request_focus,
+            name_buffer: (*r.name).clone(),
+            highlight: canvas::Highlight::from_selected(request_focus),
+            ..Default::default()
+        },
     })
 }
 
@@ -2667,6 +2725,7 @@ pub struct UmlStateMachineCompositeStateView {
 
 #[derive(Clone, Default)]
 struct UmlStateMachineCompositeStateViewTemporaries {
+    request_focus: bool,
     stereotype_in_guillemets: String,
     stereotype_buffer: String,
     name_buffer: String,
@@ -2957,7 +3016,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                     UmlStateMachineOrdinalMovement::Up => idx,
                     UmlStateMachineOrdinalMovement::Down => idx + 1,
                 };
-                let sibling = new_umlstatemachine_internaltransition("trigger", "", "doThing()");
+                let sibling =
+                    new_umlstatemachine_internaltransition("trigger", "", "doThing()", true);
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *self.uuid,
                     bucket: 0,
@@ -2991,7 +3055,12 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 };
                 let sibling = new_umlstatemachine_compositestateregion(
                     egui::Rect::from_x_y_ranges(w.bounds_rect.x_range(), y_range),
+                    true,
                 );
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *self.uuid,
                     bucket: 0,
@@ -3025,7 +3094,11 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.temporaries.name_buffer)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3035,6 +3108,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 )),
             ));
         }
+        self.temporaries.request_focus = false;
 
         PropertiesStatus::Shown
     }
@@ -4132,6 +4206,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
 
 pub fn new_umlstatemachine_compositestateregion(
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (
     ERef<UmlStateMachineCompositeStateRegion>,
     ERef<UmlStateMachineCompositeStateRegionView>,
@@ -4140,21 +4215,28 @@ pub fn new_umlstatemachine_compositestateregion(
         ModelUuid::now_v7(),
         Vec::new(),
     ));
-    let package_view =
-        new_umlstatemachine_compositestateregion_view(package_model.clone(), bounds_rect);
+    let package_view = new_umlstatemachine_compositestateregion_view(
+        package_model.clone(),
+        bounds_rect,
+        request_focus,
+    );
 
     (package_model, package_view)
 }
 pub fn new_umlstatemachine_compositestateregion_view(
     model: ERef<UmlStateMachineCompositeStateRegion>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<UmlStateMachineCompositeStateRegionView> {
     ERef::new(UmlStateMachineCompositeStateRegionView {
         uuid: ViewUuid::now_v7().into(),
         model,
         contained_elements: OrderedViews::new(Vec::new()),
         bounds_rect,
-        temporaries: Default::default(),
+        temporaries: UmlStateMachineCompositeStateRegionViewTemporaries {
+            highlight: canvas::Highlight::from_selected(request_focus),
+            ..Default::default()
+        },
     })
 }
 
@@ -4942,6 +5024,7 @@ fn new_umlstatemachine_internaltransition(
     trigger: &str,
     guard: &str,
     behavior: &str,
+    request_focus: bool,
 ) -> (
     ERef<UmlStateMachineInternalTransition>,
     ERef<UmlStateMachineInternalTransitionView>,
@@ -4952,23 +5035,26 @@ fn new_umlstatemachine_internaltransition(
         guard.to_owned(),
         behavior.to_owned(),
     ));
-    let view = new_umlstatemachine_internaltransition_view(model.clone());
+    let view = new_umlstatemachine_internaltransition_view(model.clone(), request_focus);
 
     (model, view)
 }
 fn new_umlstatemachine_internaltransition_view(
     model: ERef<UmlStateMachineInternalTransition>,
+    request_focus: bool,
 ) -> ERef<UmlStateMachineInternalTransitionView> {
+    let r = model.read();
     ERef::new(UmlStateMachineInternalTransitionView {
         uuid: ViewUuid::now_v7().into(),
-        model,
+        model: model.clone(),
 
+        request_focus,
         display_text: String::new(),
-        trigger_buffer: String::new(),
+        trigger_buffer: (*r.trigger).clone(),
         guard_buffer: String::new(),
         behavior_buffer: String::new(),
 
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         bounds_rect: egui::Rect::ZERO,
     })
 }
@@ -4980,6 +5066,8 @@ pub struct UmlStateMachineInternalTransitionView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlStateMachineInternalTransition>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: String,
     #[nh_context_serde(skip_and_default)]
@@ -5018,7 +5106,7 @@ impl UmlStateMachineInternalTransitionView {
         }
 
         if ui
-            .labeled_text_edit_singleline("Trigger:", &mut self.trigger_buffer)
+            .labeled_text_edit_singleline2("Trigger:", &mut self.trigger_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -5026,6 +5114,7 @@ impl UmlStateMachineInternalTransitionView {
                 UmlStateMachinePropChange::NameChange(Arc::new(self.trigger_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         let mut guard_label = egui::RichText::new("Guard:");
         if matches!(self.trigger_buffer.as_str(), "entry" | "do" | "exit") {
@@ -5383,6 +5472,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTra
             uuid: view_uuid.into(),
             model: modelish,
 
+            request_focus: false,
             display_text: self.display_text.clone(),
             trigger_buffer: self.trigger_buffer.clone(),
             guard_buffer: self.guard_buffer.clone(),
@@ -6690,14 +6780,20 @@ pub fn new_umlstatemachine_note(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlStateMachineNote>, ERef<UmlStateMachineNoteView>) {
     let comment_model = ERef::new(UmlStateMachineNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let comment_view =
-        new_umlstatemachine_note_view(comment_model.clone(), position, align, background_color);
+    let comment_view = new_umlstatemachine_note_view(
+        comment_model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (comment_model, comment_view)
 }
@@ -6706,18 +6802,20 @@ pub fn new_umlstatemachine_note_view(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlStateMachineNoteView> {
     let m = model.read();
     ERef::new(UmlStateMachineNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         display_text: String::new(),
         stereotype_buffer: (*m.stereotype).clone(),
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -6732,6 +6830,8 @@ pub struct UmlStateMachineNoteView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlStateMachineNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: String,
     #[nh_context_serde(skip_and_default)]
@@ -6822,7 +6922,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
             ));
         }
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -6830,6 +6930,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
                 UmlStateMachinePropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -7309,6 +7410,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             text_buffer: self.text_buffer.clone(),

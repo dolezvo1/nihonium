@@ -307,12 +307,14 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
             UmlActivityElement::Activity(inner) => new_umlactivity_activity_view(
                 inner,
                 egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                false,
             )
             .into(),
             UmlActivityElement::InterruptibleRegion(inner) => {
                 new_umlactivity_interruptibleregion_view(
                     inner,
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                    false,
                 )
                 .into()
             }
@@ -334,10 +336,12 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
             UmlActivityElement::PartitionSection(inner) => new_umlactivity_partitionsection_view(
                 inner,
                 egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                false,
             )
             .into(),
             UmlActivityElement::ActionNode(inner) => {
-                new_umlactivity_actionnode_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
+                new_umlactivity_actionnode_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false)
+                    .into()
             }
             UmlActivityElement::InitialNode(inner) => {
                 new_umlactivity_initialnode_view(inner, egui::Pos2::ZERO).into()
@@ -352,7 +356,8 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 new_umlactivity_forknode_view(inner, egui::Pos2::ZERO, true, 100.0).into()
             }
             UmlActivityElement::ObjectNode(inner) => {
-                new_umlactivity_objectnode_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
+                new_umlactivity_objectnode_view(inner, egui::Pos2::ZERO, MGlobalColor::None, false)
+                    .into()
             }
             UmlActivityElement::Edge(inner) => {
                 let m = inner.read();
@@ -369,6 +374,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
             UmlActivityElement::NoteLink(inner) => {
@@ -716,6 +722,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         egui::Pos2::new(350.0, 200.0),
         MGlobalColor::None,
+        false,
     );
     let (decision1, decision1_view) =
         new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 200.0));
@@ -725,6 +732,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlActivityActionKind::CallAction,
         egui::Pos2::new(750.0, 200.0),
         MGlobalColor::None,
+        false,
     );
 
     let (note, note_view) = new_umlactivity_note(
@@ -733,6 +741,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 350.0),
         egui::Align2::CENTER_CENTER,
         MGlobalColor::None,
+        false,
     );
     let (procure, procure_view) = new_umlactivity_actionnode(
         "Procure items",
@@ -740,6 +749,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlActivityActionKind::CallAction,
         egui::Pos2::new(500.0, 350.0),
         MGlobalColor::None,
+        false,
     );
     let (r#final, final_view) = new_umlactivity_finalnode(
         UmlActivityFinalNodeKind::ActivityFinal,
@@ -754,6 +764,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlActivityActionKind::SendSignalAction,
         egui::Pos2::new(750.0, 500.0),
         MGlobalColor::None,
+        false,
     );
 
     let (_e1, e1_view) = new_umlactivity_edge(
@@ -830,6 +841,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         "",
         egui::Rect::from_x_y_ranges(100.0..=950.0, 100.0..=600.0),
+        false,
     );
 
     let diagram = ERef::new(UmlActivityDiagram::new(
@@ -1622,6 +1634,7 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
                 *kind,
                 egui::Pos2::ZERO,
                 *background_color,
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1659,8 +1672,14 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
             background_color,
             with_edge_from: _,
         } => {
-            let view =
-                new_umlactivity_objectnode(name, stereotype, egui::Pos2::ZERO, *background_color).1;
+            let view = new_umlactivity_objectnode(
+                name,
+                stereotype,
+                egui::Pos2::ZERO,
+                *background_color,
+                false,
+            )
+            .1;
             view.write().refresh_buffers();
             view.into()
         }
@@ -1700,6 +1719,7 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 50.0),
                 },
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1713,6 +1733,7 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(175.0, 75.0),
                 },
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1729,6 +1750,7 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(175.0, 75.0),
                 },
+                false,
             );
             ps.1.write().refresh_buffers();
             let view = new_umlactivity_partition(vec![ps]).1;
@@ -1747,6 +1769,7 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
                 egui::Pos2::ZERO,
                 *align,
                 *background_color,
+                false,
             )
             .1;
             view.write().refresh_buffers();
@@ -1759,6 +1782,7 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             );
             let (d2, d2_view) = new_umlactivity_finalnode(
                 UmlActivityFinalNodeKind::FlowFinal,
@@ -2098,8 +2122,14 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 },
                 _,
             ) => {
-                let (_model, view) =
-                    new_umlactivity_actionnode(name, stereotype, *kind, pos, *background_color);
+                let (_model, view) = new_umlactivity_actionnode(
+                    name,
+                    stereotype,
+                    *kind,
+                    pos,
+                    *background_color,
+                    true,
+                );
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -2149,7 +2179,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 _,
             ) => {
                 let (_model, view) =
-                    new_umlactivity_objectnode(name, stereotype, pos, *background_color);
+                    new_umlactivity_objectnode(name, stereotype, pos, *background_color, true);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -2162,7 +2192,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 },
                 _,
             ) => {
-                let view = new_umlactivity_note(text, stereotype, pos, *align, *background_color).1;
+                let view =
+                    new_umlactivity_note(text, stereotype, pos, *align, *background_color, true).1;
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -2415,6 +2446,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     stereotype,
                     parameters,
                     egui::Rect::from_two_pos(*a, *b),
+                    true,
                 )
                 .1;
 
@@ -2438,6 +2470,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     name,
                     stereotype,
                     egui::Rect::from_two_pos(*a, *b),
+                    true,
                 )
                 .1;
 
@@ -2460,10 +2493,14 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.current_stage = self.initial_stage.clone();
 
                 let r = egui::Rect::from_two_pos(*a, *b);
-                let s = new_umlactivity_partitionsection(section_name, section_stereotype, r);
+                let s = new_umlactivity_partitionsection(section_name, section_stereotype, r, true);
                 let partition_view = new_umlactivity_partition(vec![s]).1;
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2528,6 +2565,7 @@ pub fn new_umlactivity_activity(
     stereotype: &str,
     parameters: &str,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (ERef<UmlActivity>, ERef<ActivityViewT>) {
     let package_model = ERef::new(UmlActivity::new(
         ModelUuid::now_v7(),
@@ -2536,13 +2574,15 @@ pub fn new_umlactivity_activity(
         parameters.to_owned(),
         Vec::new(),
     ));
-    let package_view = new_umlactivity_activity_view(package_model.clone(), bounds_rect);
+    let package_view =
+        new_umlactivity_activity_view(package_model.clone(), bounds_rect, request_focus);
 
     (package_model, package_view)
 }
 pub fn new_umlactivity_activity_view(
     model: ERef<UmlActivity>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<ActivityViewT> {
     let m = model.read();
     PackageView::new(
@@ -2550,6 +2590,7 @@ pub fn new_umlactivity_activity_view(
         UmlActivityAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
+            request_focus,
             display_text: Arc::new("".to_owned()),
             stereotype_buffer: (*m.stereotype).clone(),
             name_buffer: (*m.name).clone(),
@@ -2557,7 +2598,7 @@ pub fn new_umlactivity_activity_view(
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -2570,6 +2611,8 @@ pub struct UmlActivityAdapter {
     model: ERef<UmlActivity>,
     background_color: MGlobalColor,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: Arc<String>,
     #[nh_context_serde(skip_and_default)]
@@ -2681,7 +2724,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2689,6 +2732,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
                 UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_singleline("Parameters:", &mut self.parameters_buffer)
@@ -2835,6 +2879,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         Self {
             model,
             background_color: self.background_color,
+            request_focus: false,
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -2850,6 +2895,7 @@ pub fn new_umlactivity_interruptibleregion(
     name: &str,
     stereotype: &str,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (
     ERef<UmlActivityInterruptibleRegion>,
     ERef<InterruptibleRegionViewT>,
@@ -2860,25 +2906,28 @@ pub fn new_umlactivity_interruptibleregion(
         name.to_owned(),
         Vec::new(),
     ));
-    let package_view = new_umlactivity_interruptibleregion_view(package_model.clone(), bounds_rect);
+    let package_view =
+        new_umlactivity_interruptibleregion_view(package_model.clone(), bounds_rect, request_focus);
 
     (package_model, package_view)
 }
 pub fn new_umlactivity_interruptibleregion_view(
     model: ERef<UmlActivityInterruptibleRegion>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<InterruptibleRegionViewT> {
     let m = model.read();
     PackageView::new(
         ViewUuid::now_v7().into(),
         UmlActivityInterruptibleRegionAdapter {
             model: model.clone(),
+            request_focus,
             display_text: Arc::new("".to_owned()),
             stereotype_buffer: (*m.stereotype).clone(),
             name_buffer: (*m.name).clone(),
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -2890,6 +2939,8 @@ pub struct UmlActivityInterruptibleRegionAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlActivityInterruptibleRegion>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: Arc<String>,
     #[nh_context_serde(skip_and_default)]
@@ -2964,7 +3015,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         }
 
         if ui
-            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_singleline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2972,6 +3023,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
                 UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
     }
     fn apply_change(
         &mut self,
@@ -3046,6 +3098,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
 
         Self {
             model,
+            request_focus: false,
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -3192,7 +3245,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     "New Partition Section",
                     "",
                     egui::Rect::from_x_y_ranges(x_range, w.bounds_rect.y_range()),
+                    true,
                 );
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *self.uuid,
                     bucket: 0,
@@ -3892,6 +3950,7 @@ pub fn new_umlactivity_partitionsection(
     name: &str,
     stereotype: &str,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (
     ERef<UmlActivityPartitionSection>,
     ERef<UmlActivityPartitionSectionView>,
@@ -3902,21 +3961,29 @@ pub fn new_umlactivity_partitionsection(
         name.to_owned(),
         Vec::new(),
     ));
-    let package_view = new_umlactivity_partitionsection_view(package_model.clone(), bounds_rect);
+    let package_view =
+        new_umlactivity_partitionsection_view(package_model.clone(), bounds_rect, request_focus);
 
     (package_model, package_view)
 }
 pub fn new_umlactivity_partitionsection_view(
     model: ERef<UmlActivityPartitionSection>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<UmlActivityPartitionSectionView> {
+    let r = model.read();
     ERef::new(UmlActivityPartitionSectionView {
         uuid: ViewUuid::now_v7().into(),
-        model,
+        model: model.clone(),
         contained_elements: OrderedViews::new(Vec::new()),
         bounds_rect,
         background_color: MGlobalColor::None,
-        temporaries: Default::default(),
+        temporaries: UmlActivityPartitionSectionViewTemporaries {
+            request_focus,
+            name_buffer: (*r.name).clone(),
+            highlight: canvas::Highlight::from_selected(request_focus),
+            ..Default::default()
+        },
     })
 }
 
@@ -3937,6 +4004,7 @@ pub struct UmlActivityPartitionSectionView {
 
 #[derive(Clone, Default)]
 struct UmlActivityPartitionSectionViewTemporaries {
+    request_focus: bool,
     stereotype_in_guillemets: String,
     stereotype_buffer: String,
     name_buffer: String,
@@ -4004,7 +4072,11 @@ impl UmlActivityPartitionSectionView {
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.temporaries.name_buffer)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4012,6 +4084,7 @@ impl UmlActivityPartitionSectionView {
                 UmlActivityPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
+        self.temporaries.request_focus = false;
 
         ui.label("View properties");
 
@@ -4867,6 +4940,7 @@ fn new_umlactivity_actionnode(
     kind: UmlActivityActionKind,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlActivityActionNode>, ERef<UmlActivityActionNodeView>) {
     let instance_model = ERef::new(UmlActivityActionNode::new(
         ModelUuid::now_v7(),
@@ -4874,8 +4948,12 @@ fn new_umlactivity_actionnode(
         name.to_owned(),
         kind,
     ));
-    let instance_view =
-        new_umlactivity_actionnode_view(instance_model.clone(), position, background_color);
+    let instance_view = new_umlactivity_actionnode_view(
+        instance_model.clone(),
+        position,
+        background_color,
+        request_focus,
+    );
 
     (instance_model, instance_view)
 }
@@ -4883,17 +4961,19 @@ fn new_umlactivity_actionnode_view(
     model: ERef<UmlActivityActionNode>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlActivityActionNodeView> {
     let m = model.read();
     ERef::new(UmlActivityActionNodeView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
+        request_focus,
         stereotype_in_guillemets: String::new(),
         stereotype_buffer: (*m.stereotype).clone(),
         name_buffer: (*m.name).clone(),
         kind_buffer: m.kind,
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color,
@@ -4907,6 +4987,8 @@ pub struct UmlActivityActionNodeView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlActivityActionNode>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: String,
     #[nh_context_serde(skip_and_default)]
@@ -4987,7 +5069,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4995,6 +5077,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
                 UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("action kind")
@@ -5513,6 +5596,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -7133,13 +7217,19 @@ pub fn new_umlactivity_objectnode(
     stereotype: &str,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlActivityObjectNode>, ERef<UmlActivityObjectNodeView>) {
     let node_model = ERef::new(UmlActivityObjectNode::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         name.to_owned(),
     ));
-    let node_view = new_umlactivity_objectnode_view(node_model.clone(), position, background_color);
+    let node_view = new_umlactivity_objectnode_view(
+        node_model.clone(),
+        position,
+        background_color,
+        request_focus,
+    );
 
     (node_model, node_view)
 }
@@ -7147,18 +7237,20 @@ pub fn new_umlactivity_objectnode_view(
     model: ERef<UmlActivityObjectNode>,
     position: egui::Pos2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlActivityObjectNodeView> {
     let m = model.read();
     ERef::new(UmlActivityObjectNodeView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         stereotype_in_guillemets: String::new(),
         stereotype_buffer: (*m.stereotype).clone(),
         name_buffer: (*m.name).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::ZERO,
         background_color,
@@ -7172,6 +7264,8 @@ pub struct UmlActivityObjectNodeView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlActivityObjectNode>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: String,
     #[nh_context_serde(skip_and_default)]
@@ -7250,7 +7344,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -7258,6 +7352,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
                 UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -7598,6 +7693,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -7889,13 +7985,20 @@ pub fn new_umlactivity_note(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<UmlActivityNote>, ERef<UmlActivityNoteView>) {
     let model = ERef::new(UmlActivityNote::new(
         ModelUuid::now_v7(),
         stereotype.to_owned(),
         text.to_owned(),
     ));
-    let view = new_umlactivity_note_view(model.clone(), position, align, background_color);
+    let view = new_umlactivity_note_view(
+        model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (model, view)
 }
@@ -7904,18 +8007,20 @@ pub fn new_umlactivity_note_view(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<UmlActivityNoteView> {
     let m = model.read();
     ERef::new(UmlActivityNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         display_text: String::new(),
         stereotype_buffer: (*m.stereotype).clone(),
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -7930,6 +8035,8 @@ pub struct UmlActivityNoteView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlActivityNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     display_text: String,
     #[nh_context_serde(skip_and_default)]
@@ -8018,7 +8125,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
             ));
         }
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -8026,6 +8133,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
                 UmlActivityPropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -8500,6 +8608,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             text_buffer: self.text_buffer.clone(),

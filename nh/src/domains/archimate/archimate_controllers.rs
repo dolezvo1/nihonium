@@ -253,6 +253,7 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
                 egui::Pos2::ZERO,
                 ArchiMateConceptRenderStyle::BoxWithIcon,
                 MGlobalColor::None,
+                false,
             )
             .into(),
             ArchiMateElement::Relationship(inner) => {
@@ -538,6 +539,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(200.0, 100.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
     createreservation_view.write().refresh_buffers();
 
@@ -548,6 +550,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(400.0, 100.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
 
     let (phone, phone_view) = new_archimate_concept(
@@ -557,6 +560,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(300.0, 300.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
 
     let (client, client_view) = new_archimate_concept(
@@ -566,6 +570,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(200.0, 500.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
 
     let (bookb, bookb_view) = new_archimate_concept(
@@ -575,6 +580,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(400.0, 500.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
 
     let (web, web_view) = new_archimate_concept(
@@ -584,6 +590,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(200.0, 700.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
 
     let (booka, booka_view) = new_archimate_concept(
@@ -593,6 +600,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(400.0, 700.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
 
     let (bookingsystem, bookingsystem_view) = new_archimate_concept(
@@ -602,6 +610,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(200.0, 900.0),
         ArchiMateConceptRenderStyle::Icon,
         MGlobalColor::None,
+        false,
     );
 
     let (node, node_view) = new_archimate_concept(
@@ -611,6 +620,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(400.0, 900.0),
         ArchiMateConceptRenderStyle::Icon,
         MGlobalColor::None,
+        false,
     );
 
     let (location, location_view) = new_archimate_concept(
@@ -620,6 +630,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         egui::Pos2::new(600.0, 900.0),
         ArchiMateConceptRenderStyle::BoxWithIcon,
         MGlobalColor::None,
+        false,
     );
 
     let (e1, e1_view) = new_archimate_relationship(
@@ -1336,6 +1347,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
                 egui::Pos2::ZERO,
                 ArchiMateConceptRenderStyle::Icon,
                 *background_color,
+                false,
             )
             .1;
             node_view.write().refresh_buffers();
@@ -1354,6 +1366,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
                 egui::Pos2::ZERO,
                 ArchiMateConceptRenderStyle::BoxWithIcon,
                 MGlobalColor::None,
+                false,
             );
             let d2 = new_archimate_concept(
                 "dummy",
@@ -1362,6 +1375,7 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
                 egui::Pos2::new(100.0, 75.0),
                 ArchiMateConceptRenderStyle::BoxWithIcon,
                 MGlobalColor::None,
+                false,
             );
 
             let association_view = new_archimate_relationship(
@@ -1577,6 +1591,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                     pos,
                     ArchiMateConceptRenderStyle::BoxWithIcon,
                     *background_color,
+                    true,
                 )
                 .1;
                 self.result = PartialArchiMateElement::Some(view.into());
@@ -1857,6 +1872,7 @@ fn new_archimate_concept(
     position: egui::Pos2,
     render_style: ArchiMateConceptRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<ArchiMateConcept>, ERef<ArchiMateConceptView>) {
     let model = ERef::new(ArchiMateConcept::new(
         ModelUuid::now_v7(),
@@ -1865,7 +1881,13 @@ fn new_archimate_concept(
         name.to_owned(),
         Vec::new(),
     ));
-    let view = new_archimate_concept_view(model.clone(), position, render_style, background_color);
+    let view = new_archimate_concept_view(
+        model.clone(),
+        position,
+        render_style,
+        background_color,
+        request_focus,
+    );
     (model, view)
 }
 fn new_archimate_concept_view(
@@ -1873,6 +1895,7 @@ fn new_archimate_concept_view(
     position: egui::Pos2,
     render_style: ArchiMateConceptRenderStyle,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<ArchiMateConceptView> {
     let m = model.read();
     ERef::new(ArchiMateConceptView {
@@ -1882,6 +1905,7 @@ fn new_archimate_concept_view(
         all_elements: HashMap::new(),
         selected_direct_elements: HashSet::new(),
 
+        request_focus,
         stereotype_in_guillemets: String::new(),
         stereotype_buffer: (*m.stereotype).to_owned(),
         name_buffer: (*m.name).to_owned(),
@@ -1889,7 +1913,7 @@ fn new_archimate_concept_view(
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_pos(position),
         background_color,
@@ -1910,6 +1934,8 @@ pub struct ArchiMateConceptView {
     #[nh_context_serde(skip_and_default)]
     selected_direct_elements: HashSet<ViewUuid>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: String,
     #[nh_context_serde(skip_and_default)]
@@ -1999,7 +2025,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         }
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2007,6 +2033,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                 ArchiMatePropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("concept kind")
@@ -3689,6 +3716,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             owned_views,
             all_elements: HashMap::new(),
             selected_direct_elements: HashSet::new(),
+            request_focus: false,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
