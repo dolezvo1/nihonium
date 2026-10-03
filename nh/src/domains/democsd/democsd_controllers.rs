@@ -33,8 +33,8 @@ use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::demo::DemoPackageKind;
 use crate::domains::democsd::democsd_models::DemoCsdNote;
 use crate::{
-    CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
-    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -305,28 +305,25 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         element: DemoCsdElement,
     ) -> Result<DemoCsdElementView, HashSet<ModelUuid>> {
         let v = match element {
-            DemoCsdElement::Package(inner) => DemoCsdElementView::from(new_democsd_package_view(
+            DemoCsdElement::Package(inner) => new_democsd_package_view(
                 inner,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 100.0),
                 },
-            )),
+                false,
+            )
+            .into(),
             DemoCsdElement::Transactor(inner) => {
                 let m = inner.read();
-                let tx_view = m
-                    .transaction
-                    .as_ref()
-                    .map(|e| new_democsd_transaction_view(e.clone(), egui::Pos2::ZERO, true));
-                DemoCsdElementView::from(new_democsd_transactor_view(
-                    inner.clone(),
-                    tx_view,
-                    egui::Pos2::ZERO,
-                ))
+                let tx_view = m.transaction.as_ref().map(|e| {
+                    new_democsd_transaction_view(e.clone(), egui::Pos2::ZERO, true, false)
+                });
+                new_democsd_transactor_view(inner.clone(), tx_view, egui::Pos2::ZERO, false).into()
             }
-            DemoCsdElement::Transaction(inner) => DemoCsdElementView::from(
-                new_democsd_transaction_view(inner, egui::Pos2::ZERO, false),
-            ),
+            DemoCsdElement::Transaction(inner) => {
+                new_democsd_transaction_view(inner, egui::Pos2::ZERO, false, false).into()
+            }
             DemoCsdElement::Link(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.read().uuid());
@@ -335,17 +332,14 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                DemoCsdElementView::from(new_democsd_link_view(
-                    inner.clone(),
-                    source_view,
-                    target_view,
-                ))
+                new_democsd_link_view(inner.clone(), source_view, target_view).into()
             }
             DemoCsdElement::Note(inner) => new_democsd_note_view(
                 inner,
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
         };
@@ -586,6 +580,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         None,
         false,
         egui::Pos2::new(200.0, 200.0),
+        false,
     );
     models.push(client_model.clone().into());
     controllers.push(client_view.clone().into());
@@ -597,6 +592,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         false,
         egui::Pos2::new(200.0, 400.0),
         true,
+        false,
     );
     let (ta1_model, ta1_view) = new_democsd_transactor(
         "AR01",
@@ -606,6 +602,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         Some((tx1_model.clone(), tx1_view.clone())),
         false,
         egui::Pos2::new(200.0, 400.0),
+        false,
     );
     models.push(ta1_model.clone().into());
     controllers.push(ta1_view.clone().into());
@@ -626,6 +623,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         false,
         egui::Pos2::new(200.0, 600.0),
         true,
+        false,
     );
     let (ta_model, ta_view) = new_democsd_transactor(
         "AR02",
@@ -635,6 +633,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         Some((tx2_model.clone(), tx2_view.clone())),
         false,
         egui::Pos2::new(200.0, 600.0),
+        false,
     );
     models.push(ta_model.into());
     controllers.push(ta_view.into());
@@ -655,6 +654,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         false,
         egui::Pos2::new(400.0, 400.0),
         true,
+        false,
     );
     let (ta3_model, ta3_view) = new_democsd_transactor(
         "AR03",
@@ -664,6 +664,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         Some((tx3_model, tx3_view)),
         true,
         egui::Pos2::new(400.0, 400.0),
+        false,
     );
     models.push(ta3_model.clone().into());
     controllers.push(ta3_view.clone().into());
@@ -1121,6 +1122,7 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
                     false,
                     egui::Pos2::ZERO,
                     true,
+                    false,
                 )
             });
             new_democsd_transactor(
@@ -1131,6 +1133,7 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
                 tx,
                 *self_activating,
                 egui::Pos2::ZERO,
+                false,
             )
             .1
             .into()
@@ -1142,6 +1145,7 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
             false,
             egui::Pos2::new(100.0, 75.0),
             false,
+            false,
         )
         .1
         .into(),
@@ -1149,14 +1153,23 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
             link_type,
             multiplicity,
         } => {
-            let d1 =
-                new_democsd_transactor("dummy", "", false, true, None, false, egui::Pos2::ZERO);
+            let d1 = new_democsd_transactor(
+                "dummy",
+                "",
+                false,
+                true,
+                None,
+                false,
+                egui::Pos2::ZERO,
+                false,
+            );
             let d2 = new_democsd_transaction(
                 "dummy",
                 "",
                 DemoTransactionKind::Performa,
                 false,
                 egui::Pos2::new(100.0, 75.0),
+                false,
                 false,
             );
             let v = new_democsd_link(
@@ -1176,6 +1189,7 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
                 min: egui::Pos2::ZERO,
                 max: egui::Pos2::new(150.0, 75.0),
             },
+            false,
         )
         .1
         .into(),
@@ -1183,7 +1197,7 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
             text,
             align,
             background_color,
-        } => new_democsd_note(text, egui::Pos2::ZERO, *align, *background_color)
+        } => new_democsd_note(text, egui::Pos2::ZERO, *align, *background_color, false)
             .1
             .into(),
         DemoCsdToolStage::LinkEnd | DemoCsdToolStage::PackageEnd => unreachable!(),
@@ -1438,7 +1452,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 _,
             ) => {
                 let ta = transaction.as_ref().map(|e| {
-                    new_democsd_transaction(&e.identifier, &e.name, e.kind, false, pos, true)
+                    new_democsd_transaction(&e.identifier, &e.name, e.kind, false, pos, true, false)
                 });
                 let (_client_model, client_view) = new_democsd_transactor(
                     identifier,
@@ -1448,6 +1462,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     ta,
                     *self_activating,
                     pos,
+                    true,
                 );
                 self.result = PartialDemoCsdElement::Some(client_view.into());
                 self.event_lock = true;
@@ -1462,7 +1477,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 _,
             ) => {
                 let (_bank_model, transaction_view) =
-                    new_democsd_transaction(identifier, name, *kind, false, pos, false);
+                    new_democsd_transaction(identifier, name, *kind, false, pos, false, true);
                 self.result = PartialDemoCsdElement::Some(transaction_view.into());
                 self.event_lock = true;
             }
@@ -1482,7 +1497,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 },
                 _,
             ) => {
-                let view = new_democsd_note(text, pos, *align, *background_color).1;
+                let view = new_democsd_note(text, pos, *align, *background_color, true).1;
                 self.result = PartialDemoCsdElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1552,19 +1567,6 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         match &self.result {
             PartialDemoCsdElement::Some(element) => {
                 let element = element.clone();
-                let esm: Option<Box<dyn CustomModal>> = match &element {
-                    DemoCsdElementView::Transactor(inner) => Some(Box::new(
-                        DemoCsdTransactorSetupModal::from(&inner.read().model),
-                    )),
-                    DemoCsdElementView::Transaction(inner) => Some(Box::new(
-                        DemoCsdTransactionSetupModal::from(&inner.read().model),
-                    )),
-                    DemoCsdElementView::Package(..) | DemoCsdElementView::Link(..) => {
-                        unreachable!()
-                    }
-                    DemoCsdElementView::Note(_) => None,
-                };
-
                 let additional_edge = match &self.initial_stage {
                     DemoCsdToolStage::Bank(TransactionStageData {
                         with_edge_from: Some(source_uuid),
@@ -1610,6 +1612,10 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     _ => None,
                 };
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1626,7 +1632,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         into_model: true,
                     });
                 }
-                Ok(esm)
+                Ok(None)
             }
             PartialDemoCsdElement::Link {
                 source,
@@ -1672,9 +1678,13 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.current_stage = self.initial_stage.clone();
 
                 let package_view =
-                    new_democsd_package(name, *kind, egui::Rect::from_two_pos(*a, *b)).1;
+                    new_democsd_package(name, *kind, egui::Rect::from_two_pos(*a, *b), true).1;
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1699,6 +1709,8 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
 pub struct DemoCsdPackageAdapter {
     #[nh_context_serde(entity)]
     model: ERef<DemoCsdPackage>,
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1752,7 +1764,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         >,
     ) {
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1760,6 +1772,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         egui::ComboBox::new("package kind", "Package kind")
             .selected_text(self.kind_buffer.as_str())
@@ -1849,6 +1862,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         };
         Self {
             model,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -1865,6 +1879,7 @@ fn new_democsd_package(
     name: &str,
     kind: DemoPackageKind,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (ERef<DemoCsdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoCsdPackage::new(
         ModelUuid::now_v7(),
@@ -1872,25 +1887,27 @@ fn new_democsd_package(
         kind,
         vec![],
     ));
-    let graph_view = new_democsd_package_view(graph_model.clone(), bounds_rect);
+    let graph_view = new_democsd_package_view(graph_model.clone(), bounds_rect, request_focus);
 
     (graph_model, graph_view)
 }
 fn new_democsd_package_view(
     model: ERef<DemoCsdPackage>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageViewT::new(
         ViewUuid::now_v7().into(),
         DemoCsdPackageAdapter {
             model: model.clone(),
+            request_focus,
             name_buffer: (*m.name).clone(),
             kind_buffer: m.kind,
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -1905,6 +1922,7 @@ fn new_democsd_transactor(
     transaction: Option<(ERef<DemoCsdTransaction>, ERef<DemoCsdTransactionView>)>,
     transaction_selfactivating: bool,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> (ERef<DemoCsdTransactor>, ERef<DemoCsdTransactorView>) {
     let ta_model = ERef::new(DemoCsdTransactor::new(
         ModelUuid::now_v7(),
@@ -1919,6 +1937,7 @@ fn new_democsd_transactor(
         ta_model.clone(),
         transaction.as_ref().map(|t| t.1.clone()),
         position,
+        request_focus,
     );
 
     (ta_model, ta_view)
@@ -1927,6 +1946,7 @@ fn new_democsd_transactor_view(
     model: ERef<DemoCsdTransactor>,
     transaction: Option<ERef<DemoCsdTransactionView>>,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> ERef<DemoCsdTransactorView> {
     let m = model.read();
     ERef::new(DemoCsdTransactorView {
@@ -1934,6 +1954,7 @@ fn new_democsd_transactor_view(
         model: model.clone(),
         transaction_view: transaction.into(),
 
+        request_focus,
         identifier_buffer: (*m.identifier).clone(),
         name_buffer: (*m.name).clone(),
         internal_buffer: m.internal,
@@ -1942,64 +1963,10 @@ fn new_democsd_transactor_view(
         comment_buffer: (*m.comment).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_pos(position),
     })
-}
-
-struct DemoCsdTransactorSetupModal {
-    model: ERef<DemoCsdTransactor>,
-    first_frame: bool,
-    identifier_buffer: String,
-    name_buffer: String,
-}
-
-impl From<&ERef<DemoCsdTransactor>> for DemoCsdTransactorSetupModal {
-    fn from(model: &ERef<DemoCsdTransactor>) -> Self {
-        let m = model.read();
-
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            identifier_buffer: (*m.identifier).clone(),
-            name_buffer: (*m.name).clone(),
-        }
-    }
-}
-
-impl CustomModal for DemoCsdTransactorSetupModal {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("Identifier:");
-        let r = ui.text_edit_singleline(&mut self.identifier_buffer);
-        ui.label("Name:");
-        ui.text_edit_multiline(&mut self.name_buffer);
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.identifier = Arc::new(self.identifier_buffer.clone());
-                m.name = Arc::new(self.name_buffer.clone());
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -2011,6 +1978,8 @@ pub struct DemoCsdTransactorView {
     #[nh_context_serde(entity)]
     transaction_view: UFOption<ERef<DemoCsdTransactionView>>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     identifier_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2120,7 +2089,11 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer)
+            .labeled_text_edit_singleline2(
+                "Identifier:",
+                &mut self.identifier_buffer,
+                self.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2128,6 +2101,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
@@ -2934,6 +2908,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             uuid: view_uuid.into(),
             model: modelish,
             transaction_view: tx_clone,
+            request_focus: false,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
             internal_buffer: self.internal_buffer,
@@ -2970,6 +2945,7 @@ fn new_democsd_transaction(
     multiple: bool,
     position: egui::Pos2,
     actor: bool,
+    request_focus: bool,
 ) -> (ERef<DemoCsdTransaction>, ERef<DemoCsdTransactionView>) {
     let tx_model = ERef::new(DemoCsdTransaction::new(
         ModelUuid::now_v7(),
@@ -2978,19 +2954,21 @@ fn new_democsd_transaction(
         name.to_owned(),
         multiple,
     ));
-    let tx_view = new_democsd_transaction_view(tx_model.clone(), position, actor);
+    let tx_view = new_democsd_transaction_view(tx_model.clone(), position, actor, request_focus);
     (tx_model, tx_view)
 }
 fn new_democsd_transaction_view(
     model: ERef<DemoCsdTransaction>,
     position: egui::Pos2,
     actor: bool,
+    request_focus: bool,
 ) -> ERef<DemoCsdTransactionView> {
     let m = model.read();
     ERef::new(DemoCsdTransactionView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         kind_buffer: m.kind,
         identifier_buffer: (*m.identifier).clone(),
         name_buffer: (*m.name).to_owned(),
@@ -2998,7 +2976,7 @@ fn new_democsd_transaction_view(
         comment_buffer: (*m.comment).to_owned(),
 
         dragged: false,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position: position
             - if actor {
                 egui::Vec2::new(0.0, 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE)
@@ -3012,75 +2990,6 @@ fn new_democsd_transaction_view(
     })
 }
 
-struct DemoCsdTransactionSetupModal {
-    model: ERef<DemoCsdTransaction>,
-    first_frame: bool,
-    identifier_buffer: String,
-    name_buffer: String,
-    kind_buffer: DemoTransactionKind,
-    multiple_buffer: bool,
-}
-
-impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
-    fn from(model: &ERef<DemoCsdTransaction>) -> Self {
-        let m = model.read();
-
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            identifier_buffer: (*m.identifier).clone(),
-            name_buffer: (*m.name).clone(),
-            kind_buffer: m.kind,
-            multiple_buffer: m.multiple,
-        }
-    }
-}
-
-impl CustomModal for DemoCsdTransactionSetupModal {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("Identifier:");
-        let r = ui.text_edit_singleline(&mut self.identifier_buffer);
-        ui.label("Name:");
-        ui.text_edit_multiline(&mut self.name_buffer);
-        ui.label("Transaction kind");
-        egui::ComboBox::from_id_salt("transaction kind")
-            .selected_text(self.kind_buffer.as_str())
-            .show_ui(ui, |ui| {
-                for e in DemoTransactionKind::VARIANTS {
-                    ui.selectable_value(&mut self.kind_buffer, e, e.as_str());
-                }
-            });
-        ui.checkbox(&mut self.multiple_buffer, "Multiple");
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.identifier = Arc::new(self.identifier_buffer.clone());
-                m.name = Arc::new(self.name_buffer.clone());
-                m.kind = self.kind_buffer;
-                m.multiple = self.multiple_buffer;
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
-}
-
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoCsdTransactionView {
@@ -3088,6 +2997,8 @@ pub struct DemoCsdTransactionView {
     #[nh_context_serde(entity)]
     model: ERef<DemoCsdTransaction>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     kind_buffer: DemoTransactionKind,
     #[nh_context_serde(skip_and_default)]
@@ -3235,7 +3146,11 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             });
 
         if ui
-            .labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer)
+            .labeled_text_edit_singleline2(
+                "Identifier:",
+                &mut self.identifier_buffer,
+                self.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3243,6 +3158,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                 DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
@@ -3558,6 +3474,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             kind_buffer: self.kind_buffer,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -3829,9 +3746,16 @@ pub fn new_democsd_note(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<DemoCsdNote>, ERef<DemoCsdNoteView>) {
     let model = ERef::new(DemoCsdNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_democsd_note_view(model.clone(), position, align, background_color);
+    let view = new_democsd_note_view(
+        model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (model, view)
 }
@@ -3840,16 +3764,18 @@ pub fn new_democsd_note_view(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<DemoCsdNoteView> {
     let m = model.read();
     ERef::new(DemoCsdNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -3864,6 +3790,8 @@ pub struct DemoCsdNoteView {
     #[nh_context_serde(entity)]
     pub model: ERef<DemoCsdNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -3929,7 +3857,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3937,6 +3865,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
                 DemoCsdPropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -4351,6 +4280,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             text_buffer: self.text_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,

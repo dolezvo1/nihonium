@@ -36,8 +36,8 @@ use crate::domains::demoofd::demoofd_models::{
     DemoOfdType,
 };
 use crate::{
-    CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
-    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::egui;
 use std::collections::HashSet;
@@ -344,15 +344,17 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         element: DemoOfdElement,
     ) -> Result<DemoOfdElementView, HashSet<ModelUuid>> {
         let v = match element {
-            DemoOfdElement::Package(inner) => DemoOfdElementView::from(new_demoofd_package_view(
+            DemoOfdElement::Package(inner) => new_demoofd_package_view(
                 inner,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 100.0),
                 },
-            )),
+                false,
+            )
+            .into(),
             DemoOfdElement::EntityType(inner) => {
-                DemoOfdElementView::from(new_demoofd_entitytype_view(inner, egui::Pos2::ZERO))
+                new_demoofd_entitytype_view(inner, egui::Pos2::ZERO, false).into()
             }
             DemoOfdElement::EventType(inner) => {
                 let m = inner.read();
@@ -360,12 +362,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                 let Some(base_view) = q.get_view_for(&bid) else {
                     return Err(HashSet::from([bid]));
                 };
-                DemoOfdElementView::from(new_demoofd_eventtype_view(
-                    inner.clone(),
-                    base_view,
-                    None,
-                    egui::Pos2::ZERO,
-                ))
+                new_demoofd_eventtype_view(inner.clone(), base_view, None, egui::Pos2::ZERO, false)
+                    .into()
             }
             DemoOfdElement::PropertyType(inner) => {
                 let m = inner.read();
@@ -375,12 +373,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
-                DemoOfdElementView::from(new_demoofd_propertytype_view(
-                    inner.clone(),
-                    None,
-                    source_view,
-                    target_view,
-                ))
+                new_demoofd_propertytype_view(inner.clone(), None, source_view, target_view).into()
             }
             DemoOfdElement::Specialization(inner) => {
                 let m = inner.read();
@@ -390,12 +383,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
-                DemoOfdElementView::from(new_demoofd_specialization_view(
-                    inner.clone(),
-                    None,
-                    source_view,
-                    target_view,
-                ))
+                new_demoofd_specialization_view(inner.clone(), None, source_view, target_view)
+                    .into()
             }
             DemoOfdElement::Aggregation(inner) => {
                 let m = inner.read();
@@ -413,7 +402,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                         .chain(std::iter::once(*m.range_element.read().uuid))
                         .collect());
                 };
-                DemoOfdElementView::from(new_demoofd_aggregation_view(inner.clone(), None, sv, tv))
+                new_demoofd_aggregation_view(inner.clone(), None, sv, tv).into()
             }
             DemoOfdElement::Precedence(inner) => {
                 let m = inner.read();
@@ -423,12 +412,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
-                DemoOfdElementView::from(new_demoofd_precedence_view(
-                    inner.clone(),
-                    None,
-                    source_view,
-                    target_view,
-                ))
+                new_demoofd_precedence_view(inner.clone(), None, source_view, target_view).into()
             }
             DemoOfdElement::Exclusion(inner) => {
                 let m = inner.read();
@@ -438,18 +422,14 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
-                DemoOfdElementView::from(new_demoofd_exclusion_view(
-                    inner.clone(),
-                    None,
-                    source_view,
-                    target_view,
-                ))
+                new_demoofd_exclusion_view(inner.clone(), None, source_view, target_view).into()
             }
             DemoOfdElement::Note(inner) => new_demoofd_note_view(
                 inner,
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
         };
@@ -682,6 +662,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         &"\n".repeat(21),
         true,
         egui::Pos2::new(120.0, 50.0),
+        false,
     );
 
     let (entity_started_membership, entity_started_membership_view) = new_demoofd_entitytype(
@@ -689,6 +670,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "starting day [DAY]",
         true,
         egui::Pos2::new(325.0, 80.0),
+        false,
     );
 
     let (event_started, event_started_view) = new_demoofd_eventtype(
@@ -704,6 +686,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             entity_started_membership_view.clone(),
         )),
         egui::Pos2::new(325.0, 80.0),
+        false,
     );
 
     let (entity_person, entity_person_view) = new_demoofd_entitytype(
@@ -711,6 +694,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "day of birth [DAY]",
         false,
         egui::Pos2::new(550.0, 50.0),
+        false,
     );
 
     let (prop_member, prop_member_view) = new_demoofd_propertytype(
@@ -730,6 +714,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "minimal age [NUMBER]\nannual fee [MONEY]\nmax members [NUMBER]",
         false,
         egui::Pos2::new(550.0, 250.0),
+        false,
     );
 
     let diagram2 = ERef::new(DemoOfdDiagram::new(
@@ -1175,6 +1160,7 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
                 &data.properties,
                 data.internal,
                 egui::Pos2::ZERO,
+                false,
             )
             .1;
             entity_view.write().refresh_buffers();
@@ -1186,9 +1172,9 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
             transaction_kind,
             specialization,
         } => {
-            let d1 = new_demoofd_entitytype("dummy", "", true, egui::Pos2::ZERO);
+            let d1 = new_demoofd_entitytype("dummy", "", true, egui::Pos2::ZERO, false);
             let specialization = specialization.as_ref().map(|e| {
-                new_demoofd_entitytype(&e.name, &e.properties, e.internal, egui::Pos2::ZERO)
+                new_demoofd_entitytype(&e.name, &e.properties, e.internal, egui::Pos2::ZERO, false)
             });
             let event_view = new_demoofd_eventtype(
                 identifier,
@@ -1197,6 +1183,7 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
                 (d1.0, d1.1.into()),
                 specialization,
                 egui::Pos2::new(200.0, 75.0),
+                false,
             )
             .1;
             event_view.write().refresh_buffers();
@@ -1204,8 +1191,8 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
         }
         DemoOfdToolStage::LinkStart { link_type } => {
             let (p0, p1) = (egui::Pos2::ZERO, egui::Pos2::new(100.0, 50.0));
-            let d1 = new_demoofd_entitytype("dummy", "", true, p0);
-            let d2 = new_demoofd_entitytype("dummy", "", true, p1);
+            let d1 = new_demoofd_entitytype("dummy", "", true, p0, false);
+            let d2 = new_demoofd_entitytype("dummy", "", true, p1, false);
             let d3 = new_demoofd_eventtype(
                 "dummy",
                 "",
@@ -1213,6 +1200,7 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
                 (d1.0.clone(), d1.1.clone().into()),
                 None,
                 p0,
+                false,
             );
             let d4 = new_demoofd_eventtype(
                 "dummy",
@@ -1221,6 +1209,7 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
                 (d1.0.clone(), d1.1.clone().into()),
                 None,
                 p1,
+                false,
             );
 
             match link_type {
@@ -1275,6 +1264,7 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(150.0, 75.0),
                 },
+                false,
             )
             .1;
             package_view.write().refresh_buffers();
@@ -1284,7 +1274,7 @@ fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
             text,
             align,
             background_color,
-        } => new_demoofd_note(text, egui::Pos2::ZERO, *align, *background_color)
+        } => new_demoofd_note(text, egui::Pos2::ZERO, *align, *background_color, false)
             .1
             .into(),
         DemoOfdToolStage::EventEnd
@@ -1636,9 +1626,9 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }),
                 _,
             ) => {
-                let (_class_model, class_view) =
-                    new_demoofd_entitytype(name, properties, *internal, pos);
-                self.result = PartialDemoOfdElement::Some(class_view.into());
+                let (_, entity_view) =
+                    new_demoofd_entitytype(name, properties, *internal, pos, true);
+                self.result = PartialDemoOfdElement::Some(entity_view.into());
                 self.event_lock = true;
             }
             (DemoOfdToolStage::EventEnd, PartialDemoOfdElement::Event { pos: p, .. }) => {
@@ -1661,7 +1651,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 },
                 _,
             ) => {
-                let view = new_demoofd_note(text, pos, *align, *background_color).1;
+                let view = new_demoofd_note(text, pos, *align, *background_color, true).1;
                 self.result = PartialDemoOfdElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1766,9 +1756,14 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     _,
                 ) => {
                     if !inner.read().specialization_entity_type.is_some() {
-                        let (_class_model, class_view) =
-                            new_demoofd_entitytype(name, properties, *internal, egui::Pos2::ZERO);
-                        self.result = PartialDemoOfdElement::Some(class_view.into());
+                        let (_, entity_view) = new_demoofd_entitytype(
+                            name,
+                            properties,
+                            *internal,
+                            egui::Pos2::ZERO,
+                            true,
+                        );
+                        self.result = PartialDemoOfdElement::Some(entity_view.into());
                     }
                     self.event_lock = true;
                 }
@@ -1863,14 +1858,11 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             }
             PartialDemoOfdElement::Some(element) => {
                 let element = element.clone();
-                let esm: Option<Box<dyn CustomModal>> = match &element {
-                    DemoOfdElementView::EntityType(inner) => Some(Box::new(
-                        DemoOfdEntityTypeSetupModal::from(&inner.read().model),
-                    )),
-                    _ => None,
-                };
-
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1878,7 +1870,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     element: element.into(),
                     into_model: true,
                 });
-                Ok(esm)
+                Ok(None)
             }
             PartialDemoOfdElement::Event {
                 source,
@@ -1901,22 +1893,24 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         specialization: specialization.clone(),
                     };
 
-                    let spec = specialization
-                        .as_ref()
-                        .map(|e| new_demoofd_entitytype(&e.name, &e.properties, e.internal, *p));
-                    let (event_model, event_view) = new_demoofd_eventtype(
+                    let spec = specialization.as_ref().map(|e| {
+                        new_demoofd_entitytype(&e.name, &e.properties, e.internal, *p, false)
+                    });
+                    let (_, event_view) = new_demoofd_eventtype(
                         identifier,
                         name,
                         *transaction_kind,
                         (source.clone(), base_view),
                         spec,
                         *p,
+                        true,
                     );
 
-                    let esm: Option<Box<dyn CustomModal>> =
-                        Some(Box::new(DemoOfdEventTypeSetupModal::from(&event_model)));
-
                     self.try_spend();
+                    commands.push(InsensitiveCommand::HighlightAll(
+                        false,
+                        canvas::Highlight::SELECTED,
+                    ));
                     commands.push(InsensitiveCommand::AddDependency {
                         target: *preferred_container,
                         bucket: preferred_bucket,
@@ -1924,7 +1918,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         element: DemoOfdElementView::from(event_view).into(),
                         into_model: true,
                     });
-                    Ok(esm)
+                    Ok(None)
                 } else {
                     Err(())
                 }
@@ -2073,9 +2067,13 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 self.current_stage = self.initial_stage.clone();
 
                 let package_view =
-                    new_demoofd_package(name, *kind, egui::Rect::from_two_pos(*a, *b)).1;
+                    new_demoofd_package(name, *kind, egui::Rect::from_two_pos(*a, *b), true).1;
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2100,6 +2098,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
 pub struct DemoOfdPackageAdapter {
     #[nh_context_serde(entity)]
     model: ERef<DemoOfdPackage>,
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2153,7 +2153,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         >,
     ) {
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2161,6 +2161,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         egui::ComboBox::new("package kind", "Package kind")
             .selected_text(self.kind_buffer.as_str())
@@ -2250,6 +2251,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         };
         Self {
             model,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
@@ -2263,6 +2265,7 @@ fn new_demoofd_package(
     name: &str,
     kind: DemoPackageKind,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (ERef<DemoOfdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoOfdPackage::new(
         ModelUuid::now_v7(),
@@ -2270,25 +2273,27 @@ fn new_demoofd_package(
         kind,
         vec![],
     ));
-    let graph_view = new_demoofd_package_view(graph_model.clone(), bounds_rect);
+    let graph_view = new_demoofd_package_view(graph_model.clone(), bounds_rect, request_focus);
 
     (graph_model, graph_view)
 }
 fn new_demoofd_package_view(
     model: ERef<DemoOfdPackage>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageViewT::new(
         ViewUuid::now_v7().into(),
         DemoOfdPackageAdapter {
             model: model.clone(),
+            request_focus,
             name_buffer: (*m.name).clone(),
             kind_buffer: m.kind,
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -2298,6 +2303,7 @@ fn new_demoofd_entitytype(
     properties: &str,
     is_internal: bool,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> (ERef<DemoOfdEntityType>, ERef<DemoOfdEntityView>) {
     let class_model = ERef::new(DemoOfdEntityType::new(
         ModelUuid::now_v7(),
@@ -2305,82 +2311,31 @@ fn new_demoofd_entitytype(
         properties.to_owned(),
         is_internal,
     ));
-    let class_view = new_demoofd_entitytype_view(class_model.clone(), position);
+    let class_view = new_demoofd_entitytype_view(class_model.clone(), position, request_focus);
 
     (class_model, class_view)
 }
 fn new_demoofd_entitytype_view(
     model: ERef<DemoOfdEntityType>,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> ERef<DemoOfdEntityView> {
     let m = model.read();
     ERef::new(DemoOfdEntityView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         name_buffer: (*m.name).clone(),
         properties_buffer: (*m.properties).clone(),
         internal_buffer: m.internal,
         comment_buffer: (*m.comment).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
     })
-}
-
-struct DemoOfdEntityTypeSetupModal {
-    model: ERef<DemoOfdEntityType>,
-    first_frame: bool,
-    name_buffer: String,
-    internal_buffer: bool,
-}
-
-impl From<&ERef<DemoOfdEntityType>> for DemoOfdEntityTypeSetupModal {
-    fn from(model: &ERef<DemoOfdEntityType>) -> Self {
-        let m = model.read();
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            name_buffer: (*m.name).clone(),
-            internal_buffer: m.internal,
-        }
-    }
-}
-
-impl CustomModal for DemoOfdEntityTypeSetupModal {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("Name:");
-        let r = ui.text_edit_singleline(&mut self.name_buffer);
-        ui.checkbox(&mut self.internal_buffer, "internal");
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.name = Arc::new(self.name_buffer.clone());
-                m.internal = self.internal_buffer;
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -2390,6 +2345,8 @@ pub struct DemoOfdEntityView {
     #[nh_context_serde(entity)]
     pub model: ERef<DemoOfdEntityType>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2651,7 +2608,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2659,6 +2616,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_multiline("Properties:", &mut self.properties_buffer)
@@ -3000,6 +2958,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             properties_buffer: self.properties_buffer.clone(),
             internal_buffer: self.internal_buffer,
@@ -3021,6 +2980,7 @@ fn new_demoofd_eventtype(
     base_entity_type: (ERef<DemoOfdEntityType>, DemoOfdElementView),
     specialization_entity_type: Option<(ERef<DemoOfdEntityType>, ERef<DemoOfdEntityView>)>,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> (ERef<DemoOfdEventType>, ERef<DemoOfdEventView>) {
     let (spec_model, spec_view) = specialization_entity_type
         .map(|e| (Some(e.0), Some(e.1)))
@@ -3039,6 +2999,7 @@ fn new_demoofd_eventtype(
         base_entity_type.1,
         spec_view,
         position,
+        request_focus,
     );
 
     (instance_model, instance_view)
@@ -3048,6 +3009,7 @@ fn new_demoofd_eventtype_view(
     base_entity_type: DemoOfdElementView,
     specialization_entity_type: Option<ERef<DemoOfdEntityView>>,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> ERef<DemoOfdEventView> {
     let m = model.read();
     ERef::new(DemoOfdEventView {
@@ -3055,80 +3017,16 @@ fn new_demoofd_eventtype_view(
         model: model.clone(),
         base_entity_type,
         specialization_view: UFOption::from(specialization_entity_type),
+        request_focus,
         kind_buffer: m.kind,
         identifier_buffer: (*m.identifier).clone(),
         name_buffer: (*m.name).clone(),
         comment_buffer: (*m.comment).clone(),
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
     })
-}
-
-struct DemoOfdEventTypeSetupModal {
-    model: ERef<DemoOfdEventType>,
-    first_frame: bool,
-    kind_buffer: DemoTransactionKind,
-    identifier_buffer: String,
-    name_buffer: String,
-}
-
-impl From<&ERef<DemoOfdEventType>> for DemoOfdEventTypeSetupModal {
-    fn from(model: &ERef<DemoOfdEventType>) -> Self {
-        let m = model.read();
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            kind_buffer: m.kind,
-            identifier_buffer: (*m.identifier).clone(),
-            name_buffer: (*m.name).clone(),
-        }
-    }
-}
-
-impl CustomModal for DemoOfdEventTypeSetupModal {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("Transaction Kind:");
-        egui::ComboBox::from_id_salt("transaction kind")
-            .selected_text(self.kind_buffer.as_str())
-            .show_ui(ui, |ui| {
-                for value in DemoTransactionKind::VARIANTS {
-                    ui.selectable_value(&mut self.kind_buffer, value, value.as_str());
-                }
-            });
-        ui.label("Identifier:");
-        let r = ui.text_edit_singleline(&mut self.identifier_buffer);
-        ui.label("Name:");
-        ui.text_edit_singleline(&mut self.name_buffer);
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.kind = self.kind_buffer;
-                m.identifier = Arc::new(self.identifier_buffer.clone());
-                m.name = Arc::new(self.name_buffer.clone());
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -3142,6 +3040,8 @@ pub struct DemoOfdEventView {
     #[nh_context_serde(entity)]
     specialization_view: UFOption<ERef<DemoOfdEntityView>>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     kind_buffer: DemoTransactionKind,
     #[nh_context_serde(skip_and_default)]
@@ -3237,7 +3137,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             });
 
         if ui
-            .labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer)
+            .labeled_text_edit_singleline2(
+                "Identifier:",
+                &mut self.identifier_buffer,
+                self.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3245,6 +3149,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 DemoOfdPropChange::EventIdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
@@ -3857,6 +3762,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             model: modelish,
             base_entity_type: self.base_entity_type.clone(),
             specialization_view,
+            request_focus: false,
             kind_buffer: self.kind_buffer,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -5105,9 +5011,16 @@ pub fn new_demoofd_note(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<DemoOfdNote>, ERef<DemoOfdNoteView>) {
     let model = ERef::new(DemoOfdNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_demoofd_note_view(model.clone(), position, align, background_color);
+    let view = new_demoofd_note_view(
+        model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (model, view)
 }
@@ -5116,16 +5029,18 @@ pub fn new_demoofd_note_view(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<DemoOfdNoteView> {
     let m = model.read();
     ERef::new(DemoOfdNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -5140,6 +5055,8 @@ pub struct DemoOfdNoteView {
     #[nh_context_serde(entity)]
     pub model: ERef<DemoOfdNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -5205,7 +5122,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -5213,6 +5130,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
                 DemoOfdPropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -5627,6 +5545,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             text_buffer: self.text_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,

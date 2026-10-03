@@ -33,8 +33,8 @@ use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::demo::DemoPackageKind;
 use crate::domains::demopsd::demopsd_models::{DemoPsdNote, DemoPsdState, DemoPsdStateInfo};
 use crate::{
-    CustomModal, CustomModalResult, DefaultNameF, DefaultSettingsF, DeserializeControllerF,
-    DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
+    CustomModal, DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, SetShortcut,
 };
 use eframe::{egui, epaint};
 use std::collections::HashSet;
@@ -444,46 +444,54 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         element: DemoPsdElement,
     ) -> Result<DemoPsdElementView, HashSet<ModelUuid>> {
         let v = match element {
-            DemoPsdElement::Package(inner) => DemoPsdElementView::from(new_demopsd_package_view(
+            DemoPsdElement::Package(inner) => new_demopsd_package_view(
                 inner,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 100.0),
                 },
-            )),
+                false,
+            )
+            .into(),
             DemoPsdElement::Transaction(inner) => {
                 let r = inner.read();
 
                 let f = |e: &DemoPsdStateInfo| DemoPsdStateViewInfo {
                     view: match &e.state {
                         DemoPsdState::Fact(inner) => {
-                            new_demopsd_fact_view(inner.clone(), egui::Pos2::ZERO).into()
+                            new_demopsd_fact_view(inner.clone(), egui::Pos2::ZERO, false).into()
                         }
                         DemoPsdState::Act(inner) => {
-                            new_demopsd_act_view(inner.clone(), egui::Pos2::ZERO).into()
+                            new_demopsd_act_view(inner.clone(), egui::Pos2::ZERO, false).into()
                         }
                     },
                     executor: e.executor,
                 };
                 let before = r.before.iter().map(&f).collect();
                 let p_act = if let UFOption::Some(p_act) = &r.p_act {
-                    UFOption::Some(new_demopsd_act_view(p_act.clone(), egui::Pos2::ZERO))
+                    UFOption::Some(new_demopsd_act_view(p_act.clone(), egui::Pos2::ZERO, false))
                 } else {
                     UFOption::None
                 };
                 let after = r.after.iter().map(&f).collect();
 
-                DemoPsdElementView::from(new_demopsd_transaction_view(
+                new_demopsd_transaction_view(
                     inner.clone(),
                     before,
                     p_act,
                     after,
                     egui::Pos2::ZERO,
                     200.0,
-                ))
+                    false,
+                )
+                .into()
             }
-            DemoPsdElement::Fact(inner) => new_demopsd_fact_view(inner, egui::Pos2::ZERO).into(),
-            DemoPsdElement::Act(inner) => new_demopsd_act_view(inner, egui::Pos2::ZERO).into(),
+            DemoPsdElement::Fact(inner) => {
+                new_demopsd_fact_view(inner, egui::Pos2::ZERO, false).into()
+            }
+            DemoPsdElement::Act(inner) => {
+                new_demopsd_act_view(inner, egui::Pos2::ZERO, false).into()
+            }
             DemoPsdElement::Link(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.read().uuid());
@@ -492,18 +500,14 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                DemoPsdElementView::from(new_demopsd_link_view(
-                    inner.clone(),
-                    source_view,
-                    target_view,
-                    None,
-                ))
+                new_demopsd_link_view(inner.clone(), source_view, target_view, None).into()
             }
             DemoPsdElement::Note(inner) => new_demopsd_note_view(
                 inner,
                 egui::Pos2::ZERO,
                 egui::Align2::CENTER_CENTER,
                 MGlobalColor::None,
+                false,
             )
             .into(),
         };
@@ -754,10 +758,10 @@ pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let fact1 = new_demopsd_fact("", false, egui::Pos2::new(100.0, 100.0));
-    let act1 = new_demopsd_act("rq", true, egui::Pos2::ZERO);
-    let fact2 = new_demopsd_fact("TK04/ac", false, egui::Pos2::new(375.0, 400.0));
-    let act2 = new_demopsd_act("", false, egui::Pos2::new(200.0, 500.0));
+    let fact1 = new_demopsd_fact("", false, egui::Pos2::new(100.0, 100.0), false);
+    let act1 = new_demopsd_act("rq", true, egui::Pos2::ZERO, false);
+    let fact2 = new_demopsd_fact("TK04/ac", false, egui::Pos2::new(375.0, 400.0), false);
+    let act2 = new_demopsd_act("", false, egui::Pos2::new(200.0, 500.0), false);
 
     let response_link = new_demopsd_link(
         DemoPsdLinkType::ResponseLink,
@@ -783,6 +787,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![],
         egui::Pos2::new(200.0, 200.0),
         350.0,
+        false,
     );
     let (tx02, tx02_view) = new_demopsd_transaction(
         "02",
@@ -793,6 +798,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![],
         egui::Pos2::new(100.0, 300.0),
         150.0,
+        false,
     );
     let (tx03, tx03_view) = new_demopsd_transaction(
         "03",
@@ -803,6 +809,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![],
         egui::Pos2::new(300.0, 300.0),
         150.0,
+        false,
     );
 
     let models = vec![
@@ -1220,6 +1227,7 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
                 vec![],
                 egui::Pos2::new(100.0, 75.0),
                 200.0,
+                false,
             )
             .1;
             ta_view.write().refresh_buffers();
@@ -1229,7 +1237,7 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
             identifier,
             internal,
         } => {
-            let fact_view = new_demopsd_fact(identifier, *internal, egui::Pos2::ZERO).1;
+            let fact_view = new_demopsd_fact(identifier, *internal, egui::Pos2::ZERO, false).1;
             fact_view.write().refresh_buffers();
             fact_view.into()
         }
@@ -1237,7 +1245,8 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
             identifier,
             internal,
         } => {
-            let act_view = new_demopsd_act(identifier, *internal, egui::Pos2::new(100.0, 75.0)).1;
+            let act_view =
+                new_demopsd_act(identifier, *internal, egui::Pos2::new(100.0, 75.0), false).1;
             act_view.write().refresh_buffers();
             act_view.into()
         }
@@ -1245,8 +1254,8 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
             link_type,
             multiplicity,
         } => {
-            let d1 = new_demopsd_fact("dummy", true, egui::Pos2::ZERO);
-            let d2 = new_demopsd_act("dummy", true, egui::Pos2::new(100.0, 75.0));
+            let d1 = new_demopsd_fact("dummy", true, egui::Pos2::ZERO, false);
+            let d2 = new_demopsd_act("dummy", true, egui::Pos2::new(100.0, 75.0), false);
 
             let link_view = new_demopsd_link(
                 *link_type,
@@ -1266,6 +1275,7 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(150.0, 75.0),
                 },
+                false,
             )
             .1;
             package_view.into()
@@ -1274,7 +1284,7 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
             text,
             align,
             background_color,
-        } => new_demopsd_note(text, egui::Pos2::ZERO, *align, *background_color)
+        } => new_demopsd_note(text, egui::Pos2::ZERO, *align, *background_color, false)
             .1
             .into(),
         DemoPsdToolStage::TransactionEnd
@@ -1540,6 +1550,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     vec![],
                     rect.center(),
                     rect.width(),
+                    true,
                 );
                 self.result = PartialDemoPsdElement::Some(transaction_view.into());
                 self.current_stage = self.initial_stage.clone();
@@ -1552,7 +1563,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 },
                 _,
             ) => {
-                let (_fact_model, fact_view) = new_demopsd_fact(identifier, *internal, pos);
+                let (_fact_model, fact_view) = new_demopsd_fact(identifier, *internal, pos, true);
                 self.result = PartialDemoPsdElement::Some(fact_view.into());
                 self.event_lock = true;
             }
@@ -1563,7 +1574,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 },
                 _,
             ) => {
-                let (_act_model, act_view) = new_demopsd_act(identifier, *internal, pos);
+                let (_act_model, act_view) = new_demopsd_act(identifier, *internal, pos, true);
                 self.result = PartialDemoPsdElement::Some(act_view.into());
                 self.event_lock = true;
             }
@@ -1583,7 +1594,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 },
                 _,
             ) => {
-                let view = new_demopsd_note(text, pos, *align, *background_color).1;
+                let view = new_demopsd_note(text, pos, *align, *background_color, true).1;
                 self.result = PartialDemoPsdElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1639,17 +1650,10 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             PartialDemoPsdElement::Some(element) => {
                 let element = element.clone();
                 self.try_spend();
-                let esm: Option<Box<dyn CustomModal>> = match &element {
-                    DemoPsdElementView::Transaction(inner) => Some(Box::new(
-                        DemoPsdTransactionSetupModal::from(&inner.read().model),
-                    )),
-                    DemoPsdElementView::Fact(..)
-                    | DemoPsdElementView::Act(..)
-                    | DemoPsdElementView::Note(..) => None,
-                    DemoPsdElementView::Package(..) | DemoPsdElementView::Link(..) => {
-                        unreachable!()
-                    }
-                };
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1657,7 +1661,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     element: element.into(),
                     into_model: true,
                 });
-                Ok(esm)
+                Ok(None)
             }
             PartialDemoPsdElement::Link {
                 source,
@@ -1704,9 +1708,13 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.current_stage = self.initial_stage.clone();
 
                 let package_view =
-                    new_demopsd_package(name, *kind, egui::Rect::from_two_pos(*a, *b)).1;
+                    new_demopsd_package(name, *kind, egui::Rect::from_two_pos(*a, *b), true).1;
 
                 self.try_spend();
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1731,6 +1739,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
 pub struct DemoPsdPackageAdapter {
     #[nh_context_serde(entity)]
     model: ERef<DemoPsdPackage>,
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1784,7 +1794,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         >,
     ) {
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1792,6 +1802,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
                 DemoPsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         egui::ComboBox::new("package kind", "Package kind")
             .selected_text(self.kind_buffer.as_str())
@@ -1881,6 +1892,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         };
         Self {
             model,
+            request_focus: false,
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -1894,6 +1906,7 @@ fn new_demopsd_package(
     name: &str,
     kind: DemoPackageKind,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> (ERef<DemoPsdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoPsdPackage::new(
         ModelUuid::now_v7(),
@@ -1901,25 +1914,27 @@ fn new_demopsd_package(
         kind,
         vec![],
     ));
-    let graph_view = new_demopsd_package_view(graph_model.clone(), bounds_rect);
+    let graph_view = new_demopsd_package_view(graph_model.clone(), bounds_rect, request_focus);
 
     (graph_model, graph_view)
 }
 fn new_demopsd_package_view(
     model: ERef<DemoPsdPackage>,
     bounds_rect: egui::Rect,
+    request_focus: bool,
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageViewT::new(
         ViewUuid::now_v7().into(),
         DemoPsdPackageAdapter {
             model: model.clone(),
+            request_focus,
             name_buffer: (*m.name).clone(),
             kind_buffer: m.kind,
             comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
-        canvas::Highlight::NONE,
+        canvas::Highlight::from_selected(request_focus),
         bounds_rect,
     )
 }
@@ -1935,6 +1950,7 @@ fn new_demopsd_transaction(
     after: Vec<(bool, DemoPsdState, DemoPsdStateView)>,
     position: egui::Pos2,
     width: f32,
+    request_focus: bool,
 ) -> (ERef<DemoPsdTransaction>, ERef<DemoPsdTransactionView>) {
     let f = |(executor, state, view)| {
         (
@@ -1966,6 +1982,7 @@ fn new_demopsd_transaction(
         after_views,
         position,
         width,
+        request_focus,
     );
     (tx_model, tx_view)
 }
@@ -1976,6 +1993,7 @@ fn new_demopsd_transaction_view(
     after_views: Vec<DemoPsdStateViewInfo>,
     position: egui::Pos2,
     width: f32,
+    request_focus: bool,
 ) -> ERef<DemoPsdTransactionView> {
     let m = model.read();
     ERef::new(DemoPsdTransactionView {
@@ -1987,81 +2005,17 @@ fn new_demopsd_transaction_view(
         after_views,
         selected_direct_elements: HashSet::new(),
 
+        request_focus,
         kind_buffer: m.kind,
         identifier_buffer: (*m.identifier).clone(),
         name_buffer: (*m.name).clone(),
         comment_buffer: (*m.comment).to_owned(),
 
         dragged_rect: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         tx_outer_rectangle: egui::Rect::from_center_size(position, egui::Vec2::new(width, 50.0)),
         tx_mark_percentage: 0.5,
     })
-}
-
-struct DemoPsdTransactionSetupModal {
-    model: ERef<DemoPsdTransaction>,
-    first_frame: bool,
-    kind_buffer: DemoTransactionKind,
-    identifier_buffer: String,
-    name_buffer: String,
-}
-
-impl From<&ERef<DemoPsdTransaction>> for DemoPsdTransactionSetupModal {
-    fn from(model: &ERef<DemoPsdTransaction>) -> Self {
-        let m = model.read();
-
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            kind_buffer: m.kind,
-            identifier_buffer: (*m.identifier).clone(),
-            name_buffer: (*m.name).clone(),
-        }
-    }
-}
-
-impl CustomModal for DemoPsdTransactionSetupModal {
-    fn show(
-        &mut self,
-        gdc: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("Transaction Kind:");
-        egui::ComboBox::from_id_salt("transaction kind")
-            .selected_text(self.kind_buffer.as_str())
-            .show_ui(ui, |ui| {
-                for value in DemoTransactionKind::VARIANTS {
-                    ui.selectable_value(&mut self.kind_buffer, value, value.as_str());
-                }
-            });
-        ui.label("Identifier:");
-        let r = ui.text_edit_singleline(&mut self.identifier_buffer);
-        ui.label("Name:");
-        ui.text_edit_singleline(&mut self.name_buffer);
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
-                let mut m = self.model.write();
-                m.kind = self.kind_buffer;
-                m.identifier = Arc::new(self.identifier_buffer.clone());
-                m.name = Arc::new(self.name_buffer.clone());
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(
@@ -2089,6 +2043,8 @@ pub struct DemoPsdTransactionView {
     #[nh_context_serde(skip_and_default)]
     selected_direct_elements: HashSet<ViewUuid>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     kind_buffer: DemoTransactionKind,
     #[nh_context_serde(skip_and_default)]
@@ -2287,7 +2243,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             });
 
         if ui
-            .labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer)
+            .labeled_text_edit_singleline2(
+                "Identifier:",
+                &mut self.identifier_buffer,
+                self.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2295,6 +2255,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui
             .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
@@ -3529,6 +3490,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             after_views: new_after_views,
             selected_direct_elements: self.selected_direct_elements.clone(),
 
+            request_focus: false,
             kind_buffer: self.kind_buffer,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -3547,27 +3509,33 @@ fn new_demopsd_fact(
     identifier: &str,
     internal: bool,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> (ERef<DemoPsdFact>, ERef<DemoPsdFactView>) {
     let model = ERef::new(DemoPsdFact::new(
         ModelUuid::now_v7(),
         identifier.to_owned(),
         internal,
     ));
-    let view = new_demopsd_fact_view(model.clone(), position);
+    let view = new_demopsd_fact_view(model.clone(), position, request_focus);
     (model, view)
 }
-fn new_demopsd_fact_view(model: ERef<DemoPsdFact>, position: egui::Pos2) -> ERef<DemoPsdFactView> {
+fn new_demopsd_fact_view(
+    model: ERef<DemoPsdFact>,
+    position: egui::Pos2,
+    request_focus: bool,
+) -> ERef<DemoPsdFactView> {
     let r = model.read();
     ERef::new(DemoPsdFactView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         identifier_buffer: (*r.identifier).clone(),
         internal_buffer: r.internal,
         comment_buffer: (*r.comment).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
     })
 }
@@ -3579,6 +3547,8 @@ pub struct DemoPsdFactView {
     #[nh_context_serde(entity)]
     model: ERef<DemoPsdFact>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     identifier_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -3709,7 +3679,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer)
+            .labeled_text_edit_singleline2(
+                "Identifier:",
+                &mut self.identifier_buffer,
+                self.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3717,6 +3691,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui.checkbox(&mut self.internal_buffer, "internal").changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4005,6 +3980,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             identifier_buffer: self.identifier_buffer.clone(),
             internal_buffer: self.internal_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -4021,27 +3997,33 @@ fn new_demopsd_act(
     identifier: &str,
     internal: bool,
     position: egui::Pos2,
+    request_focus: bool,
 ) -> (ERef<DemoPsdAct>, ERef<DemoPsdActView>) {
     let model = ERef::new(DemoPsdAct::new(
         ModelUuid::now_v7(),
         identifier.to_owned(),
         internal,
     ));
-    let view = new_demopsd_act_view(model.clone(), position);
+    let view = new_demopsd_act_view(model.clone(), position, request_focus);
     (model, view)
 }
-fn new_demopsd_act_view(model: ERef<DemoPsdAct>, position: egui::Pos2) -> ERef<DemoPsdActView> {
+fn new_demopsd_act_view(
+    model: ERef<DemoPsdAct>,
+    position: egui::Pos2,
+    request_focus: bool,
+) -> ERef<DemoPsdActView> {
     let r = model.read();
     ERef::new(DemoPsdActView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         identifier_buffer: (*r.identifier).clone(),
         internal_buffer: r.internal,
         comment_buffer: (*r.comment).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         bounds_rect: egui::Rect::from_center_size(position, DemoPsdActView::SIZE),
     })
 }
@@ -4053,6 +4035,8 @@ pub struct DemoPsdActView {
     #[nh_context_serde(entity)]
     model: ERef<DemoPsdAct>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     identifier_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -4181,7 +4165,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer)
+            .labeled_text_edit_singleline2(
+                "Identifier:",
+                &mut self.identifier_buffer,
+                self.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4189,6 +4177,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         if ui.checkbox(&mut self.internal_buffer, "internal").changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4477,6 +4466,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             identifier_buffer: self.identifier_buffer.clone(),
             internal_buffer: self.internal_buffer,
             comment_buffer: self.comment_buffer.clone(),
@@ -4749,9 +4739,16 @@ pub fn new_demopsd_note(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> (ERef<DemoPsdNote>, ERef<DemoPsdNoteView>) {
     let model = ERef::new(DemoPsdNote::new(ModelUuid::now_v7(), text.to_owned()));
-    let view = new_demopsd_note_view(model.clone(), position, align, background_color);
+    let view = new_demopsd_note_view(
+        model.clone(),
+        position,
+        align,
+        background_color,
+        request_focus,
+    );
 
     (model, view)
 }
@@ -4760,16 +4757,18 @@ pub fn new_demopsd_note_view(
     position: egui::Pos2,
     align: egui::Align2,
     background_color: MGlobalColor,
+    request_focus: bool,
 ) -> ERef<DemoPsdNoteView> {
     let m = model.read();
     ERef::new(DemoPsdNoteView {
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        request_focus,
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
+        highlight: canvas::Highlight::from_selected(request_focus),
         position,
         align,
         bounds_rect: egui::Rect::from_min_max(position, position),
@@ -4784,6 +4783,8 @@ pub struct DemoPsdNoteView {
     #[nh_context_serde(entity)]
     pub model: ERef<DemoPsdNote>,
 
+    #[nh_context_serde(skip_and_default)]
+    request_focus: bool,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -4849,7 +4850,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .labeled_text_edit_multiline2("Text:", &mut self.text_buffer, self.request_focus)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -4857,6 +4858,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
                 DemoPsdPropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
+        self.request_focus = false;
 
         ui.label("View properties");
 
@@ -5271,6 +5273,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            request_focus: false,
             text_buffer: self.text_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
