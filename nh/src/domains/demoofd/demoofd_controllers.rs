@@ -2098,13 +2098,16 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
 pub struct DemoOfdPackageAdapter {
     #[nh_context_serde(entity)]
     model: ERef<DemoOfdPackage>,
+    #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
+    temporaries: DemoOfdPackageAdapterTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct DemoOfdPackageAdapterTemporaries {
     request_focus: bool,
-    #[nh_context_serde(skip_and_default)]
     name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     kind_buffer: DemoPackageKind,
-    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
 
@@ -2133,7 +2136,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
     ) -> Result<(), (egui::Color32, canvas::Stroke)> {
-        Err(match self.kind_buffer {
+        Err(match self.temporaries.kind_buffer {
             DemoPackageKind::Package => (
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -2153,39 +2156,43 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         >,
     ) {
         if ui
-            .labeled_text_edit_multiline2("Name:", &mut self.name_buffer, self.request_focus)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                DemoOfdPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
-        self.request_focus = false;
+        self.temporaries.request_focus = false;
 
         egui::ComboBox::new("package kind", "Package kind")
-            .selected_text(self.kind_buffer.as_str())
+            .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in DemoPackageKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str())
                         .clicked()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            DemoOfdPropChange::PackageKindChange(self.kind_buffer),
+                            DemoOfdPropChange::PackageKindChange(self.temporaries.kind_buffer),
                         ));
                     }
                 }
             });
 
         if ui
-            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
     }
@@ -2231,8 +2238,8 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn deep_copy_init(
@@ -2251,10 +2258,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         };
         Self {
             model,
-            request_focus: false,
-            name_buffer: self.name_buffer.clone(),
-            kind_buffer: self.kind_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
+            temporaries: self.temporaries.clone(),
         }
     }
 
@@ -2287,10 +2291,12 @@ fn new_demoofd_package_view(
         ViewUuid::now_v7().into(),
         DemoOfdPackageAdapter {
             model: model.clone(),
-            request_focus,
-            name_buffer: (*m.name).clone(),
-            kind_buffer: m.kind,
-            comment_buffer: (*m.comment).clone(),
+            temporaries: DemoOfdPackageAdapterTemporaries {
+                request_focus,
+                name_buffer: (*m.name).clone(),
+                kind_buffer: m.kind,
+                comment_buffer: (*m.comment).clone(),
+            },
         },
         Vec::new(),
         canvas::Highlight::from_selected(request_focus),
