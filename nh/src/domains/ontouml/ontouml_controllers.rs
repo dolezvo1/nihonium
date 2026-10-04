@@ -60,7 +60,7 @@ impl UmlClassProfile for OntoUmlProfile {
             commands.push(ProjectCommand::AddCustomTab(
                 uuid,
                 Arc::new(RwLock::new(
-                    super::ontouml_validations::OntoUMLValidationTab::new(
+                    super::ontouml_validations::OntoUmlValidationTab::new(
                         model.clone(),
                         *view_uuid,
                     ),
