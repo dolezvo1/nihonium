@@ -430,7 +430,7 @@ impl CustomTab for OntoUmlValidationTab {
 fn validate(
     model: &ERef<UmlClassDiagram>,
     check_errors: bool,
-    antipattern_settings: OntoUmlAntipatternSettings,
+    aps: OntoUmlAntipatternSettings,
 ) -> Vec<ValidationProblem> {
     let mut problems = Vec::new();
 
@@ -438,84 +438,83 @@ fn validate(
         problems.extend(validate_structure(model));
     }
 
-    if antipattern_settings.check_binover {
+    if aps.check_binover {
         validate_binover(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_decint {
+    if aps.check_decint {
         validate_decint(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_depphase {
+    if aps.check_depphase {
         validate_depphase(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_freerole {
+    if aps.check_freerole {
         validate_freerole(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_gsrig {
+    if aps.check_gsrig {
         validate_gsrig(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_hetcoll {
+    if aps.check_hetcoll {
         validate_hetcoll(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_homofunc {
+    if aps.check_homofunc {
         validate_homofunc(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_impabs {
+    if aps.check_impabs {
         // validate_impabs(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_mixiden {
+    if aps.check_mixiden {
         // validate_mixiden(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_mixrig {
+    if aps.check_mixrig {
         validate_mixrig(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_multdep {
-        validate_multdep(&mut problems, &model.read());
-    }
-
-    if antipattern_settings.check_partover {
-        // validate_partover(&mut problems, &model.read());
-    }
-
-    if antipattern_settings.check_relcomp || antipattern_settings.check_relspec {
-        validate_relcomp_relspec(
+    if aps.check_multdep || aps.check_relrig || aps.check_reprel {
+        validate_multdep_relrig_reprel(
             &mut problems,
             &model.read(),
-            antipattern_settings.check_relcomp,
-            antipattern_settings.check_relspec,
+            aps.check_multdep,
+            aps.check_relrig,
+            aps.check_reprel,
         );
     }
 
-    if antipattern_settings.check_relover {
+    if aps.check_partover {
+        // validate_partover(&mut problems, &model.read());
+    }
+
+    if aps.check_relcomp || aps.check_relspec {
+        validate_relcomp_relspec(
+            &mut problems,
+            &model.read(),
+            aps.check_relcomp,
+            aps.check_relspec,
+        );
+    }
+
+    if aps.check_relover {
         // validate_relover(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_relrig {
-        validate_relrig(&mut problems, &model.read());
+    if aps.check_undefformal || aps.check_undefphase {
+        validate_undefformal_undefphase(
+            &mut problems,
+            &model.read(),
+            aps.check_undefformal,
+            aps.check_undefphase,
+        );
     }
 
-    if antipattern_settings.check_reprel {
-        validate_reprel(&mut problems, &model.read());
-    }
-
-    if antipattern_settings.check_undefformal {
-        validate_undefformal(&mut problems, &model.read());
-    }
-
-    if antipattern_settings.check_undefphase {
-        validate_undefphase(&mut problems, &model.read());
-    }
-
-    if antipattern_settings.check_wholeover {
+    if aps.check_wholeover {
         // validate_wholeover(&mut problems, &model.read());
     }
 
@@ -1816,185 +1815,184 @@ fn validate_mixrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     }
 }
 
-#[derive(Default)]
-struct RelatorInfo {
-    stereotype: Option<Arc<String>>,
-    has_associated_rigids: bool,
-    total_mediations: u32,
-    has_nonrepeatable_mediations: bool,
-    parents: Vec<ERef<UmlClassGeneralization>>,
-    associated_relators: Vec<ModelUuid>,
-}
-fn is_relator(infos: &HashMap<ModelUuid, RelatorInfo>, a: ModelUuid) -> bool {
-    fn is_relator_inner(
-        visited: &mut HashSet<ModelUuid>,
-        infos: &HashMap<ModelUuid, RelatorInfo>,
-        a: ModelUuid,
-    ) -> bool {
-        if visited.contains(&a) {
-            return false;
-        }
-        visited.insert(a);
-
-        let e = infos.get(&a).unwrap();
-        let result = if let Some(s) = &e.stereotype
-            && **s == ontouml_models::RELATOR
-        {
-            true
-        } else {
-            e.parents.iter().any(|e| {
-                e.read()
-                    .targets
-                    .iter()
-                    .any(|e| is_relator_inner(visited, infos, *e.read().uuid))
-            })
-        };
-
-        visited.remove(&a);
-        result
-    }
-
-    is_relator_inner(&mut HashSet::new(), infos, a)
-}
-fn collect_relator_infos(m: &UmlClassDiagram) -> HashMap<ModelUuid, RelatorInfo> {
-    fn r_collect1(infos: &mut HashMap<ModelUuid, RelatorInfo>, e: &UmlClassElement) {
-        match e {
-            UmlClassElement::Package(inner) => {
-                let m = inner.read();
-                for e in &m.contained_elements {
-                    r_collect1(infos, e);
-                }
-            }
-            UmlClassElement::Class(inner) => {
-                let r = inner.read();
-                infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
-            }
-            UmlClassElement::Generalization(inner) => {
-                let r = inner.read();
-                for e in &r.sources {
-                    infos
-                        .entry(*e.read().uuid)
-                        .or_default()
-                        .parents
-                        .push(inner.clone());
-                }
-            }
-            _ => {}
-        }
-    }
-    let mut infos = HashMap::new();
-    for e in &m.contained_elements {
-        r_collect1(&mut infos, e);
-    }
-    fn r_collect2(infos: &mut HashMap<ModelUuid, RelatorInfo>, e: &UmlClassElement) {
-        match e {
-            UmlClassElement::Package(inner) => {
-                let m = inner.read();
-                for e in &m.contained_elements {
-                    r_collect2(infos, e);
-                }
-            }
-            UmlClassElement::Association(inner) => {
-                let r = inner.read();
-                if *r.stereotype == ontouml_models::MEDIATION {
-                    if let UmlClassAssociable::Class(s) = &r.source
-                        && is_relator(infos, *s.read().uuid)
-                    {
-                        infos
-                            .entry(*r.target.uuid())
-                            .or_default()
-                            .associated_relators
-                            .push(*s.read().uuid);
-                    }
-                    if let UmlClassAssociable::Class(t) = &r.target
-                        && is_relator(infos, *t.read().uuid)
-                    {
-                        infos
-                            .entry(*r.source.uuid())
-                            .or_default()
-                            .associated_relators
-                            .push(*t.read().uuid);
-                    }
-
-                    if let UmlClassAssociable::Class(s) = &r.source
-                        && is_rigid(&s.read().stereotype)
-                    {
-                        infos
-                            .entry(*r.target.uuid())
-                            .or_default()
-                            .has_associated_rigids = true;
-                    }
-                    if let UmlClassAssociable::Class(t) = &r.target
-                        && is_rigid(&t.read().stereotype)
-                    {
-                        infos
-                            .entry(*r.source.uuid())
-                            .or_default()
-                            .has_associated_rigids = true;
-                    }
-
-                    if let UmlClassAssociable::Class(s) = &r.source {
-                        let e = infos.entry(*s.read().uuid).or_default();
-                        e.total_mediations += 1;
-                        if let Some((_, um)) = parse_multiplicity(&r.source_label_multiplicity)
-                            && um.is_some_and(|e| e <= 1)
-                        {
-                            e.has_nonrepeatable_mediations = true;
-                        }
-                    }
-                    if let UmlClassAssociable::Class(t) = &r.target {
-                        let e = infos.entry(*t.read().uuid).or_default();
-                        if t.read().uuid != r.source.uuid() {
-                            e.total_mediations += 1;
-                        }
-                        if let Some((_, um)) = parse_multiplicity(&r.target_label_multiplicity)
-                            && um.is_some_and(|e| e <= 1)
-                        {
-                            e.has_nonrepeatable_mediations = true;
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    for e in &m.contained_elements {
-        r_collect2(&mut infos, e);
-    }
-    infos
-}
-
 // MultDep (Multiple Relational Dependency)
-fn validate_multdep(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
+// RelRig (Relator Mediating Rigid Types)
+// RepRel (Repeatable Relator)
+fn validate_multdep_relrig_reprel(
+    problems: &mut Vec<ValidationProblem>,
+    m: &UmlClassDiagram,
+    check_multdep: bool,
+    check_relrig: bool,
+    check_reprel: bool,
+) {
+    #[derive(Default)]
+    struct RelatorInfo {
+        stereotype: Option<Arc<String>>,
+        has_associated_rigids: bool,
+        total_mediations: u32,
+        has_nonrepeatable_mediations: bool,
+        parents: Vec<ERef<UmlClassGeneralization>>,
+        associated_relators: Vec<ModelUuid>,
+    }
+    fn is_relator(infos: &HashMap<ModelUuid, RelatorInfo>, a: ModelUuid) -> bool {
+        fn is_relator_inner(
+            visited: &mut HashSet<ModelUuid>,
+            infos: &HashMap<ModelUuid, RelatorInfo>,
+            a: ModelUuid,
+        ) -> bool {
+            if visited.contains(&a) {
+                return false;
+            }
+            visited.insert(a);
+
+            let e = infos.get(&a).unwrap();
+            let result = if let Some(s) = &e.stereotype
+                && **s == ontouml_models::RELATOR
+            {
+                true
+            } else {
+                e.parents.iter().any(|e| {
+                    e.read()
+                        .targets
+                        .iter()
+                        .any(|e| is_relator_inner(visited, infos, *e.read().uuid))
+                })
+            };
+
+            visited.remove(&a);
+            result
+        }
+
+        is_relator_inner(&mut HashSet::new(), infos, a)
+    }
+    fn collect_relator_infos(m: &UmlClassDiagram) -> HashMap<ModelUuid, RelatorInfo> {
+        fn r_collect1(infos: &mut HashMap<ModelUuid, RelatorInfo>, e: &UmlClassElement) {
+            match e {
+                UmlClassElement::Package(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_collect1(infos, e);
+                    }
+                }
+                UmlClassElement::Class(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+                }
+                UmlClassElement::Generalization(inner) => {
+                    let r = inner.read();
+                    for e in &r.sources {
+                        infos
+                            .entry(*e.read().uuid)
+                            .or_default()
+                            .parents
+                            .push(inner.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_collect1(&mut infos, e);
+        }
+        fn r_collect2(infos: &mut HashMap<ModelUuid, RelatorInfo>, e: &UmlClassElement) {
+            match e {
+                UmlClassElement::Package(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_collect2(infos, e);
+                    }
+                }
+                UmlClassElement::Association(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::MEDIATION {
+                        if let UmlClassAssociable::Class(s) = &r.source
+                            && is_relator(infos, *s.read().uuid)
+                        {
+                            infos
+                                .entry(*r.target.uuid())
+                                .or_default()
+                                .associated_relators
+                                .push(*s.read().uuid);
+                        }
+                        if let UmlClassAssociable::Class(t) = &r.target
+                            && is_relator(infos, *t.read().uuid)
+                        {
+                            infos
+                                .entry(*r.source.uuid())
+                                .or_default()
+                                .associated_relators
+                                .push(*t.read().uuid);
+                        }
+
+                        if let UmlClassAssociable::Class(s) = &r.source
+                            && is_rigid(&s.read().stereotype)
+                        {
+                            infos
+                                .entry(*r.target.uuid())
+                                .or_default()
+                                .has_associated_rigids = true;
+                        }
+                        if let UmlClassAssociable::Class(t) = &r.target
+                            && is_rigid(&t.read().stereotype)
+                        {
+                            infos
+                                .entry(*r.source.uuid())
+                                .or_default()
+                                .has_associated_rigids = true;
+                        }
+
+                        if let UmlClassAssociable::Class(s) = &r.source {
+                            let e = infos.entry(*s.read().uuid).or_default();
+                            e.total_mediations += 1;
+                            if let Some((_, um)) = parse_multiplicity(&r.source_label_multiplicity)
+                                && um.is_some_and(|e| e <= 1)
+                            {
+                                e.has_nonrepeatable_mediations = true;
+                            }
+                        }
+                        if let UmlClassAssociable::Class(t) = &r.target {
+                            let e = infos.entry(*t.read().uuid).or_default();
+                            if t.read().uuid != r.source.uuid() {
+                                e.total_mediations += 1;
+                            }
+                            if let Some((_, um)) = parse_multiplicity(&r.target_label_multiplicity)
+                                && um.is_some_and(|e| e <= 1)
+                            {
+                                e.has_nonrepeatable_mediations = true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for e in &m.contained_elements {
+            r_collect2(&mut infos, e);
+        }
+        infos
+    }
+
     let infos = collect_relator_infos(m);
     for e in &infos {
         // TODO: test they are not ancestors?
-        if e.1.associated_relators.len() > 1 {
+        if check_multdep && e.1.associated_relators.len() > 1 {
             problems.push(ValidationProblem::AntiPattern {
                 uuid: *e.0,
                 antipattern_type: AntiPatternType::MultDep,
             });
         }
-    }
-}
-// RelRig (Relator Mediating Rigid Types)
-fn validate_relrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
-    let infos = collect_relator_infos(m);
-    for e in &infos {
         // TODO: test they are not ancestors?
-        if e.1.has_associated_rigids && is_relator(&infos, *e.0) {
+        if check_relrig && e.1.has_associated_rigids && is_relator(&infos, *e.0) {
             problems.push(ValidationProblem::AntiPattern {
                 uuid: *e.0,
                 antipattern_type: AntiPatternType::RelRig,
             });
         }
-    }
-}
-// RepRel (Repeatable Relator)
-fn validate_reprel(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
-    let infos = collect_relator_infos(m);
-    for e in &infos {
-        if e.1.total_mediations > 0 && !e.1.has_nonrepeatable_mediations && is_relator(&infos, *e.0)
+        if check_reprel
+            && e.1.total_mediations > 0
+            && !e.1.has_nonrepeatable_mediations
+            && is_relator(&infos, *e.0)
         {
             problems.push(ValidationProblem::AntiPattern {
                 uuid: *e.0,
@@ -2130,91 +2128,98 @@ fn validate_relcomp_relspec(
     }
 }
 
-#[derive(Default)]
-struct UndefInfo {
-    stereotype: Option<Arc<String>>,
-    has_intrinsics: bool,
-    parents: Vec<ERef<UmlClassGeneralization>>,
-}
-fn collect_undef_infos(m: &UmlClassDiagram) -> HashMap<ModelUuid, UndefInfo> {
-    fn r_inner(infos: &mut HashMap<ModelUuid, UndefInfo>, e: &UmlClassElement) {
-        match e {
-            UmlClassElement::Package(inner) => {
-                let m = inner.read();
-                for e in &m.contained_elements {
-                    r_inner(infos, e);
+// UndefFormal (Undefined Formal Association)
+// UndefPhase (Undefined Phase Partition)
+fn validate_undefformal_undefphase(
+    problems: &mut Vec<ValidationProblem>,
+    m: &UmlClassDiagram,
+    check_undefformal: bool,
+    check_undefphase: bool,
+) {
+    #[derive(Default)]
+    struct UndefInfo {
+        stereotype: Option<Arc<String>>,
+        has_intrinsics: bool,
+        parents: Vec<ERef<UmlClassGeneralization>>,
+    }
+    fn collect_undef_infos(m: &UmlClassDiagram) -> HashMap<ModelUuid, UndefInfo> {
+        fn r_inner(infos: &mut HashMap<ModelUuid, UndefInfo>, e: &UmlClassElement) {
+            match e {
+                UmlClassElement::Package(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_inner(infos, e);
+                    }
                 }
-            }
-            UmlClassElement::Class(inner) => {
-                let r = inner.read();
-                let e = infos.entry(*r.uuid).or_default();
-                e.stereotype = Some(r.stereotype.clone());
-                if !r.properties.is_empty() {
-                    e.has_intrinsics = true;
+                UmlClassElement::Class(inner) => {
+                    let r = inner.read();
+                    let e = infos.entry(*r.uuid).or_default();
+                    e.stereotype = Some(r.stereotype.clone());
+                    if !r.properties.is_empty() {
+                        e.has_intrinsics = true;
+                    }
                 }
-            }
-            UmlClassElement::Association(inner) => {
-                let r = inner.read();
-                if *r.stereotype == ontouml_models::CHARACTERIZATION {
-                    infos.entry(*r.source.uuid()).or_default().has_intrinsics = true;
+                UmlClassElement::Association(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::CHARACTERIZATION {
+                        infos.entry(*r.source.uuid()).or_default().has_intrinsics = true;
+                    }
                 }
-            }
-            UmlClassElement::Generalization(inner) => {
-                let r = inner.read();
-                for e in &r.sources {
-                    infos
-                        .entry(*e.read().uuid())
-                        .or_default()
-                        .parents
-                        .push(inner.clone());
+                UmlClassElement::Generalization(inner) => {
+                    let r = inner.read();
+                    for e in &r.sources {
+                        infos
+                            .entry(*e.read().uuid())
+                            .or_default()
+                            .parents
+                            .push(inner.clone());
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
-    }
 
-    let mut infos = HashMap::new();
-    for e in &m.contained_elements {
-        r_inner(&mut infos, e);
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_inner(&mut infos, e);
+        }
+        infos
     }
-    infos
-}
-fn has_intrinsics_including_transitively(
-    infos: &HashMap<ModelUuid, UndefInfo>,
-    e: ModelUuid,
-) -> bool {
-    fn inner(
-        visited: &mut HashSet<ModelUuid>,
+    fn has_intrinsics_including_transitively(
         infos: &HashMap<ModelUuid, UndefInfo>,
         e: ModelUuid,
     ) -> bool {
-        if visited.contains(&e) {
-            return false;
+        fn inner(
+            visited: &mut HashSet<ModelUuid>,
+            infos: &HashMap<ModelUuid, UndefInfo>,
+            e: ModelUuid,
+        ) -> bool {
+            if visited.contains(&e) {
+                return false;
+            }
+            visited.insert(e);
+
+            let e2 = infos.get(&e).unwrap();
+            let result = if e2.has_intrinsics {
+                true
+            } else {
+                e2.parents.iter().any(|e| {
+                    e.read()
+                        .targets
+                        .iter()
+                        .any(|e| inner(visited, infos, *e.read().uuid))
+                })
+            };
+
+            visited.remove(&e);
+            result
         }
-        visited.insert(e);
 
-        let e2 = infos.get(&e).unwrap();
-        let result = if e2.has_intrinsics {
-            true
-        } else {
-            e2.parents.iter().any(|e| {
-                e.read()
-                    .targets
-                    .iter()
-                    .any(|e| inner(visited, infos, *e.read().uuid))
-            })
-        };
-
-        visited.remove(&e);
-        result
+        inner(&mut HashSet::new(), infos, e)
     }
 
-    inner(&mut HashSet::new(), infos, e)
-}
-
-// UndefFormal (Undefined Formal Association)
-fn validate_undefformal(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     let infos = collect_undef_infos(m);
+
     fn r_undefformal_test(
         problems: &mut Vec<ValidationProblem>,
         infos: &HashMap<ModelUuid, UndefInfo>,
@@ -2245,10 +2250,7 @@ fn validate_undefformal(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagr
     for e in &m.contained_elements {
         r_undefformal_test(problems, &infos, e);
     }
-}
-// UndefPhase (Undefined Phase Partition)
-fn validate_undefphase(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
-    let infos = collect_undef_infos(m);
+
     for e in &infos {
         if let Some(s) = &e.1.stereotype
             && **s == ontouml_models::PHASE
