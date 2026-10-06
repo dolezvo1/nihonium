@@ -22,6 +22,50 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
+struct OntoUmlErrorsSettings {
+    check_subtyping: bool,
+    check_identity: bool,
+    check_relations: bool,
+    check_phase: bool,
+    check_role: bool,
+    check_relator: bool,
+    check_other: bool,
+}
+
+impl OntoUmlErrorsSettings {
+    const NONE: Self = Self {
+        check_subtyping: false,
+        check_identity: false,
+        check_relations: false,
+        check_phase: false,
+        check_role: false,
+        check_relator: false,
+        check_other: false,
+    };
+    const ALL: Self = Self {
+        check_subtyping: true,
+        check_identity: true,
+        check_relations: true,
+        check_phase: true,
+        check_role: true,
+        check_relator: true,
+        check_other: true,
+    };
+
+    const fn and(&self, b: bool) -> Self {
+        Self {
+            check_subtyping: self.check_subtyping && b,
+            check_identity: self.check_identity && b,
+            check_relations: self.check_relations && b,
+            check_phase: self.check_phase && b,
+            check_role: self.check_role && b,
+            check_relator: self.check_relator && b,
+            check_other: self.check_other && b,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 struct OntoUmlAntipatternSettings {
     check_binover: bool,
     check_decint: bool,
@@ -200,6 +244,7 @@ pub struct OntoUmlValidationTab {
     model: ERef<UmlClassDiagram>,
     view_uuid: ViewUuid,
     check_errors: bool,
+    errors_settings: OntoUmlErrorsSettings,
     check_antipatterns: bool,
     antipatterns_settings: OntoUmlAntipatternSettings,
     results: Option<Vec<ValidationProblem>>,
@@ -211,6 +256,7 @@ impl OntoUmlValidationTab {
             model,
             view_uuid,
             check_errors: true,
+            errors_settings: OntoUmlErrorsSettings::ALL,
             check_antipatterns: false,
             antipatterns_settings: OntoUmlAntipatternSettings {
                 check_impabs: false,
@@ -247,7 +293,19 @@ impl CustomTab for OntoUmlValidationTab {
                 );
             }
 
-            ui.checkbox(&mut self.check_errors, "Check errors");
+            ui.add(egui::Checkbox::without_text(&mut self.check_errors));
+            ui.collapsing("Check errors", |ui| {
+                ui.checkbox(&mut self.errors_settings.check_subtyping, "Subtyping");
+                ui.checkbox(&mut self.errors_settings.check_identity, "Identity");
+                ui.checkbox(&mut self.errors_settings.check_relations, "Relations");
+                ui.checkbox(&mut self.errors_settings.check_phase, "Phase partition");
+                ui.checkbox(&mut self.errors_settings.check_role, "Role dependency");
+                ui.checkbox(
+                    &mut self.errors_settings.check_relator,
+                    "Relator mediations",
+                );
+                ui.checkbox(&mut self.errors_settings.check_other, "Other");
+            });
             ui.add(egui::Checkbox::without_text(&mut self.check_antipatterns));
             ui.collapsing("Check antipatterns", |ui| {
                 ui.checkbox(&mut self.antipatterns_settings.check_binover, "BinOver");
@@ -299,7 +357,7 @@ impl CustomTab for OntoUmlValidationTab {
             if ui.button("Validate").clicked() {
                 let results = validate(
                     &self.model,
-                    self.check_errors,
+                    self.errors_settings.and(self.check_errors),
                     self.antipatterns_settings.and(self.check_antipatterns),
                 );
 
@@ -429,14 +487,12 @@ impl CustomTab for OntoUmlValidationTab {
 
 fn validate(
     model: &ERef<UmlClassDiagram>,
-    check_errors: bool,
+    es: OntoUmlErrorsSettings,
     aps: OntoUmlAntipatternSettings,
 ) -> Vec<ValidationProblem> {
     let mut problems = Vec::new();
 
-    if check_errors {
-        problems.extend(validate_structure(model));
-    }
+    problems.extend(validate_structure(model, es));
 
     if aps.check_binover {
         validate_binover(&mut problems, &model.read());
@@ -539,7 +595,10 @@ fn parse_multiplicity(m: &str) -> Option<(usize, Option<usize>)> {
         }
     }
 }
-fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
+fn validate_structure(
+    model: &ERef<UmlClassDiagram>,
+    es: OntoUmlErrorsSettings,
+) -> Vec<ValidationProblem> {
     let mut problems = Vec::new();
     let m = model.read();
 
@@ -634,6 +693,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
     }
     fn r_validate_subtyping(
         problems: &mut Vec<ValidationProblem>,
+        es: &OntoUmlErrorsSettings,
         element_infos: &mut HashMap<ModelUuid, ElementInfo>,
         e: &UmlClassElement,
     ) {
@@ -641,15 +701,16 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
             UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
-                    r_validate_subtyping(problems, element_infos, e);
+                    r_validate_subtyping(problems, es, element_infos, e);
                 }
             }
             UmlClassElement::Class(inner) => {
                 let m = inner.read();
                 let e = element_infos.entry(*m.uuid).or_default();
 
-                if ontouml_models::ontouml_class_stereotype_literal(&m.stereotype)
-                    .is_none_or(|e| e == ontouml_models::NONE)
+                if es.check_other
+                    && ontouml_models::ontouml_class_stereotype_literal(&m.stereotype)
+                        .is_none_or(|e| e == ontouml_models::NONE)
                 {
                     problems.push(ValidationProblem::Error {
                         uuid: *m.uuid,
@@ -705,7 +766,9 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     }
 
                     for t in &m.targets {
-                        if !valid_direct_subtyping(&s.read().stereotype, &t.read().stereotype) {
+                        if es.check_subtyping
+                            && !valid_direct_subtyping(&s.read().stereotype, &t.read().stereotype)
+                        {
                             problems.push(ValidationProblem::Error {
                                 uuid: *m.uuid,
                                 error_type: ErrorType::InvalidSubtyping,
@@ -722,14 +785,19 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
             UmlClassElement::Association(inner) => {
                 let m = inner.read();
 
-                if ontouml_models::ontouml_association_stereotype_literal(&m.stereotype)
-                    .is_none_or(|e| e == ontouml_models::NONE)
+                if es.check_other
+                    && ontouml_models::ontouml_association_stereotype_literal(&m.stereotype)
+                        .is_none_or(|e| e == ontouml_models::NONE)
                 {
                     problems.push(ValidationProblem::Error {
                         uuid: *m.uuid,
                         error_type: ErrorType::InvalidStereotype,
                         text: "Invalid or missing stereotype".to_string(),
                     });
+                }
+
+                if !es.check_relations {
+                    return;
                 }
 
                 let source_multiplicity = parse_multiplicity(&m.source_label_multiplicity);
@@ -1015,7 +1083,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
     }
     let mut element_infos = HashMap::new();
     for e in &m.contained_elements {
-        r_validate_subtyping(&mut problems, &mut element_infos, e);
+        r_validate_subtyping(&mut problems, &es, &mut element_infos, e);
     }
     for (k, info) in &element_infos {
         fn has_matching_supertype<F: Fn(&ElementInfo) -> bool>(
@@ -1050,7 +1118,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
             has_matching_supertype_inner(&mut HashSet::new(), infos, a, f)
         }
 
-        if requires_identity(&info.stereotype)
+        if es.check_identity
+            && requires_identity(&info.stereotype)
             && (info.identity_providers_min != 1 || info.identity_providers_max != 1)
         {
             problems.push(ValidationProblem::Error {
@@ -1087,7 +1156,9 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                 0
             }
         }
-        if info.stereotype.as_str() == ontouml_models::ROLE && r_lowerbounds(&element_infos, k) == 0
+        if es.check_role
+            && info.stereotype.as_str() == ontouml_models::ROLE
+            && r_lowerbounds(&element_infos, k) == 0
         {
             problems.push(ValidationProblem::Error {
                 uuid: *k,
@@ -1096,7 +1167,8 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
             });
         }
 
-        if !info.is_abstract
+        if es.check_relator
+            && !info.is_abstract
             && (info.stereotype.as_str() == ontouml_models::RELATOR
                 || has_matching_supertype(&element_infos, *k, &|e| {
                     e.stereotype.as_str() == ontouml_models::RELATOR
@@ -1109,17 +1181,21 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                 text: "«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2".to_string(),
             });
         }
-        if info.stereotype.as_str() == ontouml_models::PHASE && !info.in_disjoint_complete_set {
+        if es.check_phase
+            && info.stereotype.as_str() == ontouml_models::PHASE
+            && !info.in_disjoint_complete_set
+        {
             problems.push(ValidationProblem::Error {
                 uuid: *k,
                 error_type: ErrorType::InvalidPhase,
                 text: "«phase» must always be part of a generalization set which is disjoint and complete".to_string(),
             });
         }
-        if (info.stereotype.as_str() == ontouml_models::CATEGORY
-            || info.stereotype.as_str() == ontouml_models::MIXIN
-            || info.stereotype.as_str() == ontouml_models::PHASE_MIXIN
-            || info.stereotype.as_str() == ontouml_models::ROLE_MIXIN)
+        if es.check_other
+            && (info.stereotype.as_str() == ontouml_models::CATEGORY
+                || info.stereotype.as_str() == ontouml_models::MIXIN
+                || info.stereotype.as_str() == ontouml_models::PHASE_MIXIN
+                || info.stereotype.as_str() == ontouml_models::ROLE_MIXIN)
             && !info.is_abstract
         {
             problems.push(ValidationProblem::Error {
@@ -1128,8 +1204,9 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                 text: format!("«{}» must always be abstract", info.stereotype),
             });
         }
-        if (info.stereotype.as_str() == ontouml_models::QUALITY
-            || info.stereotype.as_str() == ontouml_models::MODE)
+        if es.check_other
+            && (info.stereotype.as_str() == ontouml_models::QUALITY
+                || info.stereotype.as_str() == ontouml_models::MODE)
             && info.direct_characterizations_toward < 1
         {
             problems.push(ValidationProblem::Error {
@@ -2339,7 +2416,14 @@ mod test {
         antipatterns: OntoUmlAntipatternSettings,
     ) -> Vec<ValidationProblem> {
         let d = new_diagram(elements);
-        super::validate(&d, check_errors, antipatterns)
+        super::validate(
+            &d,
+            match check_errors {
+                false => super::OntoUmlErrorsSettings::NONE,
+                true => super::OntoUmlErrorsSettings::ALL,
+            },
+            antipatterns,
+        )
     }
 
     // Structure validations tests
