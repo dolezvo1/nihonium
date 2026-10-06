@@ -218,7 +218,6 @@ impl OntoUmlValidationTab {
                 check_partover: false,
                 check_relcomp: false,
                 check_relover: false,
-                check_relspec: false,
                 check_reprel: false,
                 check_wholeover: false,
                 ..OntoUmlAntipatternSettings::ALL
@@ -283,10 +282,7 @@ impl CustomTab for OntoUmlValidationTab {
                     egui::Checkbox::new(&mut self.antipatterns_settings.check_relover, "RelOver"),
                 );
                 ui.checkbox(&mut self.antipatterns_settings.check_relrig, "RelRig");
-                ui.add_enabled(
-                    false,
-                    egui::Checkbox::new(&mut self.antipatterns_settings.check_relspec, "RelSpec"),
-                );
+                ui.checkbox(&mut self.antipatterns_settings.check_relspec, "RelSpec");
                 ui.add_enabled(
                     false,
                     egui::Checkbox::new(&mut self.antipatterns_settings.check_reprel, "RepRel"),
@@ -511,7 +507,7 @@ fn validate(
     }
 
     if antipattern_settings.check_relspec {
-        // validate_relspec(&mut problems, &model.read());
+        validate_relspec(&mut problems, &model.read());
     }
 
     if antipattern_settings.check_reprel {
@@ -1975,6 +1971,87 @@ fn validate_relrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
                 uuid: *e.0,
                 antipattern_type: AntiPatternType::RelRig,
             });
+        }
+    }
+}
+
+// RelSpec (Relation Specialization)
+fn validate_relspec(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
+    let mut class_ancestor_infos = HashMap::new();
+    let mut association_infos = HashMap::new();
+    fn r_collect(
+        class_ancestor_infos: &mut HashMap<ModelUuid, Vec<ModelUuid>>,
+        association_infos: &mut HashMap<ModelUuid, (ModelUuid, ModelUuid)>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::Package(inner) => {
+                let r = inner.read();
+                for e in &r.contained_elements {
+                    r_collect(class_ancestor_infos, association_infos, e);
+                }
+            }
+            UmlClassElement::Generalization(inner) => {
+                let r = inner.read();
+                for e in &r.sources {
+                    let s = e.read();
+                    class_ancestor_infos
+                        .entry(*s.uuid)
+                        .or_default()
+                        .extend(r.targets.iter().map(|e| *e.read().uuid));
+                }
+            }
+            UmlClassElement::Association(inner) => {
+                let r = inner.read();
+                association_infos.insert(*r.uuid, (*r.source.uuid(), *r.target.uuid()));
+            }
+            _ => {}
+        }
+    }
+    for e in &m.contained_elements {
+        r_collect(&mut class_ancestor_infos, &mut association_infos, e);
+    }
+
+    fn is_ancestor_of(
+        infos: &HashMap<ModelUuid, Vec<ModelUuid>>,
+        a: ModelUuid,
+        b: ModelUuid,
+    ) -> bool {
+        fn inner(
+            visited: &mut HashSet<ModelUuid>,
+            infos: &HashMap<ModelUuid, Vec<ModelUuid>>,
+            a: ModelUuid,
+            b: ModelUuid,
+        ) -> bool {
+            if visited.contains(&b) {
+                return false;
+            }
+            visited.insert(b);
+            let Some(direct_ancestors) = infos.get(&b) else {
+                return false;
+            };
+            let r = direct_ancestors.contains(&a)
+                || direct_ancestors
+                    .iter()
+                    .any(|e| inner(visited, infos, a, *e));
+            visited.remove(&b);
+            r
+        }
+        inner(&mut HashSet::new(), infos, a, b)
+    }
+
+    for e1 in &association_infos {
+        for e2 in association_infos.iter().filter(|e2| e2.0 != e1.0) {
+            if ((e1.1.0 == e2.1.0 || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.0))
+                && (e1.1.1 == e2.1.1 || is_ancestor_of(&class_ancestor_infos, e1.1.1, e2.1.1)))
+                || ((e1.1.0 == e2.1.1 || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.1))
+                    && (e1.1.1 == e2.1.0 || is_ancestor_of(&class_ancestor_infos, e1.1.1, e2.1.0)))
+            {
+                problems.push(ValidationProblem::AntiPattern {
+                    uuid: *e1.0,
+                    antipattern_type: AntiPatternType::RelSpec,
+                });
+            }
         }
     }
 }
@@ -4000,6 +4077,194 @@ mod test {
             vec![ValidationProblem::AntiPattern {
                 uuid: subkind_uuid,
                 antipattern_type: AntiPatternType::RelRig,
+            }],
+        );
+    }
+
+    #[test]
+    fn test_valid_relspec1() {
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
+        let subkind2 = new_class(3, ontouml_models::SUBKIND, false);
+        let kind2 = new_class(4, ontouml_models::KIND, false);
+        let kind3 = new_class(5, ontouml_models::KIND, false);
+        let gen1 = new_generalization(6, vec![subkind1.clone()], vec![kind1.clone()], true, true);
+        let gen2 = new_generalization(
+            7,
+            vec![subkind2.clone()],
+            vec![subkind1.clone()],
+            true,
+            true,
+        );
+        let mediation1 = new_association(
+            8,
+            ontouml_models::MEDIATION,
+            subkind1.clone().into(),
+            kind2.clone().into(),
+        );
+        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let mediation2 = new_association(
+            9,
+            ontouml_models::MEDIATION,
+            subkind2.clone().into(),
+            kind3.clone().into(),
+        );
+        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(
+                vec![
+                    kind1.into(),
+                    subkind1.into(),
+                    subkind2.into(),
+                    kind2.into(),
+                    kind3.into(),
+                    gen1.into(),
+                    gen2.into(),
+                    mediation1.into(),
+                    mediation2.into(),
+                ],
+                false,
+                super::OntoUmlAntipatternSettings::RELSPEC
+            ),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_valid_relspec2() {
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let kind3 = new_class(3, ontouml_models::KIND, false);
+        let gen1 = new_generalization(4, vec![kind1.clone()], vec![kind1.clone()], true, true);
+        let mediation1 = new_association(
+            5,
+            ontouml_models::MEDIATION,
+            kind2.clone().into(),
+            kind1.clone().into(),
+        );
+        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let mediation2 = new_association(
+            6,
+            ontouml_models::MEDIATION,
+            kind3.clone().into(),
+            kind1.clone().into(),
+        );
+        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(
+                vec![
+                    kind1.into(),
+                    kind2.into(),
+                    kind3.into(),
+                    gen1.into(),
+                    mediation1.into(),
+                    mediation2.into(),
+                ],
+                false,
+                super::OntoUmlAntipatternSettings::RELSPEC
+            ),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_relspec1() {
+        // square: K1 -- K2, Sk1 -- Sk2
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let subkind1 = new_class(3, ontouml_models::SUBKIND, false);
+        let subkind2 = new_class(4, ontouml_models::SUBKIND, false);
+        let gen1 = new_generalization(5, vec![subkind1.clone()], vec![kind1.clone()], true, true);
+        let gen2 = new_generalization(6, vec![subkind2.clone()], vec![kind2.clone()], true, true);
+        let mediation1 = new_association(
+            7,
+            ontouml_models::MEDIATION,
+            kind1.clone().into(),
+            kind2.clone().into(),
+        );
+        let mediation1_uuid = *mediation1.read().uuid;
+        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let mediation2 = new_association(
+            8,
+            ontouml_models::MEDIATION,
+            subkind1.clone().into(),
+            subkind2.clone().into(),
+        );
+        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(
+                vec![
+                    kind1.into(),
+                    kind2.into(),
+                    subkind1.into(),
+                    subkind2.into(),
+                    gen1.into(),
+                    gen2.into(),
+                    mediation1.into(),
+                    mediation2.into(),
+                ],
+                false,
+                super::OntoUmlAntipatternSettings::RELSPEC
+            ),
+            vec![ValidationProblem::AntiPattern {
+                uuid: mediation1_uuid,
+                antipattern_type: AntiPatternType::RelSpec,
+            }],
+        );
+    }
+
+    #[test]
+    fn test_invalid_relspec2() {
+        // triangle with loop on top
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
+        let subkind2 = new_class(3, ontouml_models::SUBKIND, false);
+        let gen1 = new_generalization(4, vec![subkind1.clone()], vec![kind1.clone()], true, true);
+        let gen2 = new_generalization(5, vec![subkind2.clone()], vec![kind1.clone()], true, true);
+        let mediation1 = new_association(
+            6,
+            ontouml_models::MEDIATION,
+            kind1.clone().into(),
+            kind1.clone().into(),
+        );
+        let mediation1_uuid = *mediation1.read().uuid;
+        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let mediation2 = new_association(
+            7,
+            ontouml_models::MEDIATION,
+            subkind1.clone().into(),
+            subkind2.clone().into(),
+        );
+        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(
+                vec![
+                    kind1.into(),
+                    subkind1.into(),
+                    subkind2.into(),
+                    gen1.into(),
+                    gen2.into(),
+                    mediation1.into(),
+                    mediation2.into(),
+                ],
+                false,
+                super::OntoUmlAntipatternSettings::RELSPEC
+            ),
+            vec![ValidationProblem::AntiPattern {
+                uuid: mediation1_uuid,
+                antipattern_type: AntiPatternType::RelSpec,
             }],
         );
     }
