@@ -216,7 +216,6 @@ impl OntoUmlValidationTab {
                 check_impabs: false,
                 check_mixiden: false,
                 check_partover: false,
-                check_relcomp: false,
                 check_relover: false,
                 check_wholeover: false,
                 ..OntoUmlAntipatternSettings::ALL
@@ -272,10 +271,7 @@ impl CustomTab for OntoUmlValidationTab {
                     false,
                     egui::Checkbox::new(&mut self.antipatterns_settings.check_partover, "PartOver"),
                 );
-                ui.add_enabled(
-                    false,
-                    egui::Checkbox::new(&mut self.antipatterns_settings.check_relcomp, "RelComp"),
-                );
+                ui.checkbox(&mut self.antipatterns_settings.check_relcomp, "RelComp");
                 ui.add_enabled(
                     false,
                     egui::Checkbox::new(&mut self.antipatterns_settings.check_relover, "RelOver"),
@@ -490,8 +486,13 @@ fn validate(
         // validate_partover(&mut problems, &model.read());
     }
 
-    if antipattern_settings.check_relcomp {
-        // validate_relcomp(&mut problems, &model.read());
+    if antipattern_settings.check_relcomp || antipattern_settings.check_relspec {
+        validate_relcomp_relspec(
+            &mut problems,
+            &model.read(),
+            antipattern_settings.check_relcomp,
+            antipattern_settings.check_relspec,
+        );
     }
 
     if antipattern_settings.check_relover {
@@ -500,10 +501,6 @@ fn validate(
 
     if antipattern_settings.check_relrig {
         validate_relrig(&mut problems, &model.read());
-    }
-
-    if antipattern_settings.check_relspec {
-        validate_relspec(&mut problems, &model.read());
     }
 
     if antipattern_settings.check_reprel {
@@ -2007,13 +2004,21 @@ fn validate_reprel(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     }
 }
 
-// RelSpec (Relation Specialization)
-fn validate_relspec(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
+// RelComp (Relation Composition), RelSpec (Relation Specialization)
+fn validate_relcomp_relspec(
+    problems: &mut Vec<ValidationProblem>,
+    m: &UmlClassDiagram,
+    check_relcomp: bool,
+    check_relspec: bool,
+) {
     let mut class_ancestor_infos = HashMap::new();
     let mut association_infos = HashMap::new();
     fn r_collect(
         class_ancestor_infos: &mut HashMap<ModelUuid, Vec<ModelUuid>>,
-        association_infos: &mut HashMap<ModelUuid, (ModelUuid, ModelUuid)>,
+        association_infos: &mut HashMap<
+            ModelUuid,
+            (ModelUuid, Arc<String>, ModelUuid, Arc<String>),
+        >,
         e: &UmlClassElement,
     ) {
         match e {
@@ -2035,7 +2040,15 @@ fn validate_relspec(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) 
             }
             UmlClassElement::Association(inner) => {
                 let r = inner.read();
-                association_infos.insert(*r.uuid, (*r.source.uuid(), *r.target.uuid()));
+                association_infos.insert(
+                    *r.uuid,
+                    (
+                        *r.source.uuid(),
+                        r.source_label_multiplicity.clone(),
+                        *r.target.uuid(),
+                        r.target_label_multiplicity.clone(),
+                    ),
+                );
             }
             _ => {}
         }
@@ -2074,10 +2087,39 @@ fn validate_relspec(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) 
 
     for e1 in &association_infos {
         for e2 in association_infos.iter().filter(|e2| e2.0 != e1.0) {
-            if ((e1.1.0 == e2.1.0 || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.0))
-                && (e1.1.1 == e2.1.1 || is_ancestor_of(&class_ancestor_infos, e1.1.1, e2.1.1)))
-                || ((e1.1.0 == e2.1.1 || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.1))
-                    && (e1.1.1 == e2.1.0 || is_ancestor_of(&class_ancestor_infos, e1.1.1, e2.1.0)))
+            if check_relcomp {
+                let mut matching = false;
+                if let Some((lm, um)) = parse_multiplicity(&e1.1.3)
+                    && lm > 0
+                    && um.is_none_or(|um| um > 1)
+                    && (e1.1.2 == e2.1.0 || is_ancestor_of(&class_ancestor_infos, e1.1.2, e2.1.0))
+                    && (e1.1.2 == e2.1.2 || is_ancestor_of(&class_ancestor_infos, e1.1.2, e2.1.2))
+                {
+                    matching = true;
+                }
+                if let Some((lm, um)) = parse_multiplicity(&e1.1.1)
+                    && lm > 0
+                    && um.is_none_or(|um| um > 1)
+                    && (e1.1.0 == e2.1.0 || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.0))
+                    && (e1.1.0 == e2.1.2 || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.2))
+                {
+                    matching = true;
+                }
+                if matching {
+                    problems.push(ValidationProblem::AntiPattern {
+                        uuid: *e1.0,
+                        antipattern_type: AntiPatternType::RelComp,
+                    });
+                }
+            }
+
+            if check_relspec
+                && (((e1.1.0 == e2.1.0 || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.0))
+                    && (e1.1.2 == e2.1.2 || is_ancestor_of(&class_ancestor_infos, e1.1.2, e2.1.2)))
+                    || ((e1.1.0 == e2.1.2
+                        || is_ancestor_of(&class_ancestor_infos, e1.1.0, e2.1.2))
+                        && (e1.1.2 == e2.1.0
+                            || is_ancestor_of(&class_ancestor_infos, e1.1.2, e2.1.0))))
             {
                 problems.push(ValidationProblem::AntiPattern {
                     uuid: *e1.0,
@@ -4159,6 +4201,54 @@ mod test {
             vec![ValidationProblem::AntiPattern {
                 uuid: relator_uuid,
                 antipattern_type: AntiPatternType::RepRel,
+            }],
+        );
+    }
+
+    #[test]
+    fn test_invalid_relcomp1() {
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let subkind1 = new_class(3, ontouml_models::SUBKIND, false);
+        let subkind2 = new_class(4, ontouml_models::SUBKIND, false);
+        let gen1 = new_generalization(5, vec![subkind1.clone()], vec![kind2.clone()], true, true);
+        let gen2 = new_generalization(6, vec![subkind2.clone()], vec![kind2.clone()], true, true);
+        let mediation1 = new_association(
+            7,
+            ontouml_models::MEDIATION,
+            kind1.clone().into(),
+            kind2.clone().into(),
+        );
+        let mediation1_uuid = *mediation1.read().uuid;
+        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("1..2".to_owned());
+        let mediation2 = new_association(
+            8,
+            ontouml_models::MEDIATION,
+            subkind1.clone().into(),
+            subkind2.clone().into(),
+        );
+        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(
+                vec![
+                    kind1.into(),
+                    kind2.into(),
+                    subkind1.into(),
+                    subkind2.into(),
+                    gen1.into(),
+                    gen2.into(),
+                    mediation1.into(),
+                    mediation2.into(),
+                ],
+                false,
+                super::OntoUmlAntipatternSettings::RELCOMP
+            ),
+            vec![ValidationProblem::AntiPattern {
+                uuid: mediation1_uuid,
+                antipattern_type: AntiPatternType::RelComp,
             }],
         );
     }
