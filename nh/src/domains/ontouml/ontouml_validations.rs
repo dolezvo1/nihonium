@@ -2324,24 +2324,28 @@ fn validate_undefformal_undefphase(
             _ => {}
         }
     }
-    for e in &m.contained_elements {
-        r_undefformal_test(problems, &infos, e);
+    if check_undefformal {
+        for e in &m.contained_elements {
+            r_undefformal_test(problems, &infos, e);
+        }
     }
 
-    for e in &infos {
-        if let Some(s) = &e.1.stereotype
-            && **s == ontouml_models::PHASE
-            && !e.1.parents.iter().any(|e| {
-                e.read()
-                    .targets
-                    .iter()
-                    .any(|e| has_intrinsics_including_transitively(&infos, *e.read().uuid))
-            })
-        {
-            problems.push(ValidationProblem::AntiPattern {
-                uuid: *e.0,
-                antipattern_type: AntiPatternType::UndefPhase,
-            });
+    if check_undefphase {
+        for e in &infos {
+            if let Some(s) = &e.1.stereotype
+                && **s == ontouml_models::PHASE
+                && !e.1.parents.iter().any(|e| {
+                    e.read()
+                        .targets
+                        .iter()
+                        .any(|e| has_intrinsics_including_transitively(&infos, *e.read().uuid))
+                })
+            {
+                problems.push(ValidationProblem::AntiPattern {
+                    uuid: *e.0,
+                    antipattern_type: AntiPatternType::UndefPhase,
+                });
+            }
         }
     }
 }
