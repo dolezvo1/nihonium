@@ -218,7 +218,6 @@ impl OntoUmlValidationTab {
                 check_partover: false,
                 check_relcomp: false,
                 check_relover: false,
-                check_reprel: false,
                 check_wholeover: false,
                 ..OntoUmlAntipatternSettings::ALL
             },
@@ -283,10 +282,7 @@ impl CustomTab for OntoUmlValidationTab {
                 );
                 ui.checkbox(&mut self.antipatterns_settings.check_relrig, "RelRig");
                 ui.checkbox(&mut self.antipatterns_settings.check_relspec, "RelSpec");
-                ui.add_enabled(
-                    false,
-                    egui::Checkbox::new(&mut self.antipatterns_settings.check_reprel, "RepRel"),
-                );
+                ui.checkbox(&mut self.antipatterns_settings.check_reprel, "RepRel");
                 ui.checkbox(
                     &mut self.antipatterns_settings.check_undefformal,
                     "UndefFormal",
@@ -511,7 +507,7 @@ fn validate(
     }
 
     if antipattern_settings.check_reprel {
-        // validate_reprel(&mut problems, &model.read());
+        validate_reprel(&mut problems, &model.read());
     }
 
     if antipattern_settings.check_undefformal {
@@ -529,6 +525,24 @@ fn validate(
     problems
 }
 
+fn parse_multiplicity(m: &str) -> Option<(usize, Option<usize>)> {
+    if m.is_empty() {
+        None
+    } else if m == "*" {
+        Some((0, None))
+    } else if let Ok(n) = str::parse::<usize>(m) {
+        Some((n, Some(n)))
+    } else {
+        let (lower, upper) = m.split_once("..")?;
+        if upper == "*" {
+            str::parse(lower).map(|l| (l, None)).ok()
+        } else {
+            str::parse(lower)
+                .and_then(|l| str::parse(upper).map(|u| (l, Some(u))))
+                .ok()
+        }
+    }
+}
 fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
     let mut problems = Vec::new();
     let m = model.read();
@@ -710,24 +724,6 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                 }
             }
             UmlClassElement::Association(inner) => {
-                fn parse_multiplicity(m: &str) -> Option<(usize, Option<usize>)> {
-                    if m.is_empty() {
-                        None
-                    } else if m == "*" {
-                        Some((0, None))
-                    } else if let Ok(n) = str::parse::<usize>(m) {
-                        Some((n, Some(n)))
-                    } else {
-                        let (lower, upper) = m.split_once("..")?;
-                        if upper == "*" {
-                            str::parse(lower).map(|l| (l, None)).ok()
-                        } else {
-                            str::parse(lower)
-                                .and_then(|l| str::parse(upper).map(|u| (l, Some(u))))
-                                .ok()
-                        }
-                    }
-                }
                 let m = inner.read();
 
                 if ontouml_models::ontouml_association_stereotype_literal(&m.stereotype)
@@ -1827,6 +1823,8 @@ fn validate_mixrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
 struct RelatorInfo {
     stereotype: Option<Arc<String>>,
     has_associated_rigids: bool,
+    total_mediations: u32,
+    has_nonrepeatable_mediations: bool,
     parents: Vec<ERef<UmlClassGeneralization>>,
     associated_relators: Vec<ModelUuid>,
 }
@@ -1937,6 +1935,27 @@ fn collect_relator_infos(m: &UmlClassDiagram) -> HashMap<ModelUuid, RelatorInfo>
                             .or_default()
                             .has_associated_rigids = true;
                     }
+
+                    if let UmlClassAssociable::Class(s) = &r.source {
+                        let e = infos.entry(*s.read().uuid).or_default();
+                        e.total_mediations += 1;
+                        if let Some((_, um)) = parse_multiplicity(&r.source_label_multiplicity)
+                            && um.is_some_and(|e| e <= 1)
+                        {
+                            e.has_nonrepeatable_mediations = true;
+                        }
+                    }
+                    if let UmlClassAssociable::Class(t) = &r.target {
+                        let e = infos.entry(*t.read().uuid).or_default();
+                        if t.read().uuid != r.source.uuid() {
+                            e.total_mediations += 1;
+                        }
+                        if let Some((_, um)) = parse_multiplicity(&r.target_label_multiplicity)
+                            && um.is_some_and(|e| e <= 1)
+                        {
+                            e.has_nonrepeatable_mediations = true;
+                        }
+                    }
                 }
             }
             _ => {}
@@ -1970,6 +1989,19 @@ fn validate_relrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
             problems.push(ValidationProblem::AntiPattern {
                 uuid: *e.0,
                 antipattern_type: AntiPatternType::RelRig,
+            });
+        }
+    }
+}
+// RepRel (Repeatable Relator)
+fn validate_reprel(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
+    let infos = collect_relator_infos(m);
+    for e in &infos {
+        if e.1.total_mediations > 0 && !e.1.has_nonrepeatable_mediations && is_relator(&infos, *e.0)
+        {
+            problems.push(ValidationProblem::AntiPattern {
+                uuid: *e.0,
+                antipattern_type: AntiPatternType::RepRel,
             });
         }
     }
@@ -4077,6 +4109,56 @@ mod test {
             vec![ValidationProblem::AntiPattern {
                 uuid: subkind_uuid,
                 antipattern_type: AntiPatternType::RelRig,
+            }],
+        );
+    }
+
+    #[test]
+    fn test_valid_reprel1() {
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let relator = new_class(2, ontouml_models::RELATOR, false);
+        let mediation1 = new_association(
+            3,
+            ontouml_models::MEDIATION,
+            relator.clone().into(),
+            kind.clone().into(),
+        );
+        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+
+        assert_eq!(
+            validate(
+                vec![kind.into(), relator.into(), mediation1.into()],
+                false,
+                super::OntoUmlAntipatternSettings::REPREL
+            ),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_reprel1() {
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let relator = new_class(2, ontouml_models::RELATOR, false);
+        let relator_uuid = *relator.read().uuid;
+        let mediation1 = new_association(
+            3,
+            ontouml_models::MEDIATION,
+            relator.clone().into(),
+            kind.clone().into(),
+        );
+        mediation1.write().source_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+
+        assert_eq!(
+            validate(
+                vec![kind.into(), relator.into(), mediation1.into()],
+                false,
+                super::OntoUmlAntipatternSettings::REPREL
+            ),
+            vec![ValidationProblem::AntiPattern {
+                uuid: relator_uuid,
+                antipattern_type: AntiPatternType::RepRel,
             }],
         );
     }
