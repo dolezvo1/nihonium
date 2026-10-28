@@ -2898,6 +2898,7 @@ pub trait DiagramAdapter<DomainT: Domain>:
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
+    /// get requested horizontal and vertical header mode respectively
     fn requested_headers(
         &self,
         _settings: &DomainT::SettingsT,

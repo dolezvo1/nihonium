@@ -426,6 +426,16 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
+    fn requested_headers(
+        &self,
+        _settings: &BpmnSettings,
+        (_, last_v): (u8, u8),
+    ) -> (canvas::HeaderMode, canvas::HeaderMode) {
+        (
+            canvas::HeaderMode::Expanding(0),
+            canvas::HeaderMode::Expanding(last_v.clamp(1, 5)),
+        )
+    }
     fn show_view_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -3241,7 +3251,7 @@ pub fn new_bpmn_pool_view(
     ERef::new(BpmnPoolView {
         uuid: ViewUuid::now_v7().into(),
         model,
-        section_views,
+        swimlane_views: section_views,
         bounds_rect: egui::Rect::ZERO,
         temporaries: Default::default(),
     })
@@ -3254,7 +3264,7 @@ pub struct BpmnPoolView {
     #[nh_context_serde(entity)]
     model: ERef<BpmnPool>,
     #[nh_context_serde(entity)]
-    section_views: Vec<ERef<BpmnPoolSwimlaneView>>,
+    swimlane_views: Vec<ERef<BpmnPoolSwimlaneView>>,
 
     bounds_rect: egui::Rect,
     #[nh_context_serde(skip_and_default)]
@@ -3309,7 +3319,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
     ) -> TargettingStatus {
         let mut child_targetting_drawn = false;
         let mut r = egui::Rect::ZERO;
-        for e in self.section_views.iter() {
+        for e in self.swimlane_views.iter() {
             let mut w = e.write();
             child_targetting_drawn |=
                 w.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
@@ -3332,7 +3342,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
         >,
     ) -> PropertiesStatus<BpmnDomain> {
-        for (idx, e) in self.section_views.iter().enumerate() {
+        for (idx, e) in self.swimlane_views.iter().enumerate() {
             let mut w = e.write();
             let child = w.show_properties_inner(gdc, q, ui, commands);
 
@@ -3341,17 +3351,15 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                     BpmnOrdinalMovement::Up => idx,
                     BpmnOrdinalMovement::Down => idx + 1,
                 };
-                let x_range = match add_sibling {
-                    BpmnOrdinalMovement::Up => {
-                        (w.bounds_rect.left() - 200.0)..=w.bounds_rect.left()
-                    }
+                let y_range = match add_sibling {
+                    BpmnOrdinalMovement::Up => (w.bounds_rect.top() - 200.0)..=w.bounds_rect.top(),
                     BpmnOrdinalMovement::Down => {
-                        w.bounds_rect.right()..=(w.bounds_rect.right() + 200.0)
+                        w.bounds_rect.bottom()..=(w.bounds_rect.bottom() + 200.0)
                     }
                 };
                 let sibling = new_bpmn_poolswimlane(
                     "New Swimlane",
-                    egui::Rect::from_x_y_ranges(x_range, w.bounds_rect.y_range()),
+                    egui::Rect::from_x_y_ranges(w.bounds_rect.x_range(), y_range),
                 );
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *self.uuid,
@@ -3371,7 +3379,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        self.section_views
+        self.swimlane_views
             .iter()
             .for_each(|v| v.write().collect_allignment(am));
     }
@@ -3394,7 +3402,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
         match event {
             InputEvent::Click(_) => {
                 let k_status = self
-                    .section_views
+                    .swimlane_views
                     .iter()
                     .map(|e| {
                         let mut w = e.write();
@@ -3445,7 +3453,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             }
             _ => {
                 let k_status = self
-                    .section_views
+                    .swimlane_views
                     .iter()
                     .map(|e| {
                         let mut w = e.write();
@@ -3481,7 +3489,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
     ) {
         macro_rules! recurse {
             () => {
-                self.section_views.iter().for_each(|s| {
+                self.swimlane_views.iter().for_each(|s| {
                     s.write().apply_command(
                         diagram_model,
                         command,
@@ -3499,7 +3507,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                     match set {
                         true => {
                             self.temporaries.selected_direct_elements =
-                                self.section_views.iter().map(|v| *v.read().uuid).collect();
+                                self.swimlane_views.iter().map(|v| *v.read().uuid).collect();
                         }
                         false => self.temporaries.selected_direct_elements.clear(),
                     }
@@ -3509,7 +3517,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if h.selected {
                     for k in self
-                        .section_views
+                        .swimlane_views
                         .iter()
                         .map(|v| *v.read().uuid)
                         .filter(|k| uuids.contains(k))
@@ -3527,7 +3535,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                     self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
                 } else {
                     self.temporaries.highlight.selected = self
-                        .section_views
+                        .swimlane_views
                         .iter()
                         .all(|e| e.read().temporaries.highlight.selected);
                 }
@@ -3540,14 +3548,14 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                 recurse!();
 
                 self.temporaries.highlight.selected = self
-                    .section_views
+                    .swimlane_views
                     .iter()
                     .all(|e| e.read().temporaries.highlight.selected);
             }
             InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&self.uuid)
                     && !self
-                        .section_views
+                        .swimlane_views
                         .iter()
                         .any(|e| uuids.contains(&e.read().uuid)) =>
             {
@@ -3560,7 +3568,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                     -*delta,
                 ));
                 let mut void = vec![];
-                self.section_views.iter_mut().for_each(|v| {
+                self.swimlane_views.iter_mut().for_each(|v| {
                     v.write().apply_command(
                         diagram_model,
                         &InsensitiveCommand::MovePositionalAll(*delta),
@@ -3571,52 +3579,52 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             }
             InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
                 if self
-                    .section_views
+                    .swimlane_views
                     .iter()
                     .any(|e| uuids.contains(&e.read().uuid))
                 {
-                    let mut delta_x = egui::Vec2::ZERO;
+                    let mut delta_y = egui::Vec2::ZERO;
                     let (mut u, mut v) = Default::default();
 
                     let sections_iter: Box<dyn Iterator<Item = &ERef<BpmnPoolSwimlaneView>>> =
-                        match align.x() {
+                        match align.y() {
                             egui::Align::Min | egui::Align::Center => {
-                                Box::new(self.section_views.iter())
+                                Box::new(self.swimlane_views.iter())
                             }
-                            egui::Align::Max => Box::new(self.section_views.iter().rev()),
+                            egui::Align::Max => Box::new(self.swimlane_views.iter().rev()),
                         };
 
                     for e in sections_iter {
                         let mut w = e.write();
                         w.apply_command(
                             diagram_model,
-                            &InsensitiveCommand::MovePositionalAll(delta_x),
+                            &InsensitiveCommand::MovePositionalAll(delta_y),
                             &mut u,
                             &mut v,
                         );
                         let mut new_rect = w.bounds_rect;
-                        match align.y() {
-                            egui::Align::Min => new_rect.max.y += delta.y,
-                            egui::Align::Max => new_rect.min.y += delta.y,
+                        match align.x() {
+                            egui::Align::Min => new_rect.max.x += delta.x,
+                            egui::Align::Max => new_rect.min.x += delta.x,
                             _ => {}
                         }
                         if uuids.contains(&w.uuid) {
-                            match align.x() {
-                                egui::Align::Min => new_rect.max.x += delta.x,
-                                egui::Align::Max => new_rect.min.x += delta.x,
+                            match align.y() {
+                                egui::Align::Min => new_rect.max.y += delta.y,
+                                egui::Align::Max => new_rect.min.y += delta.y,
                                 _ => {}
                             }
                             undo_accumulator
                                 .push(InsensitiveCommand::ResizeElementTo(*w.uuid, w.bounds_rect));
-                            if new_rect.width() >= 40.0 {
-                                w.bounds_rect.min.x = new_rect.min.x;
-                                w.bounds_rect.max.x = new_rect.max.x;
-                                delta_x.x += delta.x;
+                            if new_rect.height() >= 40.0 {
+                                w.bounds_rect.min.y = new_rect.min.y;
+                                w.bounds_rect.max.y = new_rect.max.y;
+                                delta_y.y += delta.y;
                             }
                         }
                         if new_rect.height() >= 40.0 {
-                            w.bounds_rect.min.y = new_rect.min.y;
-                            w.bounds_rect.max.y = new_rect.max.y;
+                            w.bounds_rect.min.x = new_rect.min.x;
+                            w.bounds_rect.max.x = new_rect.max.x;
                         }
                     }
                 }
@@ -3625,7 +3633,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             }
             InsensitiveCommand::ResizeElementTo(uuid, rect) => {
                 if let Some((idx, br)) = self
-                    .section_views
+                    .swimlane_views
                     .iter()
                     .enumerate()
                     .filter_map(|(idx, e)| {
@@ -3640,7 +3648,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                     .next()
                 {
                     {
-                        let mut w = self.section_views[idx].write();
+                        let mut w = self.swimlane_views[idx].write();
                         undo_accumulator
                             .push(InsensitiveCommand::ResizeElementTo(*uuid, w.bounds_rect));
                         w.bounds_rect = *rect;
@@ -3648,25 +3656,25 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
 
                     let (mut u, mut v) = Default::default();
                     macro_rules! adjust {
-                        ($w:expr, $dx:expr) => {
+                        ($w:expr, $dy:expr) => {
                             $w.apply_command(
                                 diagram_model,
-                                &InsensitiveCommand::MovePositionalAll(egui::Vec2::new($dx, 0.0)),
+                                &InsensitiveCommand::MovePositionalAll(egui::Vec2::new(0.0, $dy)),
                                 &mut u,
                                 &mut v,
                             );
-                            $w.bounds_rect.set_height(rect.height());
+                            $w.bounds_rect.set_width(rect.width());
                         };
                     }
 
-                    let delta_left = rect.min.x - br.min.x;
-                    for e in self.section_views.iter().take(idx).rev() {
-                        adjust!(e.write(), delta_left);
+                    let delta_up = rect.min.y - br.min.y;
+                    for e in self.swimlane_views.iter().take(idx).rev() {
+                        adjust!(e.write(), delta_up);
                     }
 
-                    let delta_right = rect.max.x - br.max.x;
-                    for e in self.section_views.iter().skip(idx + 1) {
-                        adjust!(e.write(), delta_right);
+                    let delta_down = rect.max.y - br.max.y;
+                    for e in self.swimlane_views.iter().skip(idx + 1) {
+                        adjust!(e.write(), delta_down);
                     }
                 }
 
@@ -3674,7 +3682,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
                 for element in self
-                    .section_views
+                    .swimlane_views
                     .iter()
                     .filter(|v| uuids.contains(&v.read().uuid))
                 {
@@ -3700,7 +3708,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                 }
                 let mut delta = egui::Vec2::ZERO;
                 let (mut u, mut m) = Default::default();
-                let old_sections = std::mem::take(&mut self.section_views);
+                let old_sections = std::mem::take(&mut self.swimlane_views);
                 for e in old_sections {
                     let mut w = e.write();
                     if uuids.contains(&w.uuid) {
@@ -3713,7 +3721,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                             &mut m,
                         );
                         drop(w);
-                        self.section_views.push(e);
+                        self.swimlane_views.push(e);
                     }
                 }
 
@@ -3732,51 +3740,41 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                         && let Ok(BpmnElementView::PoolSwimlane(view)) = element.clone().try_into()
                     {
                         let mut vw = view.write();
-                        if let Some(model_pos) = self
-                            .model
-                            .read()
-                            .get_element_pos(&vw.model_uuid())
-                            .map(|e| e.1)
-                            .or_else(|| {
-                                if *into_model {
-                                    diagram_model
-                                        .write()
-                                        .insert_element_into(
-                                            model_uuid,
-                                            *bucket,
-                                            *position,
-                                            vw.model(),
-                                        )
-                                        .ok()
-                                } else {
-                                    None
-                                }
-                            })
-                        {
+                        let pos = self.model.read().get_element_pos(&vw.model_uuid());
+                        if let Some(model_pos) = pos.map(|e| e.1).or_else(|| {
+                            if *into_model {
+                                diagram_model
+                                    .write()
+                                    .insert_element_into(model_uuid, *bucket, *position, vw.model())
+                                    .ok()
+                            } else {
+                                None
+                            }
+                        }) {
                             let uuid = *vw.uuid;
 
                             let (old_uuid, old_rect) = self
-                                .section_views
+                                .swimlane_views
                                 .first()
                                 .map(|e| {
                                     let r = e.read();
                                     (*r.uuid, r.bounds_rect)
                                 })
                                 .unwrap();
-                            if old_rect.height() >= vw.bounds_rect.height() {
-                                vw.bounds_rect.set_height(old_rect.height());
+                            if old_rect.width() >= vw.bounds_rect.width() {
+                                vw.bounds_rect.set_width(old_rect.width());
                             } else {
-                                for e in &self.section_views {
-                                    e.write().bounds_rect.set_height(vw.bounds_rect.height());
+                                for e in &self.swimlane_views {
+                                    e.write().bounds_rect.set_width(vw.bounds_rect.width());
                                 }
                             }
-                            let vertical_delta = old_rect.height() - vw.bounds_rect.height();
+                            let horizontal_delta = old_rect.width() - vw.bounds_rect.width();
 
                             undo_accumulator.extend([
                                 InsensitiveCommand::ResizeElementsBy(
                                     std::iter::once(old_uuid).collect(),
                                     egui::Align2::CENTER_TOP,
-                                    egui::Vec2::new(0.0, -vertical_delta),
+                                    egui::Vec2::new(-horizontal_delta, 0.0),
                                 ),
                                 InsensitiveCommand::RemoveDependency {
                                     target: *self.uuid,
@@ -3787,7 +3785,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                                 InsensitiveCommand::ResizeElementsBy(
                                     std::iter::once(old_uuid).collect(),
                                     egui::Align2::CENTER_TOP,
-                                    egui::Vec2::new(0.0, vertical_delta),
+                                    egui::Vec2::new(horizontal_delta, 0.0),
                                 ),
                             ]);
 
@@ -3804,7 +3802,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
 
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
-                                for e in &self.section_views {
+                                for e in &self.swimlane_views {
                                     let Some((_b, pos)) =
                                         self.model.read().get_element_pos(&e.read().model_uuid())
                                     else {
@@ -3819,21 +3817,21 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                                 view_pos
                             };
 
-                            let old_position = if self.section_views.len() == view_pos.into() {
-                                self.section_views
+                            let old_position = if self.swimlane_views.len() == view_pos.into() {
+                                self.swimlane_views
                                     .last()
-                                    .map(|e| e.read().bounds_rect.right_top())
+                                    .map(|e| e.read().bounds_rect.left_bottom())
                             } else {
-                                self.section_views
+                                self.swimlane_views
                                     .iter()
                                     .skip(view_pos.into())
                                     .map(|e| e.read().bounds_rect.min)
                                     .next()
                             }
                             .unwrap_or_default();
-                            let delta = (vw.bounds_rect.width(), 0.0).into();
+                            let delta = (0.0, vw.bounds_rect.height()).into();
                             let (mut u, mut m) = Default::default();
-                            for e in self.section_views.iter().skip(view_pos.into()) {
+                            for e in self.swimlane_views.iter().skip(view_pos.into()) {
                                 e.write().apply_command(
                                     diagram_model,
                                     &InsensitiveCommand::MovePositionalAll(delta),
@@ -3848,7 +3846,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                                 &mut u,
                                 &mut m,
                             );
-                            self.section_views
+                            self.swimlane_views
                                 .insert(view_pos.try_into().unwrap(), view.clone());
                         }
                     }
@@ -3866,16 +3864,16 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                     let model_uuid = *self.model.read().uuid;
                     if *bucket == 0
                         && let Some(view) = self
-                            .section_views
+                            .swimlane_views
                             .iter()
                             .find(|v| *v.read().uuid == *element)
                             .cloned()
                     {
-                        let model_uuid = *view.read().model_uuid();
+                        let child_model_uuid = *view.read().model_uuid();
 
                         if let Some((_b, pos)) = diagram_model
                             .write()
-                            .remove_element_from(model_uuid, &model_uuid)
+                            .remove_element_from(model_uuid, &child_model_uuid)
                         {
                             undo_accumulator.push(InsensitiveCommand::AddDependency {
                                 target: *self.uuid,
@@ -3891,11 +3889,11 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
 
                             let mut delta = egui::Vec2::ZERO;
                             let (mut u, mut m) = Default::default();
-                            let old_sections = std::mem::take(&mut self.section_views);
+                            let old_sections = std::mem::take(&mut self.swimlane_views);
                             for e in old_sections {
                                 let mut w = e.write();
                                 if *w.uuid == *element {
-                                    delta.x += w.bounds_rect.width();
+                                    delta.y += w.bounds_rect.height();
                                 } else {
                                     w.apply_command(
                                         diagram_model,
@@ -3904,7 +3902,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                                         &mut m,
                                     );
                                     drop(w);
-                                    self.section_views.push(e);
+                                    self.swimlane_views.push(e);
                                 }
                             }
                         }
@@ -3920,9 +3918,9 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                         let lifelines_iter: Box<
                             dyn Iterator<Item = &mut ERef<BpmnPoolSwimlaneView>>,
                         > = match direction {
-                            BpmnOrdinalMovement::Up => Box::new(self.section_views.iter_mut()),
+                            BpmnOrdinalMovement::Up => Box::new(self.swimlane_views.iter_mut()),
                             BpmnOrdinalMovement::Down => {
-                                Box::new(self.section_views.iter_mut().rev())
+                                Box::new(self.swimlane_views.iter_mut().rev())
                             }
                         };
                         let mut lifelines_iter = lifelines_iter.peekable();
@@ -3996,7 +3994,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
         flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
-        self.section_views.iter().for_each(|s| {
+        self.swimlane_views.iter().for_each(|s| {
             let mut w = s.write();
             w.head_count(
                 flattened_views,
@@ -4018,7 +4016,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
-            self.section_views
+            self.swimlane_views
                 .iter()
                 .for_each(|v| v.read().deep_copy_walk(requested, uuid_present, tlc, c, m));
         }
@@ -4047,7 +4045,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
 
         let mut inner = HashMap::new();
         let new_sections = self
-            .section_views
+            .swimlane_views
             .iter()
             .map(|v| {
                 let v = v.read();
@@ -4062,7 +4060,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model,
-            section_views: new_sections,
+            swimlane_views: new_sections,
 
             bounds_rect: self.bounds_rect,
             temporaries: self.temporaries.clone(),
@@ -4076,7 +4074,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
         c: &HashMap<ViewUuid, <BpmnDomain as Domain>::CommonElementViewT>,
         m: &HashMap<ModelUuid, <BpmnDomain as Domain>::CommonElementT>,
     ) {
-        self.section_views
+        self.swimlane_views
             .iter_mut()
             .for_each(|v| v.write().deep_copy_relink(c, m));
 
@@ -4321,6 +4319,20 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.temporaries.highlight,
         );
+        canvas.draw_rectangle(
+            egui::Rect::from_min_size(
+                self.bounds_rect.left_top(),
+                (
+                    2.5 * canvas::CLASS_MIDDLE_FONT_SIZE,
+                    self.bounds_rect.height(),
+                )
+                    .into(),
+            ),
+            egui::CornerRadius::ZERO,
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.temporaries.highlight,
+        );
 
         canvas.draw_text(
             self.bounds_rect.center_top(),
@@ -4391,18 +4403,31 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
             );
         }
 
-        macro_rules! draw_children {
+        macro_rules! draw_header_and_children {
             () => {{
+                canvas.open_header(
+                    &self.temporaries.name_buffer,
+                    canvas::HeaderLocation::Vertical,
+                    self.bounds_rect,
+                    Some((
+                        canvas::UiCanvas::HEADER_CELL_BACKGROUND,
+                        egui::Color32::BLACK,
+                    )),
+                );
+
                 let mut targetting_drawn = false;
                 self.contained_elements.draw_order_foreach_mut(|e| {
                     targetting_drawn |=
                         e.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
                 });
+
+                canvas.close_header(canvas::HeaderLocation::Vertical, self.bounds_rect);
+
                 targetting_drawn
             }};
         }
 
-        if draw_children!() {
+        if draw_header_and_children!() {
             return TargettingStatus::Drawn;
         }
 
@@ -4417,7 +4442,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.temporaries.highlight,
         );
-        draw_children!();
+        draw_header_and_children!();
         TargettingStatus::Drawn
     }
 
@@ -4752,7 +4777,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
                 into_model,
             } => {
                 if *target == *self.uuid {
-                    let model_uuid = *self.model.read().uuid;
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Ok(mut view) = BpmnElementView::try_from(element.clone())
                         && (!*into_model
@@ -4793,12 +4818,12 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
                 including_model,
             } => {
                 if *target == *self.uuid {
-                    let w = self.model.read();
+                    let model_uuid = *self.model_uuid();
                     if *bucket == 0
                         && let Some(view) = self.contained_elements.get(element)
                         && let Some((_b, pos)) = diagram_model
                             .write()
-                            .remove_element_from(*w.uuid, &view.model_uuid())
+                            .remove_element_from(model_uuid, &view.model_uuid())
                     {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
@@ -4809,7 +4834,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
                         });
 
                         if *including_model {
-                            affected_models.insert(*w.uuid);
+                            affected_models.insert(model_uuid);
                         }
 
                         self.contained_elements.retain(|k, _v| *k != *element);
