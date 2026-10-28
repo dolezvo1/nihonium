@@ -79,6 +79,7 @@ pub enum BpmnPropChange {
     NameChange(Arc<String>),
 
     TaskKindChange(BpmnTaskKind),
+    IsCallChange(bool),
     SubprocessKindChange(BpmnSubprocessKind),
     EventKindChange(BpmnEventKind),
     StartEventSubkindChange(BpmnStartEventKind),
@@ -374,11 +375,11 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
         match e {
             BpmnElement::Task(inner) => {
                 let r = inner.read();
-                format!("{} task ({})", r.kind.as_str(), r.name).into()
+                format!("{} Task ({})", r.kind.as_str(), r.name).into()
             }
             BpmnElement::Subprocess(inner) => {
                 let r = inner.read();
-                format!("{} Subprocess ({})", r.kind.as_str(), r.name).into()
+                format!("{} ({})", r.kind.as_str(), r.name).into()
             }
             BpmnElement::StartEvent(inner) => {
                 let r = inner.read();
@@ -388,24 +389,24 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
                 let r = inner.read();
                 format!("{} Intermediate Event", r.kind.as_str()).into()
             }
-            BpmnElement::BoundaryIntermediateEvent(inner) => {
-                let r = inner.read();
-                format!("{} Boundary Intermediate Event", r.kind.as_str()).into()
-            }
             BpmnElement::EndEvent(inner) => {
                 let r = inner.read();
                 format!("{} End Event", r.kind.as_str()).into()
+            }
+            BpmnElement::BoundaryIntermediateEvent(inner) => {
+                let r = inner.read();
+                format!("{} Boundary Intermediate Event", r.kind.as_str()).into()
             }
             BpmnElement::Gateway(inner) => {
                 let r = inner.read();
                 format!("{} Gateway", r.kind.as_str()).into()
             }
-            BpmnElement::Pool(_inner) => format!("Pool").into(),
-            BpmnElement::PoolSwimlane(inner) => format!("Swimlane ({})", inner.read().name).into(),
             BpmnElement::Data(inner) => {
                 let r = inner.read();
-                format!("{} Data ({})", r.kind.as_str(), r.name).into()
+                format!("{} ({})", r.kind.as_str(), r.name).into()
             }
+            BpmnElement::Pool(_inner) => format!("Pool").into(),
+            BpmnElement::PoolSwimlane(inner) => format!("Swimlane ({})", inner.read().name).into(),
             BpmnElement::SequenceEdge(_inner) => format!("Sequence Edge").into(),
             BpmnElement::MessageEdge(_inner) => format!("Message Edge").into(),
             BpmnElement::Association(_inner) => format!("Association").into(),
@@ -617,6 +618,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (task, task_view) = new_bpmn_task(
         "Ship items",
         BpmnTaskKind::Unspecified,
+        false,
         egui::Pos2::new(750.0, 200.0),
         MGlobalColor::None,
         false,
@@ -737,6 +739,7 @@ impl DiagramSettings for BpmnSettings {
                             BpmnToolStage::Task {
                                 name,
                                 kind,
+                                is_call,
                                 background_color,
                                 with_edge_from: _,
                             } => {
@@ -753,6 +756,8 @@ impl DiagramSettings for BpmnSettings {
                                                 ui.selectable_value(kind, e, e.as_str()).changed();
                                         }
                                     });
+
+                                modified |= columns[1].checkbox(is_call, "is call").changed();
 
                                 if let Some(new_color) =
                                     crate::common::controller::mglobalcolor_edit_button(
@@ -807,6 +812,17 @@ impl DiagramSettings for BpmnSettings {
                                                 ui.selectable_value(kind, e, e.as_str()).clicked();
                                         }
                                     });
+
+                                columns[1].label("Start event kind:");
+                                egui::ComboBox::from_id_salt("start event kind")
+                                    .selected_text(subkind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in BpmnStartEventKind::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(subkind, e, e.as_str())
+                                                .clicked();
+                                        }
+                                    });
                             }
                             BpmnToolStage::IntermediateEvent {
                                 kind,
@@ -825,6 +841,17 @@ impl DiagramSettings for BpmnSettings {
                                         for e in BpmnEventKind::VARIANTS {
                                             modified |=
                                                 ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+
+                                columns[1].label("Intermediate event kind:");
+                                egui::ComboBox::from_id_salt("intermediate event kind")
+                                    .selected_text(subkind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in BpmnIntermediateEventKind::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(subkind, e, e.as_str())
+                                                .clicked();
                                         }
                                     });
                             }
@@ -863,6 +890,17 @@ impl DiagramSettings for BpmnSettings {
                                         for e in BpmnEventKind::VARIANTS {
                                             modified |=
                                                 ui.selectable_value(kind, e, e.as_str()).clicked();
+                                        }
+                                    });
+
+                                columns[1].label("Boundary intermediate event kind:");
+                                egui::ComboBox::from_id_salt("boundary intermediate event kind")
+                                    .selected_text(subkind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in BpmnBoundaryIntermediateEventKind::VARIANTS {
+                                            modified |= ui
+                                                .selectable_value(subkind, e, e.as_str())
+                                                .clicked();
                                         }
                                     });
                             }
@@ -905,6 +943,10 @@ impl DiagramSettings for BpmnSettings {
                                                 ui.selectable_value(kind, e, e.as_str()).changed();
                                         }
                                     });
+
+                                modified |= columns[1]
+                                    .checkbox(is_collection, "is collection")
+                                    .changed();
 
                                 if let Some(new_color) =
                                     crate::common::controller::mglobalcolor_edit_button(
@@ -1061,6 +1103,7 @@ mod buttons {
         let ts = BpmnToolStage::Task {
             name: "task".to_owned(),
             kind: BpmnTaskKind::Unspecified,
+            is_call: false,
             background_color: MGlobalColor::None,
             with_edge_from: Some(*m.uuid()),
         };
@@ -1115,6 +1158,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     BpmnToolStage::Task {
                         name: "basic action".to_owned(),
                         kind: BpmnTaskKind::Unspecified,
+                        is_call: false,
                         background_color: MGlobalColor::None,
                         with_edge_from: None,
                     },
@@ -1262,10 +1306,19 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
         BpmnToolStage::Task {
             name,
             kind,
+            is_call,
             background_color,
             with_edge_from: _,
         } => {
-            let view = new_bpmn_task(name, *kind, egui::Pos2::ZERO, *background_color, false).1;
+            let view = new_bpmn_task(
+                name,
+                *kind,
+                *is_call,
+                egui::Pos2::ZERO,
+                *background_color,
+                false,
+            )
+            .1;
             view.write().refresh_buffers();
             view.into()
         }
@@ -1403,6 +1456,7 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
             let dummy = new_bpmn_task(
                 "dummy",
                 BpmnTaskKind::Manual,
+                false,
                 egui::Pos2::ZERO,
                 MGlobalColor::None,
                 false,
@@ -1462,6 +1516,7 @@ pub enum BpmnToolStage {
     Task {
         name: String,
         kind: BpmnTaskKind,
+        is_call: bool,
         background_color: MGlobalColor,
         with_edge_from: Option<ModelUuid>,
     },
@@ -1714,12 +1769,14 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 BpmnToolStage::Task {
                     name,
                     kind,
+                    is_call,
                     background_color,
                     with_edge_from: _,
                 },
                 _,
             ) => {
-                let (_model, view) = new_bpmn_task(name, *kind, pos, *background_color, true);
+                let (_model, view) =
+                    new_bpmn_task(name, *kind, *is_call, pos, *background_color, true);
                 self.result = PartialBpmnElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -2387,7 +2444,16 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
             self.bounds_rect,
             egui::CornerRadius::same(10),
             egui::Color32::WHITE,
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Stroke {
+                width: 1.0,
+                color: egui::Color32::BLACK,
+                line_type: match self.temporaries.kind_buffer {
+                    BpmnSubprocessKind::Subprocess => canvas::LineType::Solid,
+                    BpmnSubprocessKind::Transaction => canvas::LineType::Dashed,
+                    // TODO: should be double
+                    BpmnSubprocessKind::EventSubprocess => canvas::LineType::Solid,
+                },
+            },
             self.temporaries.highlight,
         );
         canvas.draw_text(
@@ -4938,11 +5004,17 @@ fn handle_nonfinal_node_button_click(
 fn new_bpmn_task(
     name: &str,
     kind: BpmnTaskKind,
+    is_call: bool,
     position: egui::Pos2,
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<BpmnTask>, ERef<BpmnTaskView>) {
-    let model = ERef::new(BpmnTask::new(ModelUuid::now_v7(), kind, name.to_owned()));
+    let model = ERef::new(BpmnTask::new(
+        ModelUuid::now_v7(),
+        kind,
+        is_call,
+        name.to_owned(),
+    ));
     let view = new_bpmn_task_view(model.clone(), position, background_color, request_focus);
 
     (model, view)
@@ -4963,6 +5035,7 @@ fn new_bpmn_task_view(
             request_focus,
             name_buffer: (*m.name).clone(),
             kind_buffer: m.kind,
+            is_call_buffer: m.is_call,
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
         },
@@ -4996,6 +5069,7 @@ struct BpmnTaskViewTemporaries {
     request_focus: bool,
     name_buffer: String,
     kind_buffer: BpmnTaskKind,
+    is_call_buffer: bool,
 
     dragged_shape: Option<NHShape>,
     highlight: canvas::Highlight,
@@ -5078,7 +5152,11 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
         ui.label("Model properties");
 
         if ui
-            .labeled_text_edit_multiline("Name:", &mut self.temporaries.name_buffer)
+            .labeled_text_edit_multiline2(
+                "Name:",
+                &mut self.temporaries.name_buffer,
+                self.temporaries.request_focus,
+            )
             .changed()
         {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -5086,6 +5164,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
                 BpmnPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
+        self.temporaries.request_focus = false;
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("kind")
@@ -5103,6 +5182,16 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
                     }
                 }
             });
+
+        if ui
+            .checkbox(&mut self.temporaries.is_call_buffer, "is call")
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                BpmnPropChange::IsCallChange(self.temporaries.is_call_buffer),
+            ));
+        }
 
         ui.label("View properties");
 
@@ -5163,7 +5252,13 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             self.bounds_rect,
             egui::CornerRadius::same(10),
             background_color,
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Stroke::new_solid(
+                match self.temporaries.is_call_buffer {
+                    false => 1.0,
+                    true => 2.0,
+                },
+                egui::Color32::BLACK,
+            ),
             self.temporaries.highlight,
         );
         canvas.draw_text(
@@ -5400,6 +5495,9 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             .next();
 
         match event {
+            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) if k_status.is_some() => {
+                EventHandlingStatus::HandledByContainer
+            }
             InputEvent::MouseDown(pos) => {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
@@ -5491,9 +5589,11 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
                 self.temporaries.dragged_shape = Some(translated_real_shape);
                 let coerced_pos = if self.temporaries.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| {
-                        !ehc.all_elements
-                            .get(e)
-                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                        !self.temporaries.all_children_status.contains_key(e)
+                            && !ehc
+                                .all_elements
+                                .get(e)
+                                .is_some_and(|e| *e != SelectionStatus::NotSelected)
                     })
                 } else {
                     ehc.snap_manager
@@ -5598,7 +5698,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             }
             InsensitiveCommand::MovePositional(_, delta)
             | InsensitiveCommand::MovePositionalAll(delta) => {
-                self.bounds_rect.set_center(self.position() + *delta);
+                self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
@@ -5742,6 +5842,13 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
                             ));
                             model.kind = *kind;
                         }
+                        BpmnPropChange::IsCallChange(is_call) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                BpmnPropChange::IsCallChange(model.is_call),
+                            ));
+                            model.is_call = *is_call;
+                        }
                         BpmnPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -5766,6 +5873,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
 
         self.temporaries.name_buffer = (*model.name).clone();
         self.temporaries.kind_buffer = model.kind;
+        self.temporaries.is_call_buffer = model.is_call;
     }
 
     fn head_count(
@@ -6675,7 +6783,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
 
     fn apply_command(
         &mut self,
-        diagram_model: &ERef<BpmnDiagram>,
+        _diagram_model: &ERef<BpmnDiagram>,
         command: &InsensitiveCommand<
             BpmnOrdinalMovement,
             <BpmnDomain as Domain>::AddCommandElementT,
@@ -7387,7 +7495,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
 
     fn apply_command(
         &mut self,
-        diagram_model: &ERef<BpmnDiagram>,
+        _diagram_model: &ERef<BpmnDiagram>,
         command: &InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
         undo_accumulator: &mut Vec<
             InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
@@ -7653,6 +7761,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
                     }
                 }
             });
+
         if ui
             .checkbox(&mut self.is_collection_buffer, "is collection")
             .changed()
@@ -7700,8 +7809,8 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
     fn draw_in(
         &mut self,
         _q: &<BpmnDomain as Domain>::QueryableT<'_>,
-        context: &GlobalDrawingContext,
-        settings: &<BpmnDomain as Domain>::SettingsT,
+        gdc: &GlobalDrawingContext,
+        _settings: &<BpmnDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveBpmnTool)>,
     ) -> TargettingStatus {
@@ -7709,7 +7818,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
         self.bounds_rect =
             egui::Rect::from_center_size(self.position, (Self::WIDTH, Self::HEIGHT).into());
 
-        let background_color = context
+        let background_color = gdc
             .global_colors
             .get(&self.background_color)
             .unwrap_or(egui::Color32::WHITE);
@@ -7871,16 +7980,6 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
-
-        // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            draw_nonfinal_node_button_rects(
-                settings,
-                canvas,
-                self.bounds_rect.right_top(),
-                ui_scale,
-            );
-        }
 
         // Draw targetting ellipse
         if canvas.ui_scale().is_some()

@@ -1008,16 +1008,18 @@ impl BpmnTaskKind {
 pub struct BpmnTask {
     pub uuid: Arc<ModelUuid>,
     pub kind: BpmnTaskKind,
+    pub is_call: bool,
     pub name: Arc<String>,
     #[nh_context_serde(entity)]
     pub attached_events: Vec<ERef<BpmnBoundaryIntermediateEvent>>,
 }
 
 impl BpmnTask {
-    pub fn new(uuid: ModelUuid, kind: BpmnTaskKind, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, kind: BpmnTaskKind, is_call: bool, name: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
+            is_call,
             name: Arc::new(name),
             attached_events: Vec::new(),
         }
@@ -1031,6 +1033,7 @@ impl BpmnTask {
         let new_model = ERef::new(BpmnTask {
             uuid: new_uuid.into(),
             kind: self.kind,
+            is_call: self.is_call,
             name: self.name.clone(),
             attached_events: self
                 .attached_events
@@ -1116,23 +1119,16 @@ pub enum BpmnSubprocessKind {
     Subprocess,
     Transaction,
     EventSubprocess,
-    CallActivity,
 }
 
 impl BpmnSubprocessKind {
-    pub const VARIANTS: [Self; 4] = [
-        Self::Subprocess,
-        Self::Transaction,
-        Self::EventSubprocess,
-        Self::CallActivity,
-    ];
+    pub const VARIANTS: [Self; 3] = [Self::Subprocess, Self::Transaction, Self::EventSubprocess];
 
     pub fn as_str(&self) -> &'static str {
         match self {
             BpmnSubprocessKind::Subprocess => "Subprocess",
             BpmnSubprocessKind::Transaction => "Transaction",
             BpmnSubprocessKind::EventSubprocess => "Event Subprocess",
-            BpmnSubprocessKind::CallActivity => "Call Activity",
         }
     }
 }
