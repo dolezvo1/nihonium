@@ -419,9 +419,7 @@ where
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
         self.owned_views.draw_order_foreach_mut(|v| {
-            if v.draw_in(q, context, settings, canvas, tool) == TargettingStatus::Drawn {
-                drawn_child_targetting = TargettingStatus::Drawn;
-            }
+            drawn_child_targetting |= v.draw_in(q, context, settings, canvas, tool);
         });
 
         if canvas.ui_scale().is_some() {

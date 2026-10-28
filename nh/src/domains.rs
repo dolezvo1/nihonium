@@ -1,4 +1,5 @@
 pub mod archimate;
+pub mod bpmn;
 pub mod demo;
 pub mod democsd;
 pub mod demoofd;

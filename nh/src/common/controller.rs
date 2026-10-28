@@ -1165,6 +1165,23 @@ pub enum TargettingStatus {
     Drawn,
 }
 
+impl std::ops::BitOr for TargettingStatus {
+    type Output = Self;
+
+    fn bitor(self, rhs: TargettingStatus) -> Self::Output {
+        match (self, rhs) {
+            (TargettingStatus::NotDrawn, TargettingStatus::NotDrawn) => TargettingStatus::NotDrawn,
+            _ => TargettingStatus::Drawn,
+        }
+    }
+}
+
+impl std::ops::BitOrAssign for TargettingStatus {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = *self | rhs;
+    }
+}
+
 #[derive(
     Clone, Copy, Default, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize,
 )]
