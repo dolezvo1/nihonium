@@ -765,7 +765,11 @@ impl DiagramSettings for BpmnSettings {
                                     modified = true;
                                 }
                             }
-                            BpmnToolStage::SubprocessStart { kind, name } => {
+                            BpmnToolStage::SubprocessStart {
+                                kind,
+                                name,
+                                with_edge_from: _,
+                            } => {
                                 modified |= columns[1]
                                     .labeled_text_edit_singleline("Name", name)
                                     .changed();
@@ -808,6 +812,7 @@ impl DiagramSettings for BpmnSettings {
                                 kind,
                                 subkind,
                                 name,
+                                with_edge_from: _,
                             } => {
                                 modified |= columns[1]
                                     .labeled_text_edit_singleline("Name", name)
@@ -989,6 +994,118 @@ impl DiagramSettings2<BpmnDomain> for BpmnSettings {
 
 type NonFinalElementButtonF =
     dyn Fn(BpmnNonFinalElement) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool);
+mod buttons {
+    use std::cell::LazyCell;
+
+    use super::*;
+
+    fn nonfinal_edge(
+        m: BpmnNonFinalElement,
+    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+        (
+            BpmnToolStage::LinkStart {
+                link_type: LinkType::Edge {
+                    condition: "".to_owned(),
+                },
+            },
+            BpmnToolStage::LinkEnd,
+            PartialBpmnElement::Link {
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn nonfinal_association(
+        m: BpmnNonFinalElement,
+    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+        (
+            BpmnToolStage::LinkStart {
+                link_type: LinkType::Association {
+                    name: "".to_owned(),
+                },
+            },
+            BpmnToolStage::LinkEnd,
+            PartialBpmnElement::Link {
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn nonfinal_intermediateevent(
+        m: BpmnNonFinalElement,
+    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+        let ts = BpmnToolStage::IntermediateEvent {
+            kind: BpmnEventKind::Message,
+            subkind: BpmnIntermediateEventKind::Throwing,
+            name: "".to_owned(),
+            with_edge_from: Some(*m.uuid()),
+        };
+        (ts.clone(), ts, PartialBpmnElement::None, true)
+    }
+    fn nonfinal_endevent(
+        m: BpmnNonFinalElement,
+    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+        let ts = BpmnToolStage::EndEvent {
+            kind: BpmnEventKind::Message,
+            name: "".to_owned(),
+            with_edge_from: Some(*m.uuid()),
+        };
+        (ts.clone(), ts, PartialBpmnElement::None, true)
+    }
+
+    fn nonfinal_task(
+        m: BpmnNonFinalElement,
+    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+        let ts = BpmnToolStage::Task {
+            name: "task".to_owned(),
+            kind: BpmnTaskKind::Unspecified,
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (ts.clone(), ts, PartialBpmnElement::None, true)
+    }
+    fn nonfinal_subprocess(
+        m: BpmnNonFinalElement,
+    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+        let ts = BpmnToolStage::SubprocessStart {
+            kind: BpmnSubprocessKind::Subprocess,
+            name: "subprocess".to_owned(),
+            with_edge_from: Some(*m.uuid()),
+        };
+        (ts.clone(), ts, PartialBpmnElement::None, true)
+    }
+    fn nonfinal_gateway(
+        m: BpmnNonFinalElement,
+    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+        let ts = BpmnToolStage::Gateway {
+            kind: BpmnGatewayKind::Exclusive,
+            condition: "".to_owned(),
+            with_edge_from: Some(*m.uuid()),
+        };
+        (ts.clone(), ts, PartialBpmnElement::None, true)
+    }
+
+    pub const NONFINAL_BUTTONS: LazyCell<
+        Vec<(usize, usize, &'static str, &'static NonFinalElementButtonF)>,
+    > = LazyCell::new(|| {
+        vec![
+            (0, 0, "↘", &nonfinal_edge as &NonFinalElementButtonF),
+            // (0, 1, "\\", &nonfinal_association as &NonFinalElementButtonF),
+            (
+                1,
+                0,
+                "I",
+                &nonfinal_intermediateevent as &NonFinalElementButtonF,
+            ),
+            (1, 1, "E", &nonfinal_endevent as &NonFinalElementButtonF),
+            (2, 0, "T", &nonfinal_task as &NonFinalElementButtonF),
+            (2, 1, "S", &nonfinal_subprocess as &NonFinalElementButtonF),
+            (2, 2, "G", &nonfinal_gateway as &NonFinalElementButtonF),
+        ]
+    });
+}
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let palette_items = vec![
         (
@@ -1008,6 +1125,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     BpmnToolStage::SubprocessStart {
                         name: "Subprocess".to_owned(),
                         kind: BpmnSubprocessKind::Subprocess,
+                        with_edge_from: None,
                     },
                     "Subprocess",
                     None,
@@ -1038,6 +1156,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                         kind: BpmnEventKind::Message,
                         subkind: BpmnIntermediateEventKind::Catching,
                         name: "".to_owned(),
+                        with_edge_from: None,
                     },
                     "Intermediate Event",
                     None,
@@ -1131,50 +1250,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     .map(|e| (e.0, GroupDisplayStyle::List, e.1))
     .collect();
 
-    fn nonfinal_edge(
-        m: BpmnNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
-        (
-            BpmnToolStage::LinkStart {
-                link_type: LinkType::Edge {
-                    condition: "".to_owned(),
-                },
-            },
-            BpmnToolStage::LinkEnd,
-            PartialBpmnElement::Link {
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    fn nonfinal_association(
-        m: BpmnNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
-        (
-            BpmnToolStage::LinkStart {
-                link_type: LinkType::Association {
-                    name: "".to_owned(),
-                },
-            },
-            BpmnToolStage::LinkEnd,
-            PartialBpmnElement::Link {
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-
-    let nonfinal_buttons = vec![
-        (0, 0, "↘", &nonfinal_edge as &NonFinalElementButtonF),
-        (0, 1, "\\", &nonfinal_association as &NonFinalElementButtonF),
-    ];
-
     Box::new(BpmnSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
-        nonfinal_buttons,
+        nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
     })
 }
 
@@ -1203,6 +1282,7 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
             kind,
             subkind,
             name,
+            with_edge_from: _,
         } => {
             let view = new_bpmn_intermediateevent(*kind, *subkind, name, egui::Pos2::ZERO, false).1;
             view.write().refresh_buffers();
@@ -1288,7 +1368,11 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
                 LinkType::Association { name } => todo!(),
             }
         }
-        BpmnToolStage::SubprocessStart { kind, name } => {
+        BpmnToolStage::SubprocessStart {
+            kind,
+            name,
+            with_edge_from: _,
+        } => {
             let view = new_bpmn_subprocess(
                 *kind,
                 name,
@@ -1347,7 +1431,7 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
         palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?
             .into(),
         palette_edit_buffer: PaletteEditBuffer::None.into(),
-        nonfinal_buttons: Vec::new(),
+        nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
     }))
 }
 
@@ -1390,6 +1474,7 @@ pub enum BpmnToolStage {
         kind: BpmnEventKind,
         subkind: BpmnIntermediateEventKind,
         name: String,
+        with_edge_from: Option<ModelUuid>,
     },
     EndEvent {
         kind: BpmnEventKind,
@@ -1420,6 +1505,7 @@ pub enum BpmnToolStage {
     SubprocessStart {
         kind: BpmnSubprocessKind,
         name: String,
+        with_edge_from: Option<ModelUuid>,
     },
     SubprocessEnd,
     PoolStart {
@@ -1566,15 +1652,23 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     with_edge_from: Some(source),
                     ..
                 }
+                | BpmnToolStage::SubprocessStart {
+                    with_edge_from: Some(source),
+                    ..
+                }
+                | BpmnToolStage::IntermediateEvent {
+                    with_edge_from: Some(source),
+                    ..
+                }
+                | BpmnToolStage::EndEvent {
+                    with_edge_from: Some(source),
+                    ..
+                }
                 | BpmnToolStage::Gateway {
                     with_edge_from: Some(source),
                     ..
                 }
                 | BpmnToolStage::Data {
-                    with_edge_from: Some(source),
-                    ..
-                }
-                | BpmnToolStage::EndEvent {
                     with_edge_from: Some(source),
                     ..
                 },
@@ -1646,6 +1740,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     kind,
                     subkind,
                     name,
+                    with_edge_from: _,
                 },
                 _,
             ) => {
@@ -1796,6 +1891,10 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                         with_edge_from: Some(source),
                         ..
                     }
+                    | BpmnToolStage::IntermediateEvent {
+                        with_edge_from: Some(source),
+                        ..
+                    }
                     | BpmnToolStage::EndEvent {
                         with_edge_from: Some(source),
                         ..
@@ -1808,11 +1907,14 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                         with_edge_from: Some(source),
                         ..
                     } if let Some(source) = q.get_view_for(source)
-                        && let Some(parent) = q.find_container(&source.uuid(), |uuid, e| {
-                            (uuid == preferred_container
-                                || q.is_contained(preferred_container, uuid))
-                                && !matches!(e, BpmnElementView::Pool(_))
-                        }) =>
+                        && let nearest_common_container = q
+                            .find_container(&source.uuid(), |uuid, e| {
+                                (uuid == preferred_container
+                                    || q.is_contained(preferred_container, uuid))
+                                    && !matches!(e, BpmnElementView::Pool(_))
+                            })
+                            .map(|e| e.0)
+                            .unwrap_or_else(|| q.get_root()) =>
                     {
                         let edge_view = new_bpmn_sequenceedge(
                             BpmnSequenceEdgeKind::Normal,
@@ -1822,7 +1924,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                             (element.model().as_noninitial().unwrap(), element.clone()),
                         )
                         .1;
-                        Some((parent.0, edge_view))
+                        Some((nearest_common_container, edge_view))
                     }
                     _ => None,
                 };
@@ -1889,14 +1991,49 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 }
             }
             PartialBpmnElement::Subprocess { a, b: Some(b) }
-                if let BpmnToolStage::SubprocessStart { kind, name } = &self.initial_stage =>
+                if let BpmnToolStage::SubprocessStart {
+                    kind,
+                    name,
+                    with_edge_from: _,
+                } = &self.initial_stage =>
             {
                 self.current_stage = self.initial_stage.clone();
 
                 let activity_view =
                     new_bpmn_subprocess(*kind, name, egui::Rect::from_two_pos(*a, *b), true).1;
 
+                let additional_edge = match &self.initial_stage {
+                    BpmnToolStage::SubprocessStart {
+                        with_edge_from: Some(source),
+                        ..
+                    } if let Some(source) = q.get_view_for(source)
+                        && let nearest_common_container = q
+                            .find_container(&source.uuid(), |uuid, e| {
+                                (uuid == preferred_container
+                                    || q.is_contained(preferred_container, uuid))
+                                    && !matches!(e, BpmnElementView::Pool(_))
+                            })
+                            .map(|e| e.0)
+                            .unwrap_or_else(|| q.get_root()) =>
+                    {
+                        let edge_view = new_bpmn_sequenceedge(
+                            BpmnSequenceEdgeKind::Normal,
+                            "",
+                            None,
+                            (source.model().as_nonfinal().unwrap(), source),
+                            (
+                                activity_view.read().model().as_noninitial().unwrap(),
+                                activity_view.clone().into(),
+                            ),
+                        )
+                        .1;
+                        Some((nearest_common_container, edge_view))
+                    }
+                    _ => None,
+                };
+
                 self.try_spend();
+
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1904,6 +2041,15 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     element: BpmnElementView::from(activity_view).into(),
                     into_model: true,
                 });
+                if let Some((parent, e)) = additional_edge {
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: parent,
+                        bucket: 0,
+                        position: None,
+                        element: BpmnElementView::from(e).into(),
+                        into_model: true,
+                    });
+                }
                 Ok(())
             }
             PartialBpmnElement::Pool { a, b: Some(b) }
@@ -2295,6 +2441,18 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
             );
             canvas::NHIcon::Move.draw(canvas, dc, 8.0 / ui_scale, egui::Color32::BLACK);
         }
+        // Draw buttons
+        if let Some(ui_scale) = canvas
+            .ui_scale()
+            .filter(|_| self.temporaries.highlight.selected)
+        {
+            draw_nonfinal_node_button_rects(
+                settings,
+                canvas,
+                self.bounds_rect.right_top(),
+                ui_scale,
+            );
+        }
 
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
         self.contained_elements.event_order_foreach_mut(|e| {
@@ -2448,6 +2606,28 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos)
+                if k_status.is_none()
+                    && self.temporaries.highlight.selected
+                    && let Some(f) = handle_nonfinal_node_button_click(
+                        settings,
+                        self.bounds_rect.right_top(),
+                        ehc.ui_scale,
+                        pos,
+                    ) =>
+            {
+                let (initial_stage, current_stage, result, event_lock) =
+                    f(self.model.clone().into());
+                *tool = Some(NaiveBpmnTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) => {
                 if !self.bounds_rect.contains(pos) {
@@ -6367,6 +6547,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
         if let Some(ui_scale) = canvas
             .ui_scale()
             .filter(|_| self.temporaries.highlight.selected)
+            .filter(|_| !matches!(self.model, BpmnEvent::EndEvent(_)))
         {
             draw_nonfinal_node_button_rects(settings, canvas, self.buttons_origin(), ui_scale);
         }
