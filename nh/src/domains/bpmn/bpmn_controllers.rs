@@ -2476,16 +2476,27 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                 width: 1.0,
                 color: egui::Color32::BLACK,
                 line_type: match self.temporaries.kind_buffer {
-                    BpmnSubprocessKind::Subprocess => canvas::LineType::Solid,
+                    BpmnSubprocessKind::Subprocess | BpmnSubprocessKind::EventSubprocess => {
+                        canvas::LineType::Solid
+                    }
                     BpmnSubprocessKind::Transaction => canvas::LineType::Dashed,
-                    // TODO: should be double
-                    BpmnSubprocessKind::EventSubprocess => canvas::LineType::Solid,
                 },
             },
             self.temporaries.highlight,
         );
+        const EVENT_BORDER_WIDTH: f32 = 5.0;
+        if self.temporaries.kind_buffer == BpmnSubprocessKind::EventSubprocess {
+            canvas.draw_rectangle(
+                self.bounds_rect.shrink(EVENT_BORDER_WIDTH),
+                egui::CornerRadius::same(10),
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                self.temporaries.highlight,
+            );
+        }
+
         canvas.draw_text(
-            self.bounds_rect.center_top(),
+            self.bounds_rect.center_top() + (0.0, EVENT_BORDER_WIDTH).into(),
             egui::Align2::CENTER_TOP,
             &self.temporaries.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,

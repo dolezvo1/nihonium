@@ -1226,7 +1226,7 @@ impl NHCanvas for UiCanvas {
                         &[p1, p2],
                         stroke.color,
                         4.0,
-                        1.0,
+                        stroke.width * 0.5,
                     ));
             }
         }
@@ -1241,32 +1241,111 @@ impl NHCanvas for UiCanvas {
         highlight: Highlight,
     ) {
         let stroke = self.filtered_stroke(stroke, highlight);
-
-        if color == egui::Color32::TRANSPARENT && stroke.line_type != LineType::Solid {
-            for (p1, p2) in [
-                (rect.left_top(), rect.right_top()),
-                (rect.left_bottom(), rect.right_bottom()),
-                (rect.right_top(), rect.right_bottom()),
-                (rect.left_top(), rect.left_bottom()),
-            ] {
-                self.draw_line([p1, p2], stroke, highlight);
-            }
+        let rect = if rect == egui::Rect::EVERYTHING {
+            egui::Rect::EVERYTHING
         } else {
-            let translated_rect = if rect == egui::Rect::EVERYTHING {
-                egui::Rect::EVERYTHING
-            } else {
-                (rect * self.camera_scale)
-                    .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
-            };
+            (rect * self.camera_scale)
+                .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
+        };
+        if !self.canvas.intersects(rect) {
+            return;
+        }
 
-            if self.canvas.intersects(translated_rect) {
-                self.main_area_painter.rect(
-                    translated_rect,
+        self.main_area_painter
+            .add(egui::Shape::rect_filled(rect, corner_radius, color));
+
+        match stroke.line_type {
+            LineType::Solid => {
+                self.main_area_painter.add(egui::Shape::rect_stroke(
+                    rect,
                     corner_radius,
-                    color,
-                    egui::Stroke::from(stroke),
+                    stroke,
                     egui::StrokeKind::Middle,
-                );
+                ));
+            }
+            LineType::Dashed | LineType::Dotted => {
+                let nw = f32::from(corner_radius.nw);
+                let ne = f32::from(corner_radius.ne);
+                let sw = f32::from(corner_radius.sw);
+                let se = f32::from(corner_radius.se);
+
+                let mut scale: f32 = 1.0;
+                for (available, sum) in [
+                    (rect.width(), nw + ne),
+                    (rect.width(), sw + se),
+                    (rect.height(), nw + sw),
+                    (rect.height(), ne + se),
+                ] {
+                    if sum > 0.0 {
+                        scale = scale.min(available / sum);
+                    }
+                }
+                scale = scale.clamp(0.0, 1.0);
+
+                let corners = egui::CornerRadius {
+                    nw: (nw * scale).floor() as u8,
+                    ne: (ne * scale).floor() as u8,
+                    sw: (sw * scale).floor() as u8,
+                    se: (se * scale).floor() as u8,
+                };
+
+                let corner_arcs = [
+                    (
+                        egui::pos2(
+                            rect.min.x + f32::from(corners.nw),
+                            rect.min.y + f32::from(corners.nw),
+                        ),
+                        f32::from(corners.nw),
+                        std::f32::consts::PI,
+                    ),
+                    (
+                        egui::pos2(
+                            rect.max.x - f32::from(corners.ne),
+                            rect.min.y + f32::from(corners.ne),
+                        ),
+                        f32::from(corners.ne),
+                        1.5 * std::f32::consts::PI,
+                    ),
+                    (
+                        egui::pos2(
+                            rect.max.x - f32::from(corners.se),
+                            rect.max.y - f32::from(corners.se),
+                        ),
+                        f32::from(corners.se),
+                        0.0,
+                    ),
+                    (
+                        egui::pos2(
+                            rect.min.x + f32::from(corners.sw),
+                            rect.max.y - f32::from(corners.sw),
+                        ),
+                        f32::from(corners.sw),
+                        0.5 * std::f32::consts::PI,
+                    ),
+                ];
+
+                const SAMPLES_PER_CORNER: usize = 8;
+                let mut points = Vec::with_capacity(4 * (SAMPLES_PER_CORNER + 1) + 1);
+
+                for (center, radius, start_angle) in corner_arcs {
+                    for i in 0..=SAMPLES_PER_CORNER {
+                        let t = i as f32 / SAMPLES_PER_CORNER as f32;
+                        let angle = start_angle + t * std::f32::consts::FRAC_PI_2;
+                        points
+                            .push(center + egui::vec2(radius * angle.cos(), radius * angle.sin()));
+                    }
+                }
+                points.push(points[0]);
+
+                let outline = match stroke.line_type {
+                    LineType::Solid => unreachable!(),
+                    LineType::Dashed => egui::Shape::dashed_line(&points, stroke, 10.0, 10.0),
+                    LineType::Dotted => {
+                        egui::Shape::dotted_line(&points, stroke.color, 10.0, stroke.width * 0.5)
+                    }
+                };
+
+                self.main_area_painter.extend(outline);
             }
         }
     }
@@ -1279,15 +1358,44 @@ impl NHCanvas for UiCanvas {
         stroke: Stroke,
         highlight: Highlight,
     ) {
-        let stroke = self.filtered_stroke(stroke, highlight).into();
+        let position = self.sc_tr(position);
+        let radius = radius * self.camera_scale;
+        let stroke = self.filtered_stroke(stroke, highlight);
 
-        self.main_area_painter.add(eframe::epaint::EllipseShape {
-            center: self.sc_tr(position),
-            radius: radius * self.camera_scale,
-            angle: 0.0,
-            fill: color,
-            stroke,
-        });
+        self.main_area_painter
+            .add(egui::Shape::ellipse_filled(position, radius, color));
+
+        match stroke.line_type {
+            LineType::Solid => {
+                self.main_area_painter.add(egui::Shape::ellipse_stroke(
+                    position,
+                    radius,
+                    egui::Stroke {
+                        width: stroke.width,
+                        color: stroke.color,
+                    },
+                ));
+            }
+            LineType::Dashed | LineType::Dotted => {
+                const SEGMENTS: u32 = 128;
+                let points: Vec<_> = (0..=SEGMENTS)
+                    .map(|i| {
+                        let angle = std::f32::consts::TAU * i as f32 / SEGMENTS as f32;
+                        position + egui::Vec2::new(radius.x * angle.cos(), radius.y * angle.sin())
+                    })
+                    .collect();
+
+                let outline = match stroke.line_type {
+                    LineType::Solid => unreachable!(),
+                    LineType::Dashed => egui::Shape::dashed_line(&points, stroke, 10.0, 10.0),
+                    LineType::Dotted => {
+                        egui::Shape::dotted_line(&points, stroke.color, 10.0, stroke.width * 0.5)
+                    }
+                };
+
+                self.main_area_painter.extend(outline);
+            }
+        }
     }
 
     fn draw_ellipse_proximity(
