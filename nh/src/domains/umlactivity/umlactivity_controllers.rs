@@ -2346,6 +2346,10 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
 
                 self.try_spend();
 
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2377,6 +2381,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 let fork_view = new_umlactivity_forknode(center, vertical, length).1;
 
                 self.try_spend();
+
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2451,6 +2460,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 .1;
 
                 self.try_spend();
+
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2475,6 +2489,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 .1;
 
                 self.try_spend();
+
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2539,6 +2558,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     .1;
 
                     self.try_spend();
+
+                    commands.push(InsensitiveCommand::HighlightAll(
+                        false,
+                        canvas::Highlight::SELECTED,
+                    ));
                     commands.push(InsensitiveCommand::AddDependency {
                         target: *preferred_container,
                         bucket: preferred_bucket,
@@ -4833,6 +4857,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         });
     }
 
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlActivityDomain as Domain>::CommonElementT>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            self.contained_elements
+                .event_order_foreach(|v| v.deep_copy_walk(requested, uuid_present, tlc, c, m));
+        }
+    }
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,

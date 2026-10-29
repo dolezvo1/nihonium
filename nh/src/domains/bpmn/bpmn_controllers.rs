@@ -1998,6 +1998,10 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
 
                 self.try_spend();
 
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2101,6 +2105,10 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
 
                 self.try_spend();
 
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2129,6 +2137,11 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 let partition_view = new_bpmn_pool(vec![s]).1;
 
                 self.try_spend();
+
+                commands.push(InsensitiveCommand::HighlightAll(
+                    false,
+                    canvas::Highlight::SELECTED,
+                ));
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -2151,6 +2164,11 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     let view = new_bpmn_annotation((target.clone(), target_view), text, *dest).1;
 
                     self.try_spend();
+
+                    commands.push(InsensitiveCommand::HighlightAll(
+                        false,
+                        canvas::Highlight::SELECTED,
+                    ));
                     commands.push(InsensitiveCommand::AddDependency {
                         target: *preferred_container,
                         bucket: preferred_bucket,
@@ -3712,7 +3730,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                 for e in old_sections {
                     let mut w = e.write();
                     if uuids.contains(&w.uuid) {
-                        delta.x += w.bounds_rect.width();
+                        delta.y += w.bounds_rect.height();
                     } else {
                         w.apply_command(
                             diagram_model,
@@ -3941,12 +3959,12 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                                     undo_uuids.insert(*srcw.uuid);
                                     let (src_d, dest_d) = match direction {
                                         BpmnOrdinalMovement::Up => (
-                                            (-destw.bounds_rect.width(), 0.0).into(),
-                                            (srcw.bounds_rect.width(), 0.0).into(),
+                                            (0.0, -destw.bounds_rect.height()).into(),
+                                            (0.0, srcw.bounds_rect.height()).into(),
                                         ),
                                         BpmnOrdinalMovement::Down => (
-                                            (destw.bounds_rect.width(), 0.0).into(),
-                                            (-srcw.bounds_rect.width(), 0.0).into(),
+                                            (0.0, destw.bounds_rect.height()).into(),
+                                            (0.0, -srcw.bounds_rect.height()).into(),
                                         ),
                                     };
                                     let (mut u, mut m) = Default::default();
@@ -4917,6 +4935,21 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
         });
     }
 
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <BpmnDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <BpmnDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <BpmnDomain as Domain>::CommonElementT>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            self.contained_elements
+                .event_order_foreach(|v| v.deep_copy_walk(requested, uuid_present, tlc, c, m));
+        }
+    }
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
@@ -8942,6 +8975,9 @@ impl ElementControllerGen2<BpmnDomain> for BpmnAnnotationView {
     ) {
         flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+    }
+    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
+        deleting.contains(&self.target_view.uuid())
     }
 
     fn deep_copy_clone(

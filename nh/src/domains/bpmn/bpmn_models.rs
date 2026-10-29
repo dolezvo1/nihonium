@@ -42,9 +42,17 @@ pub fn enumerate_diagram(d: &BpmnDiagram) -> HashMap<ModelUuid, BpmnElement> {
 fn enumerate_elements(e: &BpmnElement, into: &mut HashMap<ModelUuid, BpmnElement>) {
     into.insert(*e.uuid(), e.clone());
     match e {
+        BpmnElement::Task(inner) => {
+            for e in &inner.read().attached_events {
+                enumerate_elements(&e.clone().into(), into);
+            }
+        }
         BpmnElement::Subprocess(inner) => {
             for e in &inner.read().contained_elements {
                 enumerate_elements(&e.clone().to_element(), into);
+            }
+            for e in &inner.read().attached_events {
+                enumerate_elements(&e.clone().into(), into);
             }
         }
         BpmnElement::Pool(inner) => {
@@ -68,6 +76,18 @@ pub fn transitive_closure(
     for e in &d.contained_elements {
         fn walk(e: &BpmnElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
+                BpmnElement::Task(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
+                    } else {
+                        for e in &r.attached_events {
+                            walk(&e.clone().into(), when_deleting);
+                        }
+                    }
+                }
                 BpmnElement::Subprocess(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
@@ -77,6 +97,9 @@ pub fn transitive_closure(
                     } else {
                         for e in &r.contained_elements {
                             walk(&e.clone().to_element(), when_deleting);
+                        }
+                        for e in &r.attached_events {
+                            walk(&e.clone().into(), when_deleting);
                         }
                     }
                 }
@@ -1092,10 +1115,20 @@ impl ContainerModel for BpmnTask {
     type ElementT = BpmnElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
+        for e in &self.attached_events {
+            if *e.read().uuid() == *uuid {
+                return Some((e.clone().into(), *self.uuid));
+            }
+        }
         None
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.attached_events.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
         None
     }
 }
@@ -1246,10 +1279,33 @@ impl ContainerModel for BpmnSubprocess {
     type ElementT = BpmnElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone().to_element(), *self.uuid));
+            }
+            if let Some(e) = e.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        for e in &self.attached_events {
+            if *e.read().uuid() == *uuid {
+                return Some((e.clone().into(), *self.uuid));
+            }
+        }
         None
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.attached_events.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
         None
     }
 }
