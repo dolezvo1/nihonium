@@ -1857,16 +1857,6 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         }
     }
 
-    fn result_references(&self, uuid: &ModelUuid) -> bool {
-        match &self.result {
-            PartialNetworkElement::None
-            | PartialNetworkElement::Some(_)
-            | PartialNetworkElement::Container { .. } => false,
-            PartialNetworkElement::Association { source, dest } => {
-                *source.uuid() == *uuid || dest.as_ref().is_some_and(|e| *e.uuid() == *uuid)
-            }
-        }
-    }
     fn try_flush(
         &mut self,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
@@ -1963,18 +1953,20 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             } = &self.initial_stage =>
             {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                if let (Some(source_controller), Some(dest_controller)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_controller.uuid(), preferred_container)
-                    && q.is_contained(&dest_controller.uuid(), preferred_container)
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
                     let association_view = new_network_association(
                         *line_type,
-                        (source.clone(), source_controller),
+                        (source.clone(), source_view),
                         *source_arrowhead,
-                        (dest.clone(), dest_controller),
+                        (dest.clone(), target_view),
                         *target_arrowhead,
                         *color,
                     )

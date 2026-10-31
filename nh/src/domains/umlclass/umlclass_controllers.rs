@@ -3130,10 +3130,12 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 ..
             } if let UmlClassToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                if let (Some(source_view), Some(target_view)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_view.uuid(), preferred_container)
-                    && q.is_contained(&target_view.uuid(), preferred_container)
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -3214,20 +3216,22 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             }
             PartialUmlClassElement::NoteLink {
                 source,
-                dest: Some(dest),
+                dest: Some(target),
             } => {
                 let source_uuid = *source.read().uuid();
-                if let (Some(source_view), Some(target_view)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&dest.uuid()))
-                    && q.is_contained(&source_view.uuid(), preferred_container)
-                    && q.is_contained(&target_view.uuid(), preferred_container)
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target.uuid())
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = UmlClassToolStage::NoteLinkStart;
 
                     let link_view = new_umlclass_notelink(
                         None,
                         (source.clone(), source_view),
-                        (dest.clone(), target_view),
+                        (target.clone(), target_view),
                     )
                     .1;
 

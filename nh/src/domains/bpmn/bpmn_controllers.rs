@@ -2420,8 +2420,8 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     && q.is_contained(&source_view_uuid, preferred_container)
                     && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
                     && q.is_contained(&target_view_uuid, preferred_container)
-                    && let Some(source_view) = q.get_view_for(&source_uuid)
-                    && let Some(target_view) = q.get_view_for(&target_uuid)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                     && q.find_container(&source_view_uuid, |_, e| {
                         matches!(e, BpmnElementView::Pool(_))
                     })
@@ -2480,8 +2480,8 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     && q.is_contained(&source_view_uuid, preferred_container)
                     && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
                     && q.is_contained(&target_view_uuid, preferred_container)
-                    && let Some(source_view) = q.get_view_for(&source_uuid)
-                    && let Some(target_view) = q.get_view_for(&target_uuid)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                     && let p1 = q
                         .find_container(&source_view.uuid(), |_, e| {
                             matches!(e, BpmnElementView::Pool(_))
@@ -2533,8 +2533,8 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     && q.is_contained(&source_view_uuid, preferred_container)
                     && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
                     && q.is_contained(&target_view_uuid, preferred_container)
-                    && let Some(source_view) = q.get_view_for(&source_uuid)
-                    && let Some(target_view) = q.get_view_for(&target_uuid)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -3277,9 +3277,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
-                    if !tool.result_references(&self.model.read().uuid) {
-                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
@@ -6150,9 +6148,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
-                    if !tool.result_references(&self.model.read().uuid) {
-                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {

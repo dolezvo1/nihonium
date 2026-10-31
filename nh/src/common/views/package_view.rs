@@ -557,9 +557,7 @@ where
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.adapter.model_section());
 
-                    if !tool.result_references(&self.adapter.model_uuid()) {
-                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {

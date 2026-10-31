@@ -1286,22 +1286,24 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             }
             PartialRdfElement::Predicate {
                 source,
-                dest: Some(dest),
+                dest: Some(target),
                 ..
             } if let RdfToolStage::PredicateStart { iri } = &self.initial_stage => {
-                let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.uuid());
-                if let (Some(source_controller), Some(dest_controller)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_controller.uuid(), preferred_container)
-                    && q.is_contained(&dest_controller.uuid(), preferred_container)
-                    && q.are_siblings(&source_controller.uuid(), &dest_controller.uuid())
+                let (source_uuid, target_uuid) = (*source.read().uuid(), *target.uuid());
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && q.are_siblings(&source_view_uuid, &target_view_uuid)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
                     let (_, predicate_view) = new_rdf_predicate(
                         iri,
-                        (source.clone(), source_controller),
-                        (dest.clone(), dest_controller),
+                        (source.clone(), source_view),
+                        (target.clone(), target_view),
                     );
 
                     self.try_spend();

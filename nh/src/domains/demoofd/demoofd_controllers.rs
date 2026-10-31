@@ -1884,8 +1884,9 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             } = &self.initial_stage =>
             {
                 let base_uuid = *source.read().uuid;
-                if let Some(base_view) = q.get_view_for(&base_uuid)
-                    && q.is_contained(&base_view.uuid(), preferred_container)
+                if let Some(base_view_uuid) = q.get_viewuuid_for(&base_uuid)
+                    && q.is_contained(&base_view_uuid, preferred_container)
+                    && let Some(base_view) = q.get_view(&base_view_uuid)
                 {
                     self.current_stage = DemoOfdToolStage::EventStart {
                         identifier: identifier.clone(),
@@ -1930,10 +1931,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ..
             } if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
-                if let (Some(source_view), Some(dest_view)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_view.uuid(), preferred_container)
-                    && q.is_contained(&dest_view.uuid(), preferred_container)
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -1948,21 +1951,21 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                             range_multiplicity,
                             None,
                             (source.clone(), source_view),
-                            (dest.clone(), dest_view),
+                            (dest.clone(), target_view),
                         )
                         .1
                         .into(),
                         LinkType::Specialization => new_demoofd_specialization(
                             None,
                             (source.clone(), source_view),
-                            (dest.clone(), dest_view),
+                            (dest.clone(), target_view),
                         )
                         .1
                         .into(),
                         LinkType::Aggregation => new_demoofd_aggregation(
                             None,
                             (source.clone(), source_view),
-                            (dest.clone(), dest_view),
+                            (dest.clone(), target_view),
                         )
                         .1
                         .into(),
@@ -1988,10 +1991,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ..
             } if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
-                if let (Some(source_view), Some(dest_view)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_view.uuid(), preferred_container)
-                    && q.is_contained(&dest_view.uuid(), preferred_container)
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -2002,7 +2007,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         LinkType::Precedence => new_demoofd_precedence(
                             None,
                             (source.clone(), source_view),
-                            (dest.clone(), dest_view),
+                            (dest.clone(), target_view),
                         )
                         .1
                         .into(),
@@ -2024,14 +2029,16 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             }
             PartialDemoOfdElement::TypeLink {
                 source,
-                dest: Some(dest),
+                dest: Some(target),
                 ..
             } if let DemoOfdToolStage::LinkStart { link_type } = &self.initial_stage => {
-                let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                if let (Some(source_view), Some(dest_view)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_view.uuid(), preferred_container)
-                    && q.is_contained(&dest_view.uuid(), preferred_container)
+                let (source_uuid, target_uuid) = (*source.uuid(), *target.uuid());
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -2043,7 +2050,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         LinkType::Exclusion => new_demoofd_exclusion(
                             None,
                             (source.clone(), source_view),
-                            (dest.clone(), dest_view),
+                            (target.clone(), target_view),
                         )
                         .1
                         .into(),

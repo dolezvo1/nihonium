@@ -2401,18 +2401,20 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 ..
             } if let UmlActivityToolStage::LinkStart { link_type } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                if let (Some(source_view), Some(target_view)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_view.uuid(), preferred_container)
-                    && q.is_contained(&target_view.uuid(), preferred_container)
-                    && q.find_container(&source_view.uuid(), |_, e| {
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && q.find_container(&source_view_uuid, |_, e| {
                         matches!(e, UmlActivityElementView::Activity(_))
                     })
                     .map(|e| e.0)
-                        == q.find_container(&target_view.uuid(), |_, e| {
+                        == q.find_container(&target_view_uuid, |_, e| {
                             matches!(e, UmlActivityElementView::Activity(_))
                         })
                         .map(|e| e.0)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 

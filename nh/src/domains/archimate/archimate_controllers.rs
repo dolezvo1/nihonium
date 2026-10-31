@@ -1653,19 +1653,6 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
         }
     }
 
-    fn result_references(&self, uuid: &ModelUuid) -> bool {
-        match &self.result {
-            PartialArchiMateElement::None | PartialArchiMateElement::Some(_) => false,
-            PartialArchiMateElement::Relationship { source, dest } => {
-                *source.read().uuid == *uuid
-                    || dest.as_ref().is_some_and(|e| *e.read().uuid == *uuid)
-            }
-            PartialArchiMateElement::RelationshipEnding {
-                relationship_model,
-                new_model,
-            } => *relationship_model.read().uuid == *uuid || new_model.is_some_and(|e| e == *uuid),
-        }
-    }
     fn try_flush(
         &mut self,
         q: &<ArchiMateDomain as Domain>::QueryableT<'_>,
@@ -1735,7 +1722,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
             }
             PartialArchiMateElement::Relationship {
                 source,
-                dest: Some(dest),
+                dest: Some(target),
                 ..
             } if let ArchiMateToolStage::RelationshipStart {
                 kind,
@@ -1744,11 +1731,13 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                 color,
             } = &self.initial_stage =>
             {
-                let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
-                if let (Some(source_view), Some(dest_view)) =
-                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.is_contained(&source_view.uuid(), preferred_container)
-                    && q.is_contained(&dest_view.uuid(), preferred_container)
+                let (source_uuid, target_uuid) = (*source.read().uuid, *target.read().uuid);
+                if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
+                    && q.is_contained(&source_view_uuid, preferred_container)
+                    && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
+                    && q.is_contained(&target_view_uuid, preferred_container)
+                    && let Some(source_view) = q.get_view(&source_view_uuid)
+                    && let Some(target_view) = q.get_view(&target_view_uuid)
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -1758,7 +1747,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                         stereotype,
                         None,
                         (source.clone(), source_view),
-                        (dest.clone(), dest_view),
+                        (target.clone(), target_view),
                         *color,
                     )
                     .1;
@@ -3335,9 +3324,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
-                    if !tool.result_references(&self.model.read().uuid) {
-                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
