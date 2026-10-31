@@ -676,53 +676,55 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         (swimlane3, swimlane3_view.clone()),
     ]);
 
+    let (order, order_view) = new_bpmn_data(
+        BpmnDataKind::InputObject,
+        false,
+        "order data",
+        egui::Pos2::new(200.0, 350.0),
+        MGlobalColor::None,
+        false,
+    );
     let (start_event, start_event_view) = new_bpmn_startevent(
         BpmnEventKind::Message,
         BpmnStartEventKind::Interrupting,
         "",
-        egui::Pos2::new(200.0, 350.0),
+        egui::Pos2::new(400.0, 350.0),
         false,
     );
     let (wait_event, wait_event_view) = new_bpmn_intermediateevent(
         BpmnEventKind::Timer,
         BpmnIntermediateEventKind::Catching,
         "",
-        egui::Pos2::new(400.0, 350.0),
-        false,
-    );
-    let (cancel_event, cancel_event_view) = new_bpmn_endevent(
-        BpmnEventKind::Message,
-        "cancel order",
         egui::Pos2::new(600.0, 350.0),
         false,
     );
-
-    let (order, order_view) = new_bpmn_data(
-        BpmnDataKind::InputObject,
+    let (done_event, done_view) = new_bpmn_endevent(
+        BpmnEventKind::Message,
+        "",
+        egui::Pos2::new(800.0, 350.0),
         false,
-        "order data",
-        egui::Pos2::new(200.0, 550.0),
+    );
+
+    let (availability, availability_view) = new_bpmn_task(
+        "Check availability",
+        BpmnTaskKind::Manual,
+        false,
+        egui::Pos2::new(400.0, 550.0),
         MGlobalColor::None,
         false,
     );
-    let (available, available_view) = new_bpmn_gateway(
+    let (gateway, gateway_view) = new_bpmn_gateway(
         BpmnGatewayKind::Exclusive,
-        "check availability",
-        egui::Pos2::new(400.0, 550.0),
+        "",
+        egui::Pos2::new(600.0, 550.0),
         false,
     );
     let (ship, ship_view) = new_bpmn_task(
         "Ship items",
         BpmnTaskKind::Manual,
         false,
-        egui::Pos2::new(600.0, 550.0),
-        MGlobalColor::None,
-        false,
-    );
-    let (done_event, done_view) = new_bpmn_endevent(
-        BpmnEventKind::Message,
-        "",
         egui::Pos2::new(800.0, 550.0),
+        MGlobalColor::None,
         false,
     );
 
@@ -734,16 +736,6 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         (start_event.clone().into(), start_event_view.clone().into()),
     );
     let (message2, message2_view) = new_bpmn_messageedge(
-        BpmnMessageEdgeKind::Unspecified,
-        "",
-        None,
-        (
-            cancel_event.clone().into(),
-            cancel_event_view.clone().into(),
-        ),
-        (pool1.clone().into(), pool1_view.clone().into()),
-    );
-    let (message3, message3_view) = new_bpmn_messageedge(
         BpmnMessageEdgeKind::Unspecified,
         "",
         None,
@@ -763,26 +755,36 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         "",
         None,
         (wait_event.clone().into(), wait_event_view.clone().into()),
-        (available.clone().into(), available_view.clone().into()),
-    );
-    let (sequence3, sequence3_view) = new_bpmn_sequenceedge(
-        BpmnSequenceEdgeKind::DefaultBranch,
-        "",
-        None,
-        (available.clone().into(), available_view.clone().into()),
         (
-            cancel_event.clone().into(),
-            cancel_event_view.clone().into(),
+            availability.clone().into(),
+            availability_view.clone().into(),
         ),
     );
-    let (sequence4, sequence4_view) = new_bpmn_sequenceedge(
+    let (sequence3, sequence3_view) = new_bpmn_sequenceedge(
         BpmnSequenceEdgeKind::Normal,
         "",
         None,
-        (available.clone().into(), available_view.clone().into()),
-        (ship.clone().into(), ship_view.clone().into()),
+        (
+            availability.clone().into(),
+            availability_view.clone().into(),
+        ),
+        (gateway.clone().into(), gateway_view.clone().into()),
+    );
+    let (sequence4, sequence4_view) = new_bpmn_sequenceedge(
+        BpmnSequenceEdgeKind::DefaultBranch,
+        "",
+        None,
+        (gateway.clone().into(), gateway_view.clone().into()),
+        (done_event.clone().into(), done_view.clone().into()),
     );
     let (sequence5, sequence5_view) = new_bpmn_sequenceedge(
+        BpmnSequenceEdgeKind::ConditionalBranch,
+        "available",
+        None,
+        (gateway.clone().into(), gateway_view.clone().into()),
+        (ship.clone().into(), ship_view.clone().into()),
+    );
+    let (sequence6, sequence6_view) = new_bpmn_sequenceedge(
         BpmnSequenceEdgeKind::Normal,
         "",
         None,
@@ -792,7 +794,10 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let (association1, association1_view) = new_bpmn_association(
         None,
-        (available.clone().into(), available_view.clone().into()),
+        (
+            availability.clone().into(),
+            availability_view.clone().into(),
+        ),
         (order.clone().into(), order_view.clone().into()),
     );
 
@@ -804,21 +809,22 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             pool2.into(),
             message1.into(),
             message2.into(),
-            message3.into(),
             sequence1.into(),
             sequence2.into(),
             sequence3.into(),
             sequence4.into(),
             sequence5.into(),
+            sequence6.into(),
             association1.into(),
         ],
     ));
 
     let (mut u, mut a) = Default::default();
     for e in [
-        BpmnElementView::from(start_event_view),
+        BpmnElementView::from(order_view),
+        start_event_view.into(),
         wait_event_view.into(),
-        cancel_event_view.into(),
+        done_view.into(),
     ] {
         let mut w = swimlane2_view.write();
         let uuid = *w.uuid;
@@ -836,10 +842,9 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         );
     }
     for e in [
-        BpmnElementView::from(order_view),
-        available_view.into(),
+        BpmnElementView::from(availability_view),
+        gateway_view.into(),
         ship_view.into(),
-        done_view.into(),
     ] {
         let mut w = swimlane3_view.write();
         let uuid = *w.uuid;
@@ -863,12 +868,12 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![
             message1_view.into(),
             message2_view.into(),
-            message3_view.into(),
             sequence1_view.into(),
             sequence2_view.into(),
             sequence3_view.into(),
             sequence4_view.into(),
             sequence5_view.into(),
+            sequence6_view.into(),
             association1_view.into(),
             pool1_view.into(),
             pool2_view.into(),
