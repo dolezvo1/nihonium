@@ -2349,8 +2349,14 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                                 matches!(e, BpmnElementView::Pool(_))
                             })
                             .map(|e| e.0)
+                        && let source2 = match source.model() {
+                            BpmnElement::BoundaryIntermediateEvent(_) => {
+                                q.get_parent(&source.uuid()).unwrap_or_else(|| q.get_root())
+                            }
+                            _ => *source.uuid(),
+                        }
                         && let s1 = q
-                            .find_container(&source.uuid(), |_, e| {
+                            .find_container(&source2, |_, e| {
                                 matches!(e, BpmnElementView::Subprocess(_))
                             })
                             .map(|e| e.0)
@@ -2422,7 +2428,13 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                             matches!(e, BpmnElementView::Pool(_))
                         })
                         .map(|e| e.0)
-                    && q.find_container(&source_view.uuid(), |_, e| {
+                    && let source2 = match source_view.model() {
+                        BpmnElement::BoundaryIntermediateEvent(_) => q
+                            .get_parent(&source_view.uuid())
+                            .unwrap_or_else(|| q.get_root()),
+                        _ => *source_view.uuid(),
+                    }
+                    && q.find_container(&source2, |_, e| {
                         matches!(e, BpmnElementView::Subprocess(_))
                     })
                     .map(|e| e.0)
@@ -2576,8 +2588,14 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                                 matches!(e, BpmnElementView::Pool(_))
                             })
                             .map(|e| e.0)
+                        && let source2 = match source.model() {
+                            BpmnElement::BoundaryIntermediateEvent(_) => {
+                                q.get_parent(&source.uuid()).unwrap_or_else(|| q.get_root())
+                            }
+                            _ => *source.uuid(),
+                        }
                         && let s1 = q
-                            .find_container(&source.uuid(), |_, e| {
+                            .find_container(&source2, |_, e| {
                                 matches!(e, BpmnElementView::Subprocess(_))
                             })
                             .map(|e| e.0)
