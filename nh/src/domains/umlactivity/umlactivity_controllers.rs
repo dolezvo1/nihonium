@@ -3220,7 +3220,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
         let mut child_targetting_drawn = false;
-        let mut r = egui::Rect::ZERO;
+        let mut r = egui::Rect::NOTHING;
         for e in self.section_views.iter() {
             let mut w = e.write();
             child_targetting_drawn |=

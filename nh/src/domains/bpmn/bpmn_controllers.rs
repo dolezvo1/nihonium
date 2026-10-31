@@ -23,11 +23,13 @@ use crate::common::views::multiconnection_view::{
 use crate::common::views::ordered_views::OrderedViews;
 use crate::common::views::package_view::PackageDragType;
 use crate::domains::bpmn::bpmn_models::{
-    BpmnAnnotation, BpmnBoundaryIntermediateEvent, BpmnBoundaryIntermediateEventKind, BpmnData,
-    BpmnDataKind, BpmnDiagram, BpmnElement, BpmnEndEvent, BpmnEvent, BpmnEventKind, BpmnGateway,
-    BpmnGatewayKind, BpmnIntermediateEvent, BpmnIntermediateEventKind, BpmnNonFinalElement,
-    BpmnNonInitialElement, BpmnPool, BpmnPoolSwimlane, BpmnSequenceEdge, BpmnSequenceEdgeKind,
-    BpmnStartEvent, BpmnStartEventKind, BpmnSubprocess, BpmnSubprocessKind, BpmnTask, BpmnTaskKind,
+    BpmnAnnotation, BpmnAssociableElement, BpmnAssociation, BpmnBoundaryIntermediateEvent,
+    BpmnBoundaryIntermediateEventKind, BpmnData, BpmnDataKind, BpmnDiagram, BpmnElement,
+    BpmnEndEvent, BpmnEvent, BpmnEventKind, BpmnGateway, BpmnGatewayKind, BpmnIntermediateEvent,
+    BpmnIntermediateEventKind, BpmnMessageEdge, BpmnMessageEdgeKind, BpmnMessageableElement,
+    BpmnPool, BpmnPoolSwimlane, BpmnSequenceEdge, BpmnSequenceEdgeKind,
+    BpmnSequenceNonFinalElement, BpmnSequenceNonInitialElement, BpmnStartEvent, BpmnStartEventKind,
+    BpmnSubprocess, BpmnSubprocessKind, BpmnTask, BpmnTaskKind,
 };
 use crate::{
     DefaultNameF, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -56,8 +58,8 @@ impl Domain for BpmnDomain {
 }
 
 type SequenceEdgeViewT = MulticonnectionView<BpmnDomain, BpmnSequenceEdgeAdapter>;
-// type MessageEdgeViewT = MulticonnectionView<BpmnDomain, BpmnMessageEdgeAdapter>;
-// type AssociationViewT = MulticonnectionView<BpmnDomain, BpmnAssociationAdapter>;
+type MessageEdgeViewT = MulticonnectionView<BpmnDomain, BpmnMessageEdgeAdapter>;
+type AssociationViewT = MulticonnectionView<BpmnDomain, BpmnAssociationAdapter>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum BpmnOrdinalMovement {
@@ -90,6 +92,7 @@ pub enum BpmnPropChange {
     DataIsCollectionChange(bool),
 
     SequenceEdgeKindChange(BpmnSequenceEdgeKind),
+    MessageEdgeKindChange(BpmnMessageEdgeKind),
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
@@ -188,6 +191,8 @@ pub enum BpmnElementView {
     Gateway(ERef<BpmnGatewayView>),
     Data(ERef<BpmnDataView>),
     SequenceEdge(ERef<SequenceEdgeViewT>),
+    MessageEdge(ERef<MessageEdgeViewT>),
+    Association(ERef<AssociationViewT>),
     Annotation(ERef<BpmnAnnotationView>),
 }
 
@@ -357,8 +362,28 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
                     };
                 new_bpmn_sequenceedge_view(inner.clone(), None, source, target).into()
             }
-            BpmnElement::MessageEdge(_inner) => todo!(),
-            BpmnElement::Association(_inner) => todo!(),
+            BpmnElement::MessageEdge(inner) => {
+                let r = inner.read();
+                let source_uuid = *r.source.uuid();
+                let target_uuid = *r.target.uuid();
+                let (source, target) =
+                    match (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid)) {
+                        (Some(source), Some(target)) => (source, target),
+                        _ => return Err([source_uuid, target_uuid].into_iter().collect()),
+                    };
+                new_bpmn_messageedge_view(inner.clone(), None, source, target).into()
+            }
+            BpmnElement::Association(inner) => {
+                let r = inner.read();
+                let source_uuid = *r.source.uuid();
+                let target_uuid = *r.target.uuid();
+                let (source, target) =
+                    match (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid)) {
+                        (Some(source), Some(target)) => (source, target),
+                        _ => return Err([source_uuid, target_uuid].into_iter().collect()),
+                    };
+                new_bpmn_association_view(inner.clone(), None, source, target).into()
+            }
             BpmnElement::Annotation(inner) => {
                 let r = inner.read();
                 let target_uuid = *r.target.uuid();
@@ -408,7 +433,9 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
             BpmnElement::Pool(_inner) => format!("Pool").into(),
             BpmnElement::PoolSwimlane(inner) => format!("Swimlane ({})", inner.read().name).into(),
             BpmnElement::SequenceEdge(_inner) => format!("Sequence Edge").into(),
-            BpmnElement::MessageEdge(_inner) => format!("Message Edge").into(),
+            BpmnElement::MessageEdge(inner) => {
+                format!("Message Edge ({})", inner.read().name).into()
+            }
             BpmnElement::Association(_inner) => format!("Association").into(),
             BpmnElement::Annotation(inner) => format!(
                 "Annotation ({})",
@@ -675,7 +702,7 @@ pub struct BpmnSettings {
         usize,
         &'static str,
         &'static dyn Fn(
-            BpmnNonFinalElement,
+            BpmnSequenceNonFinalElement,
         ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool),
     )>,
 }
@@ -969,11 +996,34 @@ impl DiagramSettings for BpmnSettings {
                                     modified = true;
                                 }
                             }
-                            BpmnToolStage::LinkStart {
-                                link_type: LinkType::Edge { condition },
-                            } => {
+                            BpmnToolStage::SequenceEdgeStart { kind, condition } => {
+                                columns[1].label("Kind:");
+                                egui::ComboBox::from_id_salt("sequence edge kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in BpmnSequenceEdgeKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).changed();
+                                        }
+                                    });
+
                                 modified |= columns[1]
                                     .labeled_text_edit_singleline("Condition", condition)
+                                    .changed();
+                            }
+                            BpmnToolStage::MessageEdgeStart { kind, name } => {
+                                columns[1].label("Kind:");
+                                egui::ComboBox::from_id_salt("message edge kind")
+                                    .selected_text(kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in BpmnMessageEdgeKind::VARIANTS {
+                                            modified |=
+                                                ui.selectable_value(kind, e, e.as_str()).changed();
+                                        }
+                                    });
+
+                                modified |= columns[1]
+                                    .labeled_text_edit_singleline("Name", name)
                                     .changed();
                             }
                             BpmnToolStage::AnnotationStart { text } => {
@@ -1045,40 +1095,22 @@ impl DiagramSettings2<BpmnDomain> for BpmnSettings {
 }
 
 type NonFinalElementButtonF =
-    dyn Fn(BpmnNonFinalElement) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool);
+    dyn Fn(BpmnSequenceNonFinalElement) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool);
 mod buttons {
     use std::cell::LazyCell;
 
     use super::*;
 
     fn nonfinal_edge(
-        m: BpmnNonFinalElement,
+        m: BpmnSequenceNonFinalElement,
     ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
         (
-            BpmnToolStage::LinkStart {
-                link_type: LinkType::Edge {
-                    condition: "".to_owned(),
-                },
+            BpmnToolStage::SequenceEdgeStart {
+                kind: BpmnSequenceEdgeKind::Normal,
+                condition: "".to_owned(),
             },
-            BpmnToolStage::LinkEnd,
-            PartialBpmnElement::Link {
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    fn nonfinal_association(
-        m: BpmnNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
-        (
-            BpmnToolStage::LinkStart {
-                link_type: LinkType::Association {
-                    name: "".to_owned(),
-                },
-            },
-            BpmnToolStage::LinkEnd,
-            PartialBpmnElement::Link {
+            BpmnToolStage::SequenceEdgeEnd,
+            PartialBpmnElement::SequenceEdge {
                 source: m.into(),
                 dest: None,
             },
@@ -1086,7 +1118,7 @@ mod buttons {
         )
     }
     fn nonfinal_intermediateevent(
-        m: BpmnNonFinalElement,
+        m: BpmnSequenceNonFinalElement,
     ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
         let ts = BpmnToolStage::IntermediateEvent {
             kind: BpmnEventKind::Message,
@@ -1097,7 +1129,7 @@ mod buttons {
         (ts.clone(), ts, PartialBpmnElement::None, true)
     }
     fn nonfinal_endevent(
-        m: BpmnNonFinalElement,
+        m: BpmnSequenceNonFinalElement,
     ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
         let ts = BpmnToolStage::EndEvent {
             kind: BpmnEventKind::Message,
@@ -1108,7 +1140,7 @@ mod buttons {
     }
 
     fn nonfinal_task(
-        m: BpmnNonFinalElement,
+        m: BpmnSequenceNonFinalElement,
     ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
         let ts = BpmnToolStage::Task {
             name: "task".to_owned(),
@@ -1120,7 +1152,7 @@ mod buttons {
         (ts.clone(), ts, PartialBpmnElement::None, true)
     }
     fn nonfinal_subprocess(
-        m: BpmnNonFinalElement,
+        m: BpmnSequenceNonFinalElement,
     ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
         let ts = BpmnToolStage::SubprocessStart {
             kind: BpmnSubprocessKind::Subprocess,
@@ -1130,7 +1162,7 @@ mod buttons {
         (ts.clone(), ts, PartialBpmnElement::None, true)
     }
     fn nonfinal_gateway(
-        m: BpmnNonFinalElement,
+        m: BpmnSequenceNonFinalElement,
     ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
         let ts = BpmnToolStage::Gateway {
             kind: BpmnGatewayKind::Exclusive,
@@ -1145,7 +1177,6 @@ mod buttons {
     > = LazyCell::new(|| {
         vec![
             (0, 0, "↘", &nonfinal_edge as &NonFinalElementButtonF),
-            // (0, 1, "\\", &nonfinal_association as &NonFinalElementButtonF),
             (
                 1,
                 0,
@@ -1259,23 +1290,22 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             "Relationships",
             vec![
                 (
-                    BpmnToolStage::LinkStart {
-                        link_type: LinkType::Edge {
-                            condition: "".to_owned(),
-                        },
+                    BpmnToolStage::SequenceEdgeStart {
+                        kind: BpmnSequenceEdgeKind::Normal,
+                        condition: "".to_owned(),
                     },
-                    "Regular Edge",
+                    "Sequence Edge",
                     None,
                 ),
                 (
-                    BpmnToolStage::LinkStart {
-                        link_type: LinkType::Edge {
-                            condition: "".to_owned(),
-                        },
+                    BpmnToolStage::MessageEdgeStart {
+                        kind: BpmnMessageEdgeKind::Unspecified,
+                        name: "".to_owned(),
                     },
-                    "Interrupting Edge",
+                    "Message Edge",
                     None,
                 ),
+                (BpmnToolStage::AssociationStart, "Association", None),
             ],
         ),
         (
@@ -1399,7 +1429,7 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
             view.write().refresh_buffers();
             view.into()
         }
-        BpmnToolStage::LinkStart { link_type } => {
+        BpmnToolStage::SequenceEdgeStart { kind, condition } => {
             let (d, dv) = new_bpmn_startevent(
                 BpmnEventKind::Unspecified,
                 BpmnStartEventKind::Interrupting,
@@ -1407,7 +1437,7 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
                 egui::Pos2::ZERO,
                 false,
             );
-            let dummy_1_nonfinal = (d.into(), dv.into());
+            let dummy_1_nonfinal = (d.clone().into(), dv.into());
             let (d, dv) = new_bpmn_endevent(
                 BpmnEventKind::Unspecified,
                 "",
@@ -1416,20 +1446,66 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
             );
             let dummy_2_noninitial = (d.clone().into(), dv.clone().into());
 
-            match link_type {
-                LinkType::Edge { condition } => {
-                    let view = new_bpmn_sequenceedge(
-                        BpmnSequenceEdgeKind::Normal,
-                        condition,
-                        None,
-                        dummy_1_nonfinal.clone(),
-                        dummy_2_noninitial.clone(),
-                    )
+            let view = new_bpmn_sequenceedge(
+                *kind,
+                condition,
+                None,
+                dummy_1_nonfinal.clone(),
+                dummy_2_noninitial.clone(),
+            )
+            .1;
+            view.into()
+        }
+        BpmnToolStage::MessageEdgeStart { kind, name } => {
+            let (d, dv) = new_bpmn_startevent(
+                BpmnEventKind::Unspecified,
+                BpmnStartEventKind::Interrupting,
+                "",
+                egui::Pos2::ZERO,
+                false,
+            );
+            let dummy_1_messageable = (d.into(), dv.into());
+            let (d, dv) = new_bpmn_endevent(
+                BpmnEventKind::Unspecified,
+                "",
+                egui::Pos2::new(200.0, 150.0),
+                false,
+            );
+            let dummy_2_messageable = (d.into(), dv.into());
+
+            let view = new_bpmn_messageedge(
+                *kind,
+                name,
+                None,
+                dummy_1_messageable.clone(),
+                dummy_2_messageable.clone(),
+            )
+            .1;
+            view.into()
+        }
+        BpmnToolStage::AssociationStart => {
+            let (d, dv) = new_bpmn_startevent(
+                BpmnEventKind::Unspecified,
+                BpmnStartEventKind::Interrupting,
+                "",
+                egui::Pos2::ZERO,
+                false,
+            );
+            let dummy_1_associable = (d.into(), dv.into());
+            let (d, dv) = new_bpmn_data(
+                BpmnDataKind::UnspecifiedObject,
+                false,
+                "",
+                egui::Pos2::new(200.0, 150.0),
+                MGlobalColor::None,
+                false,
+            );
+            let dummy_2_associable = (d.into(), dv.into());
+
+            let view =
+                new_bpmn_association(None, dummy_1_associable.clone(), dummy_2_associable.clone())
                     .1;
-                    view.into()
-                }
-                LinkType::Association { name } => todo!(),
-            }
+            view.into()
         }
         BpmnToolStage::SubprocessStart {
             kind,
@@ -1480,7 +1556,9 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
             view.write().refresh_buffers();
             view.into()
         }
-        BpmnToolStage::LinkEnd
+        BpmnToolStage::SequenceEdgeEnd
+        | BpmnToolStage::MessageEdgeEnd
+        | BpmnToolStage::AssociationEnd
         | BpmnToolStage::SubprocessEnd
         | BpmnToolStage::PoolEnd
         | BpmnToolStage::AnnotationEnd => unreachable!(),
@@ -1514,12 +1592,6 @@ inventory::submit! {DiagramInfo {
     },
     deserializer: &(deserializer as DeserializeControllerF),
 }}
-
-#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum LinkType {
-    Edge { condition: String },
-    Association { name: String },
-}
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum BpmnToolStage {
@@ -1563,10 +1635,18 @@ pub enum BpmnToolStage {
         background_color: MGlobalColor,
         with_edge_from: Option<ModelUuid>,
     },
-    LinkStart {
-        link_type: LinkType,
+    SequenceEdgeStart {
+        kind: BpmnSequenceEdgeKind,
+        condition: String,
     },
-    LinkEnd,
+    SequenceEdgeEnd,
+    MessageEdgeStart {
+        kind: BpmnMessageEdgeKind,
+        name: String,
+    },
+    MessageEdgeEnd,
+    AssociationStart,
+    AssociationEnd,
     SubprocessStart {
         kind: BpmnSubprocessKind,
         name: String,
@@ -1586,9 +1666,17 @@ pub enum BpmnToolStage {
 pub enum PartialBpmnElement {
     None,
     Some(BpmnElementView),
-    Link {
-        source: BpmnNonFinalElement,
-        dest: Option<BpmnNonInitialElement>,
+    SequenceEdge {
+        source: BpmnSequenceNonFinalElement,
+        dest: Option<BpmnSequenceNonInitialElement>,
+    },
+    MessageEdge {
+        source: BpmnMessageableElement,
+        dest: Option<BpmnMessageableElement>,
+    },
+    Association {
+        source: BpmnAssociableElement,
+        dest: Option<BpmnAssociableElement>,
     },
     Subprocess {
         a: egui::Pos2,
@@ -1654,37 +1742,38 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
             Err(_) | Ok(BpmnElement::Pool(_) | BpmnElement::PoolSwimlane(_)) => {
                 match self.current_stage {
                     BpmnToolStage::BoundaryIntermediateEvent { .. }
-                    | BpmnToolStage::LinkStart { .. }
-                    | BpmnToolStage::LinkEnd
+                    | BpmnToolStage::SequenceEdgeStart { .. }
+                    | BpmnToolStage::SequenceEdgeEnd
                     | BpmnToolStage::AnnotationStart { .. } => NON_TARGETTABLE_COLOR,
                     _ => TARGETTABLE_COLOR,
                 }
             }
             Ok(BpmnElement::Task(_)) => match self.current_stage {
                 BpmnToolStage::BoundaryIntermediateEvent { .. }
-                | BpmnToolStage::LinkStart { .. }
-                | BpmnToolStage::LinkEnd
+                | BpmnToolStage::SequenceEdgeStart { .. }
+                | BpmnToolStage::SequenceEdgeEnd
                 | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
             Ok(BpmnElement::Subprocess(_)) => TARGETTABLE_COLOR,
             Ok(BpmnElement::StartEvent(_) | BpmnElement::BoundaryIntermediateEvent(_)) => {
                 match self.current_stage {
-                    BpmnToolStage::LinkStart { .. } | BpmnToolStage::AnnotationStart { .. } => {
-                        TARGETTABLE_COLOR
-                    }
+                    BpmnToolStage::SequenceEdgeStart { .. }
+                    | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
                     _ => NON_TARGETTABLE_COLOR,
                 }
             }
             Ok(BpmnElement::EndEvent(_)) => match self.current_stage {
-                BpmnToolStage::LinkEnd | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
+                BpmnToolStage::SequenceEdgeEnd | BpmnToolStage::AnnotationStart { .. } => {
+                    TARGETTABLE_COLOR
+                }
                 _ => NON_TARGETTABLE_COLOR,
             },
             Ok(
                 BpmnElement::IntermediateEvent(_) | BpmnElement::Gateway(_) | BpmnElement::Data(_),
             ) => match self.current_stage {
-                BpmnToolStage::LinkStart { .. }
-                | BpmnToolStage::LinkEnd
+                BpmnToolStage::SequenceEdgeStart { .. }
+                | BpmnToolStage::SequenceEdgeEnd
                 | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
@@ -1703,7 +1792,25 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
         pos: egui::Pos2,
     ) {
         match (&self.current_stage, &self.result) {
-            (_, PartialBpmnElement::Link { source, .. }) => {
+            (_, PartialBpmnElement::SequenceEdge { source, .. }) => {
+                if let Some(source_view) = q.get_view_for(&source.uuid()) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            (_, PartialBpmnElement::MessageEdge { source, .. }) => {
+                if let Some(source_view) = q.get_view_for(&source.uuid()) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            (_, PartialBpmnElement::Association { source, .. }) => {
                 if let Some(source_view) = q.get_view_for(&source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1900,24 +2007,57 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
         match element {
             e @ (BpmnElement::Task(..)
             | BpmnElement::Subprocess(..)
+            | BpmnElement::Pool(..)
             | BpmnElement::StartEvent(..)
             | BpmnElement::IntermediateEvent(..)
             | BpmnElement::EndEvent(..)
             | BpmnElement::BoundaryIntermediateEvent(..)
             | BpmnElement::Gateway(..)
             | BpmnElement::Data(..)) => match (&self.current_stage, &mut self.result) {
-                (BpmnToolStage::LinkStart { link_type }, PartialBpmnElement::None)
-                    if let Some(e) = e.as_nonfinal() =>
+                (BpmnToolStage::SequenceEdgeStart { .. }, PartialBpmnElement::None)
+                    if let Some(e) = e.as_sequence_nonfinal() =>
                 {
-                    self.result = PartialBpmnElement::Link {
+                    self.result = PartialBpmnElement::SequenceEdge {
                         source: e,
                         dest: None,
                     };
-                    self.current_stage = BpmnToolStage::LinkEnd;
+                    self.current_stage = BpmnToolStage::SequenceEdgeEnd;
                     self.event_lock = true;
                 }
-                (BpmnToolStage::LinkEnd, PartialBpmnElement::Link { dest, .. })
-                    if let Some(e) = e.as_noninitial() =>
+                (BpmnToolStage::SequenceEdgeEnd, PartialBpmnElement::SequenceEdge { dest, .. })
+                    if let Some(e) = e.as_sequence_noninitial() =>
+                {
+                    *dest = Some(e);
+                    self.event_lock = true;
+                }
+                (BpmnToolStage::MessageEdgeStart { .. }, PartialBpmnElement::None)
+                    if let Some(e) = e.as_messageable() =>
+                {
+                    self.result = PartialBpmnElement::MessageEdge {
+                        source: e,
+                        dest: None,
+                    };
+                    self.current_stage = BpmnToolStage::MessageEdgeEnd;
+                    self.event_lock = true;
+                }
+                (BpmnToolStage::MessageEdgeEnd, PartialBpmnElement::MessageEdge { dest, .. })
+                    if let Some(e) = e.as_messageable() =>
+                {
+                    *dest = Some(e);
+                    self.event_lock = true;
+                }
+                (BpmnToolStage::AssociationStart { .. }, PartialBpmnElement::None)
+                    if let Some(e) = e.as_associable() =>
+                {
+                    self.result = PartialBpmnElement::Association {
+                        source: e,
+                        dest: None,
+                    };
+                    self.current_stage = BpmnToolStage::AssociationEnd;
+                    self.event_lock = true;
+                }
+                (BpmnToolStage::AssociationEnd, PartialBpmnElement::Association { dest, .. })
+                    if let Some(e) = e.as_associable() =>
                 {
                     *dest = Some(e);
                     self.event_lock = true;
@@ -1987,8 +2127,11 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                             BpmnSequenceEdgeKind::Normal,
                             "",
                             None,
-                            (source.model().as_nonfinal().unwrap(), source),
-                            (element.model().as_noninitial().unwrap(), element.clone()),
+                            (source.model().as_sequence_nonfinal().unwrap(), source),
+                            (
+                                element.model().as_sequence_noninitial().unwrap(),
+                                element.clone(),
+                            ),
                         )
                         .1;
                         Some((nearest_common_container, edge_view))
@@ -2020,11 +2163,55 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 }
                 Ok(())
             }
-            PartialBpmnElement::Link {
+            PartialBpmnElement::SequenceEdge {
                 source,
                 dest: Some(dest),
                 ..
-            } if let BpmnToolStage::LinkStart { link_type } = &self.initial_stage => {
+            } if let BpmnToolStage::SequenceEdgeStart { kind, condition } = &self.initial_stage => {
+                let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
+                if let (Some(source_view), Some(target_view)) =
+                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
+                    && q.is_contained(&source_view.uuid(), preferred_container)
+                    && q.is_contained(&target_view.uuid(), preferred_container)
+                    && q.find_container(&source_view.uuid(), |_, e| {
+                        matches!(e, BpmnElementView::Pool(_))
+                    })
+                    .map(|e| e.0)
+                        == q.find_container(&target_view.uuid(), |_, e| {
+                            matches!(e, BpmnElementView::Pool(_))
+                        })
+                        .map(|e| e.0)
+                {
+                    self.current_stage = self.initial_stage.clone();
+
+                    let link_view: BpmnElementView = new_bpmn_sequenceedge(
+                        *kind,
+                        condition,
+                        None,
+                        (source.clone(), source_view),
+                        (dest.clone(), target_view),
+                    )
+                    .1
+                    .into();
+
+                    self.try_spend();
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(())
+                } else {
+                    Err(())
+                }
+            }
+            PartialBpmnElement::MessageEdge {
+                source,
+                dest: Some(dest),
+                ..
+            } if let BpmnToolStage::MessageEdgeStart { kind, name } = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
@@ -2033,20 +2220,49 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let link_view: BpmnElementView = match link_type {
-                        LinkType::Edge { condition } => new_bpmn_sequenceedge(
-                            BpmnSequenceEdgeKind::Normal,
-                            condition,
-                            None,
-                            (source.clone(), source_view),
-                            (dest.clone(), target_view),
-                        )
-                        .1
-                        .into(),
-                        LinkType::Association { name } => {
-                            todo!()
-                        }
-                    };
+                    let link_view: BpmnElementView = new_bpmn_messageedge(
+                        *kind,
+                        name,
+                        None,
+                        (source.clone(), source_view),
+                        (dest.clone(), target_view),
+                    )
+                    .1
+                    .into();
+
+                    self.try_spend();
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(())
+                } else {
+                    Err(())
+                }
+            }
+            PartialBpmnElement::Association {
+                source,
+                dest: Some(dest),
+                ..
+            } if let BpmnToolStage::AssociationStart {} = &self.initial_stage => {
+                let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
+                if let (Some(source_view), Some(target_view)) =
+                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
+                    && q.is_contained(&source_view.uuid(), preferred_container)
+                    && q.is_contained(&target_view.uuid(), preferred_container)
+                {
+                    self.current_stage = self.initial_stage.clone();
+
+                    let link_view: BpmnElementView = new_bpmn_association(
+                        None,
+                        (source.clone(), source_view),
+                        (dest.clone(), target_view),
+                    )
+                    .1
+                    .into();
 
                     self.try_spend();
                     commands.push(InsensitiveCommand::AddDependency {
@@ -2091,9 +2307,13 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                             BpmnSequenceEdgeKind::Normal,
                             "",
                             None,
-                            (source.model().as_nonfinal().unwrap(), source),
+                            (source.model().as_sequence_nonfinal().unwrap(), source),
                             (
-                                activity_view.read().model().as_noninitial().unwrap(),
+                                activity_view
+                                    .read()
+                                    .model()
+                                    .as_sequence_noninitial()
+                                    .unwrap(),
                                 activity_view.clone().into(),
                             ),
                         )
@@ -3347,7 +3567,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
         tool: &Option<(egui::Pos2, &<BpmnDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
         let mut child_targetting_drawn = false;
-        let mut r = egui::Rect::ZERO;
+        let mut r = egui::Rect::NOTHING;
         for e in self.swimlane_views.iter() {
             let mut w = e.write();
             child_targetting_drawn |=
@@ -3429,7 +3649,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
         >,
     ) -> EventHandlingStatus {
         match event {
-            InputEvent::Click(_) => {
+            InputEvent::Click(pos) => {
                 let k_status = self
                     .swimlane_views
                     .iter()
@@ -3441,6 +3661,10 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                         )
                     })
                     .find(|e| e.1 != EventHandlingStatus::NotHandled);
+
+                if let Some(tool) = tool.as_mut().filter(|_| self.bounds_rect.contains(pos)) {
+                    tool.add_section(self.model().into());
+                }
 
                 if let Some((k, status)) = k_status {
                     if status == EventHandlingStatus::HandledByElement {
@@ -6786,7 +7010,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
                         ehc.ui_scale,
                         pos,
                     )
-                    && let Some(nf) = self.model.clone().to_element().as_nonfinal() =>
+                    && let Some(nf) = self.model.clone().to_element().as_sequence_nonfinal() =>
             {
                 let (initial_stage, current_stage, result, event_lock) = f(nf);
                 *tool = Some(NaiveBpmnTool {
@@ -7721,7 +7945,7 @@ pub fn new_bpmn_data_view(
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
         position,
-        bounds_rect: egui::Rect::ZERO,
+        bounds_rect: egui::Rect::from_pos(position),
         background_color,
     })
 }
@@ -8280,8 +8504,8 @@ pub fn new_bpmn_sequenceedge(
     kind: BpmnSequenceEdgeKind,
     condition: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (BpmnNonFinalElement, BpmnElementView),
-    target: (BpmnNonInitialElement, BpmnElementView),
+    source: (BpmnSequenceNonFinalElement, BpmnElementView),
+    target: (BpmnSequenceNonInitialElement, BpmnElementView),
 ) -> (ERef<BpmnSequenceEdge>, ERef<SequenceEdgeViewT>) {
     let link_model = ERef::new(BpmnSequenceEdge::new(
         ModelUuid::now_v7(),
@@ -8380,8 +8604,8 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnSequenceEdgeAdapter {
 
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
         let mut w = self.model.write();
-        if let Some(new_source) = w.target.clone().to_element().as_nonfinal()
-            && let Some(new_target) = w.source.clone().to_element().as_noninitial()
+        if let Some(new_source) = w.target.clone().to_element().as_sequence_nonfinal()
+            && let Some(new_target) = w.source.clone().to_element().as_sequence_noninitial()
         {
             w.source = new_source;
             w.target = new_target;
@@ -8477,11 +8701,19 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnSequenceEdgeAdapter {
         self.temporaries.arrow_data.clear();
         self.temporaries.arrow_data.insert(
             (false, *model.source.uuid()),
-            ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::None),
+            ArrowData::new_labelless(
+                canvas::LineType::Solid,
+                match self.temporaries.kind_buffer {
+                    BpmnSequenceEdgeKind::Normal => canvas::ArrowheadType::None,
+                    BpmnSequenceEdgeKind::ConditionalBranch => canvas::ArrowheadType::EmptyRhombus,
+                    // TODO: draw an angled stroke
+                    BpmnSequenceEdgeKind::DefaultBranch => canvas::ArrowheadType::None,
+                },
+            ),
         );
         self.temporaries.arrow_data.insert(
             (true, *model.target.uuid()),
-            ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::OpenTriangle),
+            ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::FullTriangle),
         );
 
         self.temporaries.source_uuids.clear();
@@ -8504,6 +8736,475 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnSequenceEdgeAdapter {
         let old_model = self.model.read();
 
         let model = if let Some(BpmnElement::SequenceEdge(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            old_model.deep_copy_clone_inner(new_uuid, m)
+        };
+
+        Self {
+            model,
+            temporaries: self.temporaries.clone(),
+        }
+    }
+
+    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, BpmnElement>) {
+        self.model.write().deep_copy_relink(m);
+    }
+}
+
+pub fn new_bpmn_messageedge(
+    kind: BpmnMessageEdgeKind,
+    name: &str,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: (BpmnMessageableElement, BpmnElementView),
+    target: (BpmnMessageableElement, BpmnElementView),
+) -> (ERef<BpmnMessageEdge>, ERef<MessageEdgeViewT>) {
+    let link_model = ERef::new(BpmnMessageEdge::new(
+        ModelUuid::now_v7(),
+        source.0,
+        target.0,
+        kind,
+        name.to_owned(),
+    ));
+    let link_view = new_bpmn_messageedge_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+pub fn new_bpmn_messageedge_view(
+    model: ERef<BpmnMessageEdge>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: BpmnElementView,
+    target: BpmnElementView,
+) -> ERef<MessageEdgeViewT> {
+    let (sp, mp, tp) = multiconnection_view::init_points(
+        std::iter::once((*source.uuid(), target.min_shape())),
+        std::iter::once(*target.uuid()),
+        center_point,
+    );
+
+    MulticonnectionView::new(
+        ViewUuid::now_v7().into(),
+        BpmnMessageEdgeAdapter {
+            model,
+            temporaries: Default::default(),
+        },
+        vec![Ending::new_p(source, sp[0].clone())],
+        vec![Ending::new_p(target, tp[0].clone())],
+        mp,
+    )
+}
+
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+pub struct BpmnMessageEdgeAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<BpmnMessageEdge>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    temporaries: BpmnMessageEdgeAdapterTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct BpmnMessageEdgeAdapterTemporaries {
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
+    midpoint_label: Option<Arc<String>>,
+    condition_buffer: String,
+    kind_buffer: BpmnMessageEdgeKind,
+}
+
+impl MulticonnectionAdapter<BpmnDomain> for BpmnMessageEdgeAdapter {
+    fn model(&self) -> BpmnElement {
+        self.model.clone().into()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+
+    fn draw_center_or_get_label(
+        &self,
+        _sources: &Vec<Ending<BpmnElementView>>,
+        _targets: &Vec<Ending<BpmnElementView>>,
+        center: egui::Pos2,
+        highlight: canvas::Highlight,
+        _q: &<BpmnDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<BpmnDomain as Domain>::SettingsT,
+        canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<BpmnDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        let align_point = match self.temporaries.kind_buffer {
+            BpmnMessageEdgeKind::Unspecified => {
+                canvas.draw_ellipse_proximity(
+                    center,
+                    egui::Vec2::new(1.0, 1.0),
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::MULTICONNECTION_HANDLE_PROXIMITY,
+                    canvas::Highlight::NONE,
+                );
+
+                center
+            }
+            BpmnMessageEdgeKind::Catching | BpmnMessageEdgeKind::Throwing => {
+                const SIZE: egui::Vec2 = egui::Vec2::new(40.0, 30.0);
+                let rect = egui::Rect::from_center_size(center, SIZE);
+
+                let (fg, bg) = match self.temporaries.kind_buffer {
+                    BpmnMessageEdgeKind::Unspecified => unreachable!(),
+                    BpmnMessageEdgeKind::Catching => (egui::Color32::BLACK, egui::Color32::WHITE),
+                    BpmnMessageEdgeKind::Throwing => (egui::Color32::WHITE, egui::Color32::BLACK),
+                };
+
+                canvas.draw_rectangle(
+                    rect,
+                    egui::CornerRadius::ZERO,
+                    bg,
+                    canvas::Stroke::new_solid(1.0, fg),
+                    highlight,
+                );
+                for e in [rect.left_top(), rect.right_top()] {
+                    canvas.draw_line([e, center], canvas::Stroke::new_solid(1.0, fg), highlight);
+                }
+
+                canvas.draw_ellipse_proximity(
+                    center,
+                    egui::Vec2::new(1.0, 1.0),
+                    fg,
+                    canvas::Stroke::new_solid(1.0, fg),
+                    canvas::MULTICONNECTION_HANDLE_PROXIMITY,
+                    canvas::Highlight::NONE,
+                );
+
+                center + (-SIZE.x / 2.0 - 5.0, 0.0).into()
+            }
+        };
+
+        if let Some(text) = &self.temporaries.midpoint_label {
+            canvas.draw_text(
+                align_point,
+                egui::Align2::RIGHT_CENTER,
+                text,
+                canvas::CLASS_MIDDLE_FONT_SIZE,
+                egui::Color32::BLACK,
+            );
+        }
+
+        Ok(())
+    }
+
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
+    }
+
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        let mut w = self.model.write();
+        if let Some(new_source) = w.target.clone().to_element().as_messageable()
+            && let Some(new_target) = w.source.clone().to_element().as_messageable()
+        {
+            w.source = new_source;
+            w.target = new_target;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn show_properties(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        q: &<BpmnDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<
+            InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
+        >,
+    ) -> PropertiesStatus<BpmnDomain> {
+        ui.label("Kind:");
+        egui::ComboBox::from_id_salt("kind")
+            .selected_text(self.temporaries.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in BpmnMessageEdgeKind::VARIANTS {
+                    if ui
+                        .selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str())
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            BpmnPropChange::MessageEdgeKindChange(self.temporaries.kind_buffer),
+                        ));
+                    }
+                }
+            });
+        if ui
+            .labeled_text_edit_singleline("Condition:", &mut self.temporaries.condition_buffer)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                BpmnPropChange::NameChange(Arc::new(self.temporaries.condition_buffer.clone())),
+            ));
+        }
+
+        ui.separator();
+
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                BpmnPropChange::FlipMulticonnection(FlipMulticonnection {}),
+            ));
+        }
+        ui.separator();
+
+        PropertiesStatus::Shown
+    }
+    fn apply_change(
+        &mut self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
+        >,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
+            let mut model = self.model.write();
+            match property {
+                BpmnPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        BpmnPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
+                }
+                BpmnPropChange::MessageEdgeKindChange(kind) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        BpmnPropChange::MessageEdgeKindChange(model.kind),
+                    ));
+                    model.kind = *kind;
+                }
+                _ => {}
+            }
+        }
+    }
+    fn refresh_buffers(
+        &mut self,
+        _sources: &Vec<Ending<BpmnElementView>>,
+        _targets: &Vec<Ending<BpmnElementView>>,
+    ) {
+        let model = self.model.read();
+
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(
+            (false, *model.source.uuid()),
+            ArrowData::new_labelless(
+                canvas::LineType::Dotted,
+                canvas::ArrowheadType::EmptyCircleSmall,
+            ),
+        );
+        self.temporaries.arrow_data.insert(
+            (true, *model.target.uuid()),
+            ArrowData::new_labelless(
+                canvas::LineType::Dotted,
+                canvas::ArrowheadType::EmptyTriangle,
+            ),
+        );
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.source.uuid());
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.uuid());
+
+        self.temporaries.midpoint_label = match model.name.is_empty() {
+            true => None,
+            false => Some(model.name.clone().into()),
+        };
+        self.temporaries.condition_buffer = (*model.name).clone();
+        self.temporaries.kind_buffer = model.kind;
+    }
+
+    fn deep_copy_init(&self, new_uuid: ModelUuid, m: &mut HashMap<ModelUuid, BpmnElement>) -> Self
+    where
+        Self: Sized,
+    {
+        let old_model = self.model.read();
+
+        let model = if let Some(BpmnElement::MessageEdge(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            old_model.deep_copy_clone_inner(new_uuid, m)
+        };
+
+        Self {
+            model,
+            temporaries: self.temporaries.clone(),
+        }
+    }
+
+    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, BpmnElement>) {
+        self.model.write().deep_copy_relink(m);
+    }
+}
+
+pub fn new_bpmn_association(
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: (BpmnAssociableElement, BpmnElementView),
+    target: (BpmnAssociableElement, BpmnElementView),
+) -> (ERef<BpmnAssociation>, ERef<AssociationViewT>) {
+    let link_model = ERef::new(BpmnAssociation::new(
+        ModelUuid::now_v7(),
+        source.0,
+        target.0,
+    ));
+    let link_view = new_bpmn_association_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+pub fn new_bpmn_association_view(
+    model: ERef<BpmnAssociation>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: BpmnElementView,
+    target: BpmnElementView,
+) -> ERef<AssociationViewT> {
+    let (sp, mp, tp) = multiconnection_view::init_points(
+        std::iter::once((*source.uuid(), target.min_shape())),
+        std::iter::once(*target.uuid()),
+        center_point,
+    );
+
+    MulticonnectionView::new(
+        ViewUuid::now_v7().into(),
+        BpmnAssociationAdapter {
+            model,
+            temporaries: Default::default(),
+        },
+        vec![Ending::new_p(source, sp[0].clone())],
+        vec![Ending::new_p(target, tp[0].clone())],
+        mp,
+    )
+}
+
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+pub struct BpmnAssociationAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<BpmnAssociation>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    temporaries: BpmnAssociationAdapterTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct BpmnAssociationAdapterTemporaries {
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
+}
+
+impl MulticonnectionAdapter<BpmnDomain> for BpmnAssociationAdapter {
+    fn model(&self) -> BpmnElement {
+        self.model.clone().into()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
+    }
+
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        let mut w = self.model.write();
+        if let Some(new_source) = w.target.clone().to_element().as_associable()
+            && let Some(new_target) = w.source.clone().to_element().as_associable()
+        {
+            w.source = new_source;
+            w.target = new_target;
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn show_properties(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        q: &<BpmnDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<
+            InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
+        >,
+    ) -> PropertiesStatus<BpmnDomain> {
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                BpmnPropChange::FlipMulticonnection(FlipMulticonnection {}),
+            ));
+        }
+        ui.separator();
+
+        PropertiesStatus::Shown
+    }
+    fn apply_change(
+        &mut self,
+        _view_uuid: &ViewUuid,
+        _command: &InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
+        _undo_accumulator: &mut Vec<
+            InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
+        >,
+    ) {
+    }
+    fn refresh_buffers(
+        &mut self,
+        _sources: &Vec<Ending<BpmnElementView>>,
+        _targets: &Vec<Ending<BpmnElementView>>,
+    ) {
+        let model = self.model.read();
+
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(
+            (false, *model.source.uuid()),
+            ArrowData::new_labelless(canvas::LineType::Dotted, canvas::ArrowheadType::None),
+        );
+        self.temporaries.arrow_data.insert(
+            (true, *model.target.uuid()),
+            ArrowData::new_labelless(
+                canvas::LineType::Dotted,
+                canvas::ArrowheadType::OpenTriangle,
+            ),
+        );
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.source.uuid());
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.uuid());
+    }
+
+    fn deep_copy_init(&self, new_uuid: ModelUuid, m: &mut HashMap<ModelUuid, BpmnElement>) -> Self
+    where
+        Self: Sized,
+    {
+        let old_model = self.model.read();
+
+        let model = if let Some(BpmnElement::Association(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             old_model.deep_copy_clone_inner(new_uuid, m)

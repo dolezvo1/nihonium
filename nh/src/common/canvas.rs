@@ -507,6 +507,7 @@ pub enum ArrowheadType {
     FullTriangle,
     EmptyRhombus,
     FullRhombus,
+    EmptyCircleSmall,
     FullCircleSmall,
     FullTriangleSmall,
 }
@@ -546,7 +547,7 @@ impl ArrowheadType {
                     (p3 + focal_point.to_vec2()) / 2.0
                 }
             }
-            ArrowheadType::FullCircleSmall => {
+            ArrowheadType::EmptyCircleSmall | ArrowheadType::FullCircleSmall => {
                 let outward_angle = atan2(focal_point, other);
                 focal_point
                     + egui::Vec2::new(outward_angle.cos(), outward_angle.sin())
@@ -636,14 +637,18 @@ impl ArrowheadType {
                     highlight,
                 );
             }
-            ArrowheadType::FullCircleSmall => {
+            ArrowheadType::EmptyCircleSmall | ArrowheadType::FullCircleSmall => {
                 let radius = ARROWHEAD_SMALL_SIDE_LENGTH / 2.0;
                 let center = focal_point
                     + egui::Vec2::new(outward_angle.cos(), outward_angle.sin()) * radius;
                 canvas.draw_ellipse(
                     center,
                     egui::Vec2::splat(radius),
-                    primary_color,
+                    if *self == ArrowheadType::EmptyCircleSmall {
+                        secondary_color
+                    } else {
+                        primary_color
+                    },
                     Stroke::new_solid(1.0, primary_color),
                     highlight,
                 );

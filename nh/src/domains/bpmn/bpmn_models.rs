@@ -340,7 +340,7 @@ impl BpmnElement {
             BpmnElement::Annotation(inner) => Some(inner.clone().into()),
         }
     }
-    pub fn as_nonfinal(&self) -> Option<BpmnNonFinalElement> {
+    pub fn as_sequence_nonfinal(&self) -> Option<BpmnSequenceNonFinalElement> {
         match self {
             BpmnElement::Task(inner) => Some(inner.clone().into()),
             BpmnElement::Subprocess(inner) => Some(inner.clone().into()),
@@ -351,13 +351,25 @@ impl BpmnElement {
             _ => None,
         }
     }
-    pub fn as_noninitial(&self) -> Option<BpmnNonInitialElement> {
+    pub fn as_sequence_noninitial(&self) -> Option<BpmnSequenceNonInitialElement> {
         match self {
             BpmnElement::Task(inner) => Some(inner.clone().into()),
             BpmnElement::Subprocess(inner) => Some(inner.clone().into()),
             BpmnElement::IntermediateEvent(inner) => Some(inner.clone().into()),
             BpmnElement::EndEvent(inner) => Some(inner.clone().into()),
             BpmnElement::Gateway(inner) => Some(inner.clone().into()),
+            _ => None,
+        }
+    }
+    pub fn as_messageable(&self) -> Option<BpmnMessageableElement> {
+        match self {
+            BpmnElement::Task(inner) => Some(inner.clone().into()),
+            BpmnElement::Subprocess(inner) => Some(inner.clone().into()),
+            BpmnElement::StartEvent(inner) => Some(inner.clone().into()),
+            BpmnElement::IntermediateEvent(inner) => Some(inner.clone().into()),
+            BpmnElement::BoundaryIntermediateEvent(inner) => Some(inner.clone().into()),
+            BpmnElement::EndEvent(inner) => Some(inner.clone().into()),
+            BpmnElement::Pool(inner) => Some(inner.clone().into()),
             _ => None,
         }
     }
@@ -596,7 +608,7 @@ impl BpmnStandaloneElement {
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
-pub enum BpmnNonFinalElement {
+pub enum BpmnSequenceNonFinalElement {
     Task(ERef<BpmnTask>),
     Subprocess(ERef<BpmnSubprocess>),
     StartEvent(ERef<BpmnStartEvent>),
@@ -605,15 +617,15 @@ pub enum BpmnNonFinalElement {
     Gateway(ERef<BpmnGateway>),
 }
 
-impl BpmnNonFinalElement {
+impl BpmnSequenceNonFinalElement {
     pub fn to_element(self) -> BpmnElement {
         match self {
-            BpmnNonFinalElement::Task(inner) => inner.into(),
-            BpmnNonFinalElement::Subprocess(inner) => inner.into(),
-            BpmnNonFinalElement::StartEvent(inner) => inner.into(),
-            BpmnNonFinalElement::IntermediateEvent(inner) => inner.into(),
-            BpmnNonFinalElement::BoundaryIntermediateEvent(inner) => inner.into(),
-            BpmnNonFinalElement::Gateway(inner) => inner.into(),
+            BpmnSequenceNonFinalElement::Task(inner) => inner.into(),
+            BpmnSequenceNonFinalElement::Subprocess(inner) => inner.into(),
+            BpmnSequenceNonFinalElement::StartEvent(inner) => inner.into(),
+            BpmnSequenceNonFinalElement::IntermediateEvent(inner) => inner.into(),
+            BpmnSequenceNonFinalElement::BoundaryIntermediateEvent(inner) => inner.into(),
+            BpmnSequenceNonFinalElement::Gateway(inner) => inner.into(),
         }
     }
 }
@@ -621,7 +633,7 @@ impl BpmnNonFinalElement {
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
-pub enum BpmnNonInitialElement {
+pub enum BpmnSequenceNonInitialElement {
     Task(ERef<BpmnTask>),
     Subprocess(ERef<BpmnSubprocess>),
     IntermediateEvent(ERef<BpmnIntermediateEvent>),
@@ -629,14 +641,41 @@ pub enum BpmnNonInitialElement {
     Gateway(ERef<BpmnGateway>),
 }
 
-impl BpmnNonInitialElement {
+impl BpmnSequenceNonInitialElement {
     pub fn to_element(self) -> BpmnElement {
         match self {
-            BpmnNonInitialElement::Task(inner) => inner.into(),
-            BpmnNonInitialElement::Subprocess(inner) => inner.into(),
-            BpmnNonInitialElement::IntermediateEvent(inner) => inner.into(),
-            BpmnNonInitialElement::EndEvent(inner) => inner.into(),
-            BpmnNonInitialElement::Gateway(inner) => inner.into(),
+            BpmnSequenceNonInitialElement::Task(inner) => inner.into(),
+            BpmnSequenceNonInitialElement::Subprocess(inner) => inner.into(),
+            BpmnSequenceNonInitialElement::IntermediateEvent(inner) => inner.into(),
+            BpmnSequenceNonInitialElement::EndEvent(inner) => inner.into(),
+            BpmnSequenceNonInitialElement::Gateway(inner) => inner.into(),
+        }
+    }
+}
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum BpmnMessageableElement {
+    Task(ERef<BpmnTask>),
+    Subprocess(ERef<BpmnSubprocess>),
+    StartEvent(ERef<BpmnStartEvent>),
+    IntermediateEvent(ERef<BpmnIntermediateEvent>),
+    BoundaryIntermediateEvent(ERef<BpmnBoundaryIntermediateEvent>),
+    EndEvent(ERef<BpmnEndEvent>),
+    Pool(ERef<BpmnPool>),
+}
+
+impl BpmnMessageableElement {
+    pub fn to_element(self) -> BpmnElement {
+        match self {
+            BpmnMessageableElement::Task(inner) => inner.into(),
+            BpmnMessageableElement::Subprocess(inner) => inner.into(),
+            BpmnMessageableElement::StartEvent(inner) => inner.into(),
+            BpmnMessageableElement::IntermediateEvent(inner) => inner.into(),
+            BpmnMessageableElement::BoundaryIntermediateEvent(inner) => inner.into(),
+            BpmnMessageableElement::EndEvent(inner) => inner.into(),
+            BpmnMessageableElement::Pool(inner) => inner.into(),
         }
     }
 }
@@ -2098,10 +2137,10 @@ pub struct BpmnSequenceEdge {
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub source: BpmnNonFinalElement,
+    pub source: BpmnSequenceNonFinalElement,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub target: BpmnNonInitialElement,
+    pub target: BpmnSequenceNonInitialElement,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: BpmnSequenceEdgeKind,
     pub condition: Arc<String>,
@@ -2110,8 +2149,8 @@ pub struct BpmnSequenceEdge {
 impl BpmnSequenceEdge {
     pub fn new(
         uuid: ModelUuid,
-        source: BpmnNonFinalElement,
-        target: BpmnNonInitialElement,
+        source: BpmnSequenceNonFinalElement,
+        target: BpmnSequenceNonInitialElement,
         kind: BpmnSequenceEdgeKind,
         condition: String,
     ) -> Self {
@@ -2142,11 +2181,17 @@ impl BpmnSequenceEdge {
     }
     pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, BpmnElement>) {
         let source_uuid = *self.source.uuid();
-        if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_nonfinal()) {
+        if let Some(s) = all_models
+            .get(&source_uuid)
+            .and_then(|e| e.as_sequence_nonfinal())
+        {
             self.source = s;
         }
         let target_uuid = *self.target.uuid();
-        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_noninitial()) {
+        if let Some(t) = all_models
+            .get(&target_uuid)
+            .and_then(|e| e.as_sequence_noninitial())
+        {
             self.target = t;
         }
     }
@@ -2164,8 +2209,9 @@ impl Entity for BpmnSequenceEdge {
     }
 }
 
-#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum BpmnMessageEdgeKind {
+    #[default]
     Unspecified,
     Catching,
     Throwing,
@@ -2192,26 +2238,29 @@ pub struct BpmnMessageEdge {
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub source: BpmnAssociableElement,
+    pub source: BpmnMessageableElement,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub target: BpmnAssociableElement,
+    pub target: BpmnMessageableElement,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: BpmnMessageEdgeKind,
+    pub name: Arc<String>,
 }
 
 impl BpmnMessageEdge {
     pub fn new(
         uuid: ModelUuid,
-        source: BpmnAssociableElement,
-        target: BpmnAssociableElement,
+        source: BpmnMessageableElement,
+        target: BpmnMessageableElement,
         kind: BpmnMessageEdgeKind,
+        name: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,
             target,
             kind,
+            name: Arc::new(name),
         }
     }
 
@@ -2225,6 +2274,7 @@ impl BpmnMessageEdge {
             source: self.source.clone(),
             target: self.target.clone(),
             kind: self.kind,
+            name: self.name.clone(),
         });
 
         into.insert(*self.uuid, new_model.clone().into());
@@ -2232,11 +2282,17 @@ impl BpmnMessageEdge {
     }
     pub fn deep_copy_relink(&mut self, all_models: &HashMap<ModelUuid, BpmnElement>) {
         let source_uuid = *self.source.uuid();
-        if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
+        if let Some(s) = all_models
+            .get(&source_uuid)
+            .and_then(|e| e.as_messageable())
+        {
             self.source = s;
         }
         let target_uuid = *self.target.uuid();
-        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
+        if let Some(t) = all_models
+            .get(&target_uuid)
+            .and_then(|e| e.as_messageable())
+        {
             self.target = t;
         }
     }
