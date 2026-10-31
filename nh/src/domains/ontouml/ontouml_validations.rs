@@ -32,6 +32,7 @@ struct OntoUmlErrorsSettings {
     check_other: bool,
 }
 
+#[allow(dead_code)]
 impl OntoUmlErrorsSettings {
     const NONE: Self = Self {
         check_subtyping: false,
@@ -89,6 +90,7 @@ struct OntoUmlAntipatternSettings {
     check_wholeover: bool,
 }
 
+#[allow(dead_code)]
 impl OntoUmlAntipatternSettings {
     const NONE: Self = Self {
         check_binover: false,
