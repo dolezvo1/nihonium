@@ -766,7 +766,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         (available.clone().into(), available_view.clone().into()),
     );
     let (sequence3, sequence3_view) = new_bpmn_sequenceedge(
-        BpmnSequenceEdgeKind::Normal,
+        BpmnSequenceEdgeKind::DefaultBranch,
         "",
         None,
         (available.clone().into(), available_view.clone().into()),
@@ -8880,16 +8880,33 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnSequenceEdgeAdapter {
 
     fn draw_center_or_get_label(
         &self,
-        _sources: &Vec<Ending<BpmnElementView>>,
+        sources: &Vec<Ending<BpmnElementView>>,
         _targets: &Vec<Ending<BpmnElementView>>,
-        _center: egui::Pos2,
-        _highlight: canvas::Highlight,
+        center: egui::Pos2,
+        highlight: canvas::Highlight,
         _q: &<BpmnDomain as Domain>::QueryableT<'_>,
         _context: &GlobalDrawingContext,
         _settings: &<BpmnDomain as Domain>::SettingsT,
-        _canvas: &mut dyn canvas::NHCanvas,
+        canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<BpmnDomain as Domain>::ToolT)>,
     ) -> Result<(), Arc<String>> {
+        if self.temporaries.kind_buffer == BpmnSequenceEdgeKind::DefaultBranch {
+            for source in sources {
+                let a = source.points[0].1;
+                let b = source.points.get(1).map(|e| e.1).unwrap_or(center);
+                let d = b - a;
+                let crossing = a + d.normalized() * 15.0;
+                let angle = d.y.atan2(d.x) + 45.0_f32.to_radians();
+                let half_line = egui::Vec2::angled(angle) * 10.0;
+
+                canvas.draw_line(
+                    [crossing - half_line, crossing + half_line],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    highlight,
+                );
+            }
+        }
+
         match self.temporaries.midpoint_label.clone() {
             None => Ok(()),
             Some(label) => Err(label),
