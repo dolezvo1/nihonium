@@ -432,9 +432,23 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
             }
             BpmnElement::Pool(_inner) => format!("Pool").into(),
             BpmnElement::PoolSwimlane(inner) => format!("Swimlane ({})", inner.read().name).into(),
-            BpmnElement::SequenceEdge(_inner) => format!("Sequence Edge").into(),
+            BpmnElement::SequenceEdge(inner) => {
+                let r = inner.read();
+                if r.condition.is_empty() {
+                    format!("Sequence Edge")
+                } else {
+                    format!("Sequence Edge ({})", r.condition)
+                }
+                .into()
+            }
             BpmnElement::MessageEdge(inner) => {
-                format!("Message Edge ({})", inner.read().name).into()
+                let r = inner.read();
+                if r.name.is_empty() {
+                    format!("Message Edge")
+                } else {
+                    format!("Message Edge ({})", inner.read().name).into()
+                }
+                .into()
             }
             BpmnElement::Association(_inner) => format!("Association").into(),
             BpmnElement::Annotation(inner) => format!(
@@ -1931,28 +1945,52 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 BpmnToolStage::BoundaryIntermediateEvent { .. }
                 | BpmnToolStage::SequenceEdgeStart { .. }
                 | BpmnToolStage::SequenceEdgeEnd
+                | BpmnToolStage::MessageEdgeStart { .. }
+                | BpmnToolStage::MessageEdgeEnd
+                | BpmnToolStage::AssociationStart
+                | BpmnToolStage::AssociationEnd
                 | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Ok(BpmnElement::Subprocess(_)) => TARGETTABLE_COLOR,
-            Ok(BpmnElement::StartEvent(_) | BpmnElement::BoundaryIntermediateEvent(_)) => {
-                match self.current_stage {
-                    BpmnToolStage::SequenceEdgeStart { .. }
-                    | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
-                    _ => NON_TARGETTABLE_COLOR,
-                }
-            }
-            Ok(BpmnElement::EndEvent(_)) => match self.current_stage {
-                BpmnToolStage::SequenceEdgeEnd | BpmnToolStage::AnnotationStart { .. } => {
-                    TARGETTABLE_COLOR
-                }
+            Ok(BpmnElement::Subprocess(_)) => match self.current_stage {
+                BpmnToolStage::PoolStart { .. } | BpmnToolStage::PoolEnd => NON_TARGETTABLE_COLOR,
+                _ => TARGETTABLE_COLOR,
+            },
+            Ok(BpmnElement::StartEvent(_)) => match self.current_stage {
+                BpmnToolStage::SequenceEdgeStart { .. }
+                | BpmnToolStage::MessageEdgeEnd
+                | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Ok(
-                BpmnElement::IntermediateEvent(_) | BpmnElement::Gateway(_) | BpmnElement::Data(_),
-            ) => match self.current_stage {
+            Ok(BpmnElement::IntermediateEvent(_)) => match self.current_stage {
                 BpmnToolStage::SequenceEdgeStart { .. }
                 | BpmnToolStage::SequenceEdgeEnd
+                | BpmnToolStage::MessageEdgeStart { .. }
+                | BpmnToolStage::MessageEdgeEnd
+                | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
+                _ => NON_TARGETTABLE_COLOR,
+            },
+            Ok(BpmnElement::EndEvent(_)) => match self.current_stage {
+                BpmnToolStage::SequenceEdgeEnd
+                | BpmnToolStage::MessageEdgeStart { .. }
+                | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
+                _ => NON_TARGETTABLE_COLOR,
+            },
+            Ok(BpmnElement::BoundaryIntermediateEvent(_)) => match self.current_stage {
+                BpmnToolStage::SequenceEdgeStart { .. }
+                | BpmnToolStage::MessageEdgeStart { .. }
+                | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
+                _ => NON_TARGETTABLE_COLOR,
+            },
+            Ok(BpmnElement::Gateway(_)) => match self.current_stage {
+                BpmnToolStage::SequenceEdgeStart { .. }
+                | BpmnToolStage::SequenceEdgeEnd
+                | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
+                _ => NON_TARGETTABLE_COLOR,
+            },
+            Ok(BpmnElement::Data(_)) => match self.current_stage {
+                BpmnToolStage::AssociationStart
+                | BpmnToolStage::AssociationEnd
                 | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
@@ -2300,7 +2338,31 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                                     && !matches!(e, BpmnElementView::Pool(_))
                             })
                             .map(|e| e.0)
-                            .unwrap_or_else(|| q.get_root()) =>
+                            .unwrap_or_else(|| q.get_root())
+                        && let p1 = q
+                            .find_container(&source.uuid(), |_, e| {
+                                matches!(e, BpmnElementView::Pool(_))
+                            })
+                            .map(|e| e.0)
+                        && p1
+                            == q.find_container(preferred_container, |_, e| {
+                                matches!(e, BpmnElementView::Pool(_))
+                            })
+                            .map(|e| e.0)
+                        && let s1 = q
+                            .find_container(&source.uuid(), |_, e| {
+                                matches!(e, BpmnElementView::Subprocess(_))
+                            })
+                            .map(|e| e.0)
+                        && (s1 == Some(*preferred_container)
+                            || (q
+                                .get_view(preferred_container)
+                                .is_none_or(|e| !matches!(e, BpmnElementView::Subprocess(_)))
+                                && s1
+                                    == q.find_container(preferred_container, |_, e| {
+                                        matches!(e, BpmnElementView::Subprocess(_))
+                                    })
+                                    .map(|e| e.0))) =>
                     {
                         let edge_view = new_bpmn_sequenceedge(
                             BpmnSequenceEdgeKind::Normal,
@@ -2360,6 +2422,14 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                             matches!(e, BpmnElementView::Pool(_))
                         })
                         .map(|e| e.0)
+                    && q.find_container(&source_view.uuid(), |_, e| {
+                        matches!(e, BpmnElementView::Subprocess(_))
+                    })
+                    .map(|e| e.0)
+                        == q.find_container(&target_view.uuid(), |_, e| {
+                            matches!(e, BpmnElementView::Subprocess(_))
+                        })
+                        .map(|e| e.0)
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -2396,6 +2466,21 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
                     && q.is_contained(&source_view.uuid(), preferred_container)
                     && q.is_contained(&target_view.uuid(), preferred_container)
+                    && let p1 = q
+                        .find_container(&source_view.uuid(), |_, e| {
+                            matches!(e, BpmnElementView::Pool(_))
+                        })
+                        .map(|e| e.0)
+                    && let p2 = q
+                        .find_container(&target_view.uuid(), |_, e| {
+                            matches!(e, BpmnElementView::Pool(_))
+                        })
+                        .map(|e| e.0)
+                    && (p1 != p2
+                        || matches!(
+                            (&source_view, &target_view),
+                            (BpmnElementView::Pool(_), BpmnElementView::Pool(_))
+                        ))
                 {
                     self.current_stage = self.initial_stage.clone();
 
@@ -2480,7 +2565,31 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                                     && !matches!(e, BpmnElementView::Pool(_))
                             })
                             .map(|e| e.0)
-                            .unwrap_or_else(|| q.get_root()) =>
+                            .unwrap_or_else(|| q.get_root())
+                        && let p1 = q
+                            .find_container(&source.uuid(), |_, e| {
+                                matches!(e, BpmnElementView::Pool(_))
+                            })
+                            .map(|e| e.0)
+                        && p1
+                            == q.find_container(preferred_container, |_, e| {
+                                matches!(e, BpmnElementView::Pool(_))
+                            })
+                            .map(|e| e.0)
+                        && let s1 = q
+                            .find_container(&source.uuid(), |_, e| {
+                                matches!(e, BpmnElementView::Subprocess(_))
+                            })
+                            .map(|e| e.0)
+                        && (s1 == Some(*preferred_container)
+                            || (q
+                                .get_view(preferred_container)
+                                .is_none_or(|e| !matches!(e, BpmnElementView::Subprocess(_)))
+                                && s1
+                                    == q.find_container(preferred_container, |_, e| {
+                                        matches!(e, BpmnElementView::Subprocess(_))
+                                    })
+                                    .map(|e| e.0))) =>
                     {
                         let edge_view = new_bpmn_sequenceedge(
                             BpmnSequenceEdgeKind::Normal,

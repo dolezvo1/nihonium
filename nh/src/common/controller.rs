@@ -1558,7 +1558,10 @@ pub trait Queryable<'a, DomainT: Domain> {
         P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool;
 
     fn get_viewuuid_for(&self, m: &ModelUuid) -> Option<ViewUuid>;
-    fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
+    fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
+        self.get_viewuuid_for(m).and_then(|e| self.get_view(&e))
+    }
+    fn get_view(&self, m: &ViewUuid) -> Option<DomainT::CommonElementViewT>;
     fn selected_views(&self) -> HashSet<ViewUuid>;
 }
 
@@ -1626,11 +1629,8 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
     fn get_viewuuid_for(&self, m: &ModelUuid) -> Option<ViewUuid> {
         self.models_to_views.get(m).cloned()
     }
-    fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        self.models_to_views
-            .get(m)
-            .and_then(|e| self.flattened_views.get(e))
-            .map(|e| e.0.clone())
+    fn get_view(&self, m: &ViewUuid) -> Option<DomainT::CommonElementViewT> {
+        self.flattened_views.get(m).map(|e| e.0.clone())
     }
 
     fn selected_views(&self) -> HashSet<ViewUuid> {
