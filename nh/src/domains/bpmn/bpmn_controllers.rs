@@ -376,7 +376,7 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
             BpmnElement::Association(inner) => {
                 let r = inner.read();
                 let source_uuid = *r.source.uuid();
-                let target_uuid = *r.target.uuid();
+                let target_uuid = *r.target.read().uuid;
                 let (source, target) =
                     match (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid)) {
                         (Some(source), Some(target)) => (source, target),
@@ -798,7 +798,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
             availability.clone().into(),
             availability_view.clone().into(),
         ),
-        (order.clone().into(), order_view.clone().into()),
+        (order.clone(), order_view.clone().into()),
     );
 
     let diagram = ERef::new(BpmnDiagram::new(
@@ -1682,7 +1682,7 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
             view.into()
         }
         BpmnToolStage::AssociationStart => {
-            let (d, dv) = new_bpmn_task(
+            let (d1, d1v) = new_bpmn_task(
                 "",
                 BpmnTaskKind::Unspecified,
                 false,
@@ -1690,8 +1690,7 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
                 MGlobalColor::None,
                 false,
             );
-            let dummy_1_associable = (d.into(), dv.into());
-            let (d, dv) = new_bpmn_data(
+            let (d2, d2v) = new_bpmn_data(
                 BpmnDataKind::UnspecifiedObject,
                 false,
                 "",
@@ -1699,11 +1698,8 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
                 MGlobalColor::None,
                 false,
             );
-            let dummy_2_associable = (d.into(), dv.into());
 
-            let view =
-                new_bpmn_association(None, dummy_1_associable.clone(), dummy_2_associable.clone())
-                    .1;
+            let view = new_bpmn_association(None, (d1.into(), d1v.into()), (d2, d2v.into())).1;
             view.into()
         }
         BpmnToolStage::SubprocessStart {
@@ -1875,7 +1871,7 @@ pub enum PartialBpmnElement {
     },
     Association {
         source: BpmnAssociableElement,
-        dest: Option<BpmnAssociableElement>,
+        dest: Option<ERef<BpmnData>>,
     },
     Subprocess {
         a: egui::Pos2,
@@ -1943,6 +1939,8 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     BpmnToolStage::BoundaryIntermediateEvent { .. }
                     | BpmnToolStage::SequenceEdgeStart { .. }
                     | BpmnToolStage::SequenceEdgeEnd
+                    | BpmnToolStage::AssociationStart { .. }
+                    | BpmnToolStage::AssociationEnd
                     | BpmnToolStage::AnnotationStart { .. } => NON_TARGETTABLE_COLOR,
                     _ => TARGETTABLE_COLOR,
                 }
@@ -1954,12 +1952,13 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 | BpmnToolStage::MessageEdgeStart { .. }
                 | BpmnToolStage::MessageEdgeEnd
                 | BpmnToolStage::AssociationStart
-                | BpmnToolStage::AssociationEnd
                 | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
             Ok(BpmnElement::Subprocess(_)) => match self.current_stage {
-                BpmnToolStage::PoolStart { .. } | BpmnToolStage::PoolEnd => NON_TARGETTABLE_COLOR,
+                BpmnToolStage::AssociationEnd
+                | BpmnToolStage::PoolStart { .. }
+                | BpmnToolStage::PoolEnd => NON_TARGETTABLE_COLOR,
                 _ => TARGETTABLE_COLOR,
             },
             Ok(BpmnElement::StartEvent(_)) => match self.current_stage {
@@ -1995,9 +1994,9 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 _ => NON_TARGETTABLE_COLOR,
             },
             Ok(BpmnElement::Data(_)) => match self.current_stage {
-                BpmnToolStage::AssociationStart
-                | BpmnToolStage::AssociationEnd
-                | BpmnToolStage::AnnotationStart { .. } => TARGETTABLE_COLOR,
+                BpmnToolStage::AssociationEnd | BpmnToolStage::AnnotationStart { .. } => {
+                    TARGETTABLE_COLOR
+                }
                 _ => NON_TARGETTABLE_COLOR,
             },
             Ok(BpmnElement::Annotation(_)) => NON_TARGETTABLE_COLOR,
@@ -2280,7 +2279,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     self.event_lock = true;
                 }
                 (BpmnToolStage::AssociationEnd, PartialBpmnElement::Association { dest, .. })
-                    if let Some(e) = e.as_associable() =>
+                    if let BpmnElement::Data(e) = e =>
                 {
                     *dest = Some(e);
                     self.event_lock = true;
@@ -2536,7 +2535,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 dest: Some(dest),
                 ..
             } if let BpmnToolStage::AssociationStart {} = &self.initial_stage => {
-                let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
+                let (source_uuid, target_uuid) = (*source.uuid(), *dest.read().uuid);
                 if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
                     && q.is_contained(&source_view_uuid, preferred_container)
                     && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
@@ -9391,7 +9390,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnMessageEdgeAdapter {
 pub fn new_bpmn_association(
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (BpmnAssociableElement, BpmnElementView),
-    target: (BpmnAssociableElement, BpmnElementView),
+    target: (ERef<BpmnData>, BpmnElementView),
 ) -> (ERef<BpmnAssociation>, ERef<AssociationViewT>) {
     let link_model = ERef::new(BpmnAssociation::new(
         ModelUuid::now_v7(),
@@ -9464,19 +9463,6 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnAssociationAdapter {
         &self.temporaries.target_uuids
     }
 
-    fn flip_multiconnection(&mut self) -> Result<(), ()> {
-        let mut w = self.model.write();
-        if let Some(new_source) = w.target.clone().to_element().as_associable()
-            && let Some(new_target) = w.source.clone().to_element().as_associable()
-        {
-            w.source = new_source;
-            w.target = new_target;
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
@@ -9518,7 +9504,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnAssociationAdapter {
             ArrowData::new_labelless(canvas::LineType::Dotted, canvas::ArrowheadType::None),
         );
         self.temporaries.arrow_data.insert(
-            (true, *model.target.uuid()),
+            (true, *model.target.read().uuid),
             ArrowData::new_labelless(
                 canvas::LineType::Dotted,
                 canvas::ArrowheadType::OpenTriangle,
@@ -9528,7 +9514,9 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnAssociationAdapter {
         self.temporaries.source_uuids.clear();
         self.temporaries.source_uuids.push(*model.source.uuid());
         self.temporaries.target_uuids.clear();
-        self.temporaries.target_uuids.push(*model.target.uuid());
+        self.temporaries
+            .target_uuids
+            .push(*model.target.read().uuid);
     }
 
     fn deep_copy_init(&self, new_uuid: ModelUuid, m: &mut HashMap<ModelUuid, BpmnElement>) -> Self

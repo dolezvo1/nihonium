@@ -193,7 +193,7 @@ pub fn transitive_closure(
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.uuid())
-                            || when_deleting.contains(&r.target.uuid()))
+                            || when_deleting.contains(&r.target.read().uuid))
                     {
                         also_delete.insert(*r.uuid);
                     }
@@ -270,7 +270,7 @@ pub fn top_sort_info(m: &BpmnElement) -> ModelTopSortInfo {
             BpmnElement::Association(inner) => {
                 let r = inner.read();
                 required_models.insert(*r.source.uuid());
-                required_models.insert(*r.target.uuid());
+                required_models.insert(*r.target.read().uuid);
             }
             BpmnElement::Annotation(inner) => {
                 required_models.insert(*inner.read().target.uuid());
@@ -377,7 +377,6 @@ impl BpmnElement {
         match self {
             BpmnElement::Task(inner) => Some(inner.clone().into()),
             BpmnElement::Subprocess(inner) => Some(inner.clone().into()),
-            BpmnElement::Data(inner) => Some(inner.clone().into()),
             _ => None,
         }
     }
@@ -636,7 +635,6 @@ impl BpmnMessageableElement {
 pub enum BpmnAssociableElement {
     Task(ERef<BpmnTask>),
     Subprocess(ERef<BpmnSubprocess>),
-    Data(ERef<BpmnData>),
 }
 
 impl BpmnAssociableElement {
@@ -644,7 +642,6 @@ impl BpmnAssociableElement {
         match self {
             BpmnAssociableElement::Task(inner) => inner.into(),
             BpmnAssociableElement::Subprocess(inner) => inner.into(),
-            BpmnAssociableElement::Data(inner) => inner.into(),
         }
     }
 }
@@ -2260,15 +2257,11 @@ pub struct BpmnAssociation {
     pub source: BpmnAssociableElement,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
-    pub target: BpmnAssociableElement,
+    pub target: ERef<BpmnData>,
 }
 
 impl BpmnAssociation {
-    pub fn new(
-        uuid: ModelUuid,
-        source: BpmnAssociableElement,
-        target: BpmnAssociableElement,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, source: BpmnAssociableElement, target: ERef<BpmnData>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,
@@ -2295,9 +2288,9 @@ impl BpmnAssociation {
         if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
             self.source = s;
         }
-        let target_uuid = *self.target.uuid();
-        if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
-            self.target = t;
+        let target_uuid = *self.target.read().uuid;
+        if let Some(BpmnElement::Data(t)) = all_models.get(&target_uuid) {
+            self.target = t.clone();
         }
     }
 }
