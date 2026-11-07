@@ -1682,11 +1682,12 @@ fn view_for_stage(s: &BpmnToolStage) -> BpmnElementView {
             view.into()
         }
         BpmnToolStage::AssociationStart => {
-            let (d, dv) = new_bpmn_startevent(
-                BpmnEventKind::Unspecified,
-                BpmnStartEventKind::Interrupting,
+            let (d, dv) = new_bpmn_task(
                 "",
+                BpmnTaskKind::Unspecified,
+                false,
                 egui::Pos2::ZERO,
+                MGlobalColor::None,
                 false,
             );
             let dummy_1_associable = (d.into(), dv.into());
@@ -2485,6 +2486,8 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     && q.is_contained(&source_view_uuid, preferred_container)
                     && let Some(target_view_uuid) = q.get_viewuuid_for(&target_uuid)
                     && q.is_contained(&target_view_uuid, preferred_container)
+                    && !q.is_contained(&source_view_uuid, &target_view_uuid)
+                    && !q.is_contained(&target_view_uuid, &source_view_uuid)
                     && let Some(source_view) = q.get_view(&source_view_uuid)
                     && let Some(target_view) = q.get_view(&target_view_uuid)
                     && let p1 = q

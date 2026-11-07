@@ -377,12 +377,6 @@ impl BpmnElement {
         match self {
             BpmnElement::Task(inner) => Some(inner.clone().into()),
             BpmnElement::Subprocess(inner) => Some(inner.clone().into()),
-            BpmnElement::StartEvent(inner) => Some(inner.clone().into()),
-            BpmnElement::IntermediateEvent(inner) => Some(inner.clone().into()),
-            BpmnElement::BoundaryIntermediateEvent(inner) => Some(inner.clone().into()),
-            BpmnElement::EndEvent(inner) => Some(inner.clone().into()),
-            BpmnElement::Gateway(inner) => Some(inner.clone().into()),
-            BpmnElement::Pool(inner) => Some(inner.clone().into()),
             BpmnElement::Data(inner) => Some(inner.clone().into()),
             _ => None,
         }
@@ -397,50 +391,6 @@ impl BpmnElement {
         }
     }
 
-    pub fn deep_copy_clone(
-        &self,
-        new_uuid: ModelUuid,
-        into: &mut HashMap<ModelUuid, BpmnElement>,
-    ) -> Self {
-        match self {
-            BpmnElement::Task(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            BpmnElement::Subprocess(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::StartEvent(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::IntermediateEvent(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::BoundaryIntermediateEvent(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::EndEvent(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::Gateway(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::Pool(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            BpmnElement::PoolSwimlane(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::Data(inner) => inner.read().deep_copy_clone_inner(new_uuid, into).into(),
-            BpmnElement::SequenceEdge(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::MessageEdge(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::Association(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-            BpmnElement::Annotation(inner) => {
-                inner.read().deep_copy_clone_inner(new_uuid, into).into()
-            }
-        }
-    }
     pub fn deep_copy_relink(&self, all_models: &HashMap<ModelUuid, BpmnElement>) {
         match self {
             BpmnElement::Task(..)
@@ -686,12 +636,6 @@ impl BpmnMessageableElement {
 pub enum BpmnAssociableElement {
     Task(ERef<BpmnTask>),
     Subprocess(ERef<BpmnSubprocess>),
-    StartEvent(ERef<BpmnStartEvent>),
-    IntermediateEvent(ERef<BpmnIntermediateEvent>),
-    BoundaryIntermediateEvent(ERef<BpmnBoundaryIntermediateEvent>),
-    EndEvent(ERef<BpmnEndEvent>),
-    Gateway(ERef<BpmnGateway>),
-    Pool(ERef<BpmnPool>),
     Data(ERef<BpmnData>),
 }
 
@@ -700,12 +644,6 @@ impl BpmnAssociableElement {
         match self {
             BpmnAssociableElement::Task(inner) => inner.into(),
             BpmnAssociableElement::Subprocess(inner) => inner.into(),
-            BpmnAssociableElement::StartEvent(inner) => inner.into(),
-            BpmnAssociableElement::IntermediateEvent(inner) => inner.into(),
-            BpmnAssociableElement::BoundaryIntermediateEvent(inner) => inner.into(),
-            BpmnAssociableElement::EndEvent(inner) => inner.into(),
-            BpmnAssociableElement::Gateway(inner) => inner.into(),
-            BpmnAssociableElement::Pool(inner) => inner.into(),
             BpmnAssociableElement::Data(inner) => inner.into(),
         }
     }
