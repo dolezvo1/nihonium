@@ -3431,7 +3431,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
 
                 recurse!();
 
@@ -4652,7 +4652,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
 
                 recurse!();
 
@@ -5529,7 +5529,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -5943,7 +5943,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -6337,7 +6337,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -6758,7 +6758,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -7162,7 +7162,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -7634,7 +7634,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -7774,7 +7774,7 @@ pub fn new_umlactivity_edge_view(
 ) -> ERef<FlowEdgeViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -8529,7 +8529,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)

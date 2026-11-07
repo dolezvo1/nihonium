@@ -382,7 +382,7 @@ impl NHShape {
             }
         }
     }
-    pub fn contained_within(&self, rect: egui::Rect) -> bool {
+    pub fn is_contained_within(&self, rect: egui::Rect) -> bool {
         match &self {
             NHShape::Rect { inner } => rect.contains_rect(*inner),
             NHShape::Ellipse {

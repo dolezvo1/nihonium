@@ -2871,7 +2871,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -3502,7 +3502,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
                 recurse!();
             }
             InsensitiveCommand::MovePositional(uuids, delta)
@@ -3810,7 +3810,7 @@ fn new_demoofd_propertytype_view(
 ) -> ERef<PropertyTypeViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -4122,7 +4122,7 @@ fn new_demoofd_specialization_view(
 ) -> ERef<SpecializationViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -4318,7 +4318,7 @@ fn new_demoofd_aggregation_view(
 ) -> ERef<AggregationViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         sources.iter().map(|e| (*e.uuid(), e.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -4583,7 +4583,7 @@ fn new_demoofd_precedence_view(
 ) -> ERef<PrecedenceViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -4778,7 +4778,7 @@ fn new_demoofd_exclusion_view(
 ) -> ERef<ExclusionViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -5436,7 +5436,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)

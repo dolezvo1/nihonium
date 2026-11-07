@@ -2020,7 +2020,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -2462,7 +2462,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -2604,7 +2604,7 @@ fn new_rdf_predicate_view(
 ) -> ERef<LinkViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         None,
     );
 

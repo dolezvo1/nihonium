@@ -2638,7 +2638,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
                 recurse!();
             }
             InsensitiveCommand::MovePositional(uuids, delta)
@@ -3365,7 +3365,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -4176,7 +4176,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)

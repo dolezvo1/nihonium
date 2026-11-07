@@ -3427,7 +3427,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
                 recurse!();
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
@@ -3763,7 +3763,7 @@ fn new_archimate_relationship_view(
 ) -> ERef<RelationshipViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         sources.iter().map(|e| (*e.uuid(), e.min_shape())),
-        targets.iter().map(|e| *e.uuid()),
+        targets.iter().map(|e| (*e.uuid(), e.min_shape())),
         center_point,
     );
 

@@ -53,26 +53,30 @@ impl ArrowData {
     }
 }
 
+/// Initialize multiconnection points:
+/// - detect a loop (by ViewUuid) and create left top loop
+/// - detect container-contained relationship (by shape) and create "loop" on top
+/// - otherwise use provided center_point
 pub fn init_points(
     source_uuids: impl Iterator<Item = (ViewUuid, canvas::NHShape)> + Clone,
-    target_uuids: impl Iterator<Item = ViewUuid> + Clone,
+    target_uuids: impl Iterator<Item = (ViewUuid, canvas::NHShape)> + Clone,
     center_point: Option<(ViewUuid, egui::Pos2)>,
 ) -> (
     Vec<Vec<(ViewUuid, egui::Pos2)>>,
     Option<(ViewUuid, egui::Pos2)>,
     Vec<Vec<(ViewUuid, egui::Pos2)>>,
 ) {
-    let loop_target = source_uuids
+    if let Some(loop_target) = source_uuids
         .clone()
-        .find(|e1| target_uuids.clone().any(|e2| e1.0 == e2));
-    if let Some((target_uuid, target_shape)) = loop_target {
-        let bb = target_shape.bounding_box();
+        .find(|e1| target_uuids.clone().any(|e2| e1.0 == e2.0))
+    {
+        let bb = loop_target.1.bounding_box();
         let (min, quarter_size) = (bb.min, bb.size() / 4.0);
 
         (
             source_uuids
                 .map(|e| {
-                    if e.0 == target_uuid {
+                    if e.0 == loop_target.0 {
                         vec![
                             (e.0, egui::Pos2::ZERO),
                             (
@@ -88,18 +92,61 @@ pub fn init_points(
             Some((ViewUuid::now_v7(), min - quarter_size)),
             target_uuids
                 .map(|e| {
-                    if e == target_uuid {
+                    if e.0 == loop_target.0 {
                         vec![
-                            (e, egui::Pos2::ZERO),
+                            (e.0, egui::Pos2::ZERO),
                             (
                                 ViewUuid::now_v7(),
                                 min + egui::Vec2::new(-quarter_size.x, quarter_size.y),
                             ),
                         ]
                     } else {
-                        vec![(e, egui::Pos2::ZERO)]
+                        vec![(e.0, egui::Pos2::ZERO)]
                     }
                 })
+                .collect(),
+        )
+    } else if let Some((source, target)) = source_uuids
+        .clone()
+        .flat_map(|e1| {
+            target_uuids
+                .clone()
+                .find(|e2| {
+                    e1.1.is_contained_within(e2.1.bounding_box())
+                        || e2.1.is_contained_within(e1.1.bounding_box())
+                })
+                .map(|e2| (e1, e2))
+        })
+        .next()
+    {
+        const LOOP_SIZE: f32 = 25.0;
+        let center_point = if source.1.is_contained_within(target.1.bounding_box()) {
+            egui::Pos2::new(
+                source.1.center().x + LOOP_SIZE,
+                target.1.bounding_box().top() - LOOP_SIZE,
+            )
+        } else {
+            egui::Pos2::new(
+                target.1.center().x,
+                source.1.bounding_box().top() - LOOP_SIZE,
+            )
+        };
+        (
+            source_uuids
+                .map(|e| {
+                    if e.0 == source.0 {
+                        vec![
+                            (e.0, egui::Pos2::ZERO),
+                            (ViewUuid::now_v7(), center_point + (-LOOP_SIZE, 0.0).into()),
+                        ]
+                    } else {
+                        vec![(e.0, egui::Pos2::ZERO)]
+                    }
+                })
+                .collect(),
+            Some((ViewUuid::now_v7(), center_point)),
+            target_uuids
+                .map(|e| vec![(e.0, egui::Pos2::ZERO)])
                 .collect(),
         )
     } else {
@@ -108,7 +155,9 @@ pub fn init_points(
                 .map(|e| vec![(e.0, egui::Pos2::ZERO)])
                 .collect(),
             center_point,
-            target_uuids.map(|e| vec![(e, egui::Pos2::ZERO)]).collect(),
+            target_uuids
+                .map(|e| vec![(e.0, egui::Pos2::ZERO)])
+                .collect(),
         )
     }
 }

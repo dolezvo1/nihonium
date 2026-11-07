@@ -4114,7 +4114,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
 
                 recurse!();
 
@@ -5285,7 +5285,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
 
                 recurse!();
             }
@@ -7419,7 +7419,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -8122,7 +8122,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -8698,7 +8698,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -8841,8 +8841,8 @@ pub fn new_bpmn_sequenceedge_view(
     target: BpmnElementView,
 ) -> ERef<SequenceEdgeViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once((*source.uuid(), target.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -9109,8 +9109,8 @@ pub fn new_bpmn_messageedge_view(
     target: BpmnElementView,
 ) -> ERef<MessageEdgeViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once((*source.uuid(), target.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -9408,8 +9408,8 @@ pub fn new_bpmn_association_view(
     target: BpmnElementView,
 ) -> ERef<AssociationViewT> {
     let (sp, mp, tp) = multiconnection_view::init_points(
-        std::iter::once((*source.uuid(), target.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*source.uuid(), source.min_shape())),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -9959,7 +9959,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnAnnotationView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)

@@ -3508,7 +3508,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
 
                 recurse!();
             }
@@ -4835,7 +4835,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
 
                 recurse!();
             }
@@ -5538,7 +5538,7 @@ impl UmlSequenceCombinedFragmentSectionView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
 
                 recurse!();
             }
@@ -6868,7 +6868,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -7554,7 +7554,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::PropertyChange(uuids, property) if uuids.contains(&*self.uuid) => {
                 let mut model = self.model.write();
@@ -8156,7 +8156,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -8563,7 +8563,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -9127,7 +9127,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected = (self.highlight.selected && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)

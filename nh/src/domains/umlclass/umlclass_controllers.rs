@@ -4576,7 +4576,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -5177,7 +5177,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(..)
             | InsensitiveCommand::MovePositionalAll(..)
@@ -5842,7 +5842,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(..)
             | InsensitiveCommand::MovePositionalAll(..)
@@ -7144,7 +7144,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
                 recurse!();
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
@@ -8247,7 +8247,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
@@ -8426,7 +8426,7 @@ pub fn new_umlclass_generalization_view<P: UmlClassProfile>(
 ) -> ERef<GeneralizationViewT<P>> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         sources.iter().map(|e| (*e.uuid(), e.min_shape())),
-        targets.iter().map(|e| *e.uuid()),
+        targets.iter().map(|e| (*e.uuid(), e.min_shape())),
         center_point,
     );
 
@@ -8820,7 +8820,7 @@ pub fn new_umlclass_dependency_view<P: UmlClassProfile>(
 ) -> ERef<DependencyViewT<P>> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -9124,7 +9124,7 @@ pub fn new_umlclass_association_view<P: UmlClassProfile>(
 ) -> ERef<AssociationViewT<P>> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         std::iter::once((*source.uuid(), source.min_shape())),
-        std::iter::once(*target.uuid()),
+        std::iter::once((*target.uuid(), target.min_shape())),
         center_point,
     );
 
@@ -9755,7 +9755,7 @@ pub fn new_uml_usecasegeneralization_view<P: UmlClassProfile>(
 ) -> ERef<UseCaseGeneralizationViewT<P>> {
     let (sp, mp, tp) = multiconnection_view::init_points(
         sources.iter().map(|e| (*e.uuid(), e.min_shape())),
-        sources.iter().map(|e| *e.uuid()),
+        sources.iter().map(|e| (*e.uuid(), e.min_shape())),
         center_point,
     );
 
@@ -10621,7 +10621,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected = (self.temporaries.highlight.selected
                     && *retain)
-                    || self.min_shape().contained_within(*rect);
+                    || self.min_shape().is_contained_within(*rect);
             }
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
