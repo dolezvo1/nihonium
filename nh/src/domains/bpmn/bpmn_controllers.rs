@@ -895,14 +895,9 @@ pub fn deserializer(
 pub struct BpmnSettings {
     palette: RwLock<ToolPalette<BpmnToolStage, BpmnDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<BpmnToolStage, BpmnElementView>>,
-    nonfinal_buttons: Vec<(
-        usize,
-        usize,
-        &'static str,
-        &'static dyn Fn(
-            BpmnSequenceNonFinalElement,
-        ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool),
-    )>,
+    nonfinal_buttons: Vec<Vec<(&'static str, &'static ElementButtonF)>>,
+    messageable_buttons: Vec<Vec<(&'static str, &'static ElementButtonF)>>,
+    associable_buttons: Vec<Vec<(&'static str, &'static ElementButtonF)>>,
 }
 
 impl DiagramSettings for BpmnSettings {
@@ -1251,6 +1246,8 @@ impl DiagramSettings for BpmnSettings {
             palette: ToolPalette::new(Vec::new()).into(),
             palette_edit_buffer: PaletteEditBuffer::None.into(),
             nonfinal_buttons: Vec::new(),
+            messageable_buttons: Vec::new(),
+            associable_buttons: Vec::new(),
         })
     }
 
@@ -1292,17 +1289,18 @@ impl DiagramSettings2<BpmnDomain> for BpmnSettings {
     }
 }
 
-type NonFinalElementButtonF =
-    dyn Fn(BpmnSequenceNonFinalElement) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool);
+type ElementButtonFResult = Option<(BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool)>;
+type ElementButtonF = dyn Fn(BpmnElement) -> ElementButtonFResult;
 mod buttons {
     use std::cell::LazyCell;
 
     use super::*;
 
-    fn nonfinal_edge(
-        m: BpmnSequenceNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
-        (
+    fn nonfinal_edge(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_sequence_nonfinal() else {
+            return None;
+        };
+        Some((
             BpmnToolStage::SequenceEdgeStart {
                 kind: BpmnSequenceEdgeKind::Normal,
                 condition: "".to_owned(),
@@ -1313,33 +1311,36 @@ mod buttons {
                 dest: None,
             },
             true,
-        )
+        ))
     }
-    fn nonfinal_intermediateevent(
-        m: BpmnSequenceNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+    fn nonfinal_intermediateevent(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_sequence_nonfinal() else {
+            return None;
+        };
         let ts = BpmnToolStage::IntermediateEvent {
             kind: BpmnEventKind::Message,
             subkind: BpmnIntermediateEventKind::Throwing,
             name: "".to_owned(),
             with_edge_from: Some(*m.uuid()),
         };
-        (ts.clone(), ts, PartialBpmnElement::None, true)
+        Some((ts.clone(), ts, PartialBpmnElement::None, true))
     }
-    fn nonfinal_endevent(
-        m: BpmnSequenceNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+    fn nonfinal_endevent(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_sequence_nonfinal() else {
+            return None;
+        };
         let ts = BpmnToolStage::EndEvent {
             kind: BpmnEventKind::Message,
             name: "".to_owned(),
             with_edge_from: Some(*m.uuid()),
         };
-        (ts.clone(), ts, PartialBpmnElement::None, true)
+        Some((ts.clone(), ts, PartialBpmnElement::None, true))
     }
 
-    fn nonfinal_task(
-        m: BpmnSequenceNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+    fn nonfinal_task(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_sequence_nonfinal() else {
+            return None;
+        };
         let ts = BpmnToolStage::Task {
             name: "task".to_owned(),
             kind: BpmnTaskKind::Unspecified,
@@ -1347,46 +1348,104 @@ mod buttons {
             background_color: MGlobalColor::None,
             with_edge_from: Some(*m.uuid()),
         };
-        (ts.clone(), ts, PartialBpmnElement::None, true)
+        Some((ts.clone(), ts, PartialBpmnElement::None, true))
     }
-    fn nonfinal_subprocess(
-        m: BpmnSequenceNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+    fn nonfinal_subprocess(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_sequence_nonfinal() else {
+            return None;
+        };
         let ts = BpmnToolStage::SubprocessStart {
             kind: BpmnSubprocessKind::Subprocess,
             name: "subprocess".to_owned(),
             with_edge_from: Some(*m.uuid()),
         };
-        (ts.clone(), ts, PartialBpmnElement::None, true)
+        Some((ts.clone(), ts, PartialBpmnElement::None, true))
     }
-    fn nonfinal_gateway(
-        m: BpmnSequenceNonFinalElement,
-    ) -> (BpmnToolStage, BpmnToolStage, PartialBpmnElement, bool) {
+    fn nonfinal_gateway(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_sequence_nonfinal() else {
+            return None;
+        };
         let ts = BpmnToolStage::Gateway {
             kind: BpmnGatewayKind::Exclusive,
             condition: "".to_owned(),
             with_edge_from: Some(*m.uuid()),
         };
-        (ts.clone(), ts, PartialBpmnElement::None, true)
+        Some((ts.clone(), ts, PartialBpmnElement::None, true))
     }
 
-    pub const NONFINAL_BUTTONS: LazyCell<
-        Vec<(usize, usize, &'static str, &'static NonFinalElementButtonF)>,
-    > = LazyCell::new(|| {
-        vec![
-            (0, 0, "↘", &nonfinal_edge as &NonFinalElementButtonF),
-            (
-                1,
-                0,
-                "I",
-                &nonfinal_intermediateevent as &NonFinalElementButtonF,
-            ),
-            (1, 1, "E", &nonfinal_endevent as &NonFinalElementButtonF),
-            (2, 0, "T", &nonfinal_task as &NonFinalElementButtonF),
-            (2, 1, "S", &nonfinal_subprocess as &NonFinalElementButtonF),
-            (2, 2, "G", &nonfinal_gateway as &NonFinalElementButtonF),
-        ]
-    });
+    pub const NONFINAL_BUTTONS: LazyCell<Vec<Vec<(&'static str, &'static ElementButtonF)>>> =
+        LazyCell::new(|| {
+            vec![
+                vec![("↘", &nonfinal_edge as &ElementButtonF)],
+                vec![
+                    ("I", &nonfinal_intermediateevent as &ElementButtonF),
+                    ("E", &nonfinal_endevent as &ElementButtonF),
+                ],
+                vec![
+                    ("T", &nonfinal_task as &ElementButtonF),
+                    ("S", &nonfinal_subprocess as &ElementButtonF),
+                    ("G", &nonfinal_gateway as &ElementButtonF),
+                ],
+            ]
+        });
+
+    fn messageable_message(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_messageable() else {
+            return None;
+        };
+        Some((
+            BpmnToolStage::MessageEdgeStart {
+                kind: BpmnMessageEdgeKind::Unspecified,
+                name: "".to_owned(),
+            },
+            BpmnToolStage::MessageEdgeEnd,
+            PartialBpmnElement::MessageEdge {
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        ))
+    }
+
+    pub const MESSAGEABLE_BUTTONS: LazyCell<Vec<Vec<(&'static str, &'static ElementButtonF)>>> =
+        LazyCell::new(|| vec![vec![("M", &messageable_message as &ElementButtonF)]]);
+
+    fn associable_edge(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_associable() else {
+            return None;
+        };
+        Some((
+            BpmnToolStage::AssociationStart,
+            BpmnToolStage::AssociationEnd,
+            PartialBpmnElement::Association {
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        ))
+    }
+
+    fn associable_data(m: BpmnElement) -> ElementButtonFResult {
+        let Some(m) = m.as_associable() else {
+            return None;
+        };
+        let ts = BpmnToolStage::Data {
+            kind: BpmnDataKind::UnspecifiedObject,
+            is_collection: false,
+            name: "data".to_owned(),
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        Some((ts.clone(), ts, PartialBpmnElement::None, true))
+    }
+
+    pub const ASSOCIABLE_BUTTONS: LazyCell<Vec<Vec<(&'static str, &'static ElementButtonF)>>> =
+        LazyCell::new(|| {
+            vec![vec![
+                ("↘", &associable_edge as &ElementButtonF),
+                ("D", &associable_data as &ElementButtonF),
+            ]]
+        });
 }
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let palette_items = vec![
@@ -1536,6 +1595,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
         nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
+        messageable_buttons: buttons::MESSAGEABLE_BUTTONS.clone(),
+        associable_buttons: buttons::ASSOCIABLE_BUTTONS.clone(),
     })
 }
 
@@ -1769,6 +1830,8 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
             .into(),
         palette_edit_buffer: PaletteEditBuffer::None.into(),
         nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
+        messageable_buttons: buttons::MESSAGEABLE_BUTTONS.clone(),
+        associable_buttons: buttons::ASSOCIABLE_BUTTONS.clone(),
     }))
 }
 
@@ -2375,17 +2438,31 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                                     })
                                     .map(|e| e.0))) =>
                     {
-                        let edge_view = new_bpmn_sequenceedge(
-                            BpmnSequenceEdgeKind::Normal,
-                            "",
-                            None,
-                            (source.model().as_sequence_nonfinal().unwrap(), source),
-                            (
-                                element.model().as_sequence_noninitial().unwrap(),
-                                element.clone(),
-                            ),
-                        )
-                        .1;
+                        let edge_view: BpmnElementView = match &self.initial_stage {
+                            BpmnToolStage::Data { .. }
+                                if let BpmnElement::Data(d) = element.model() =>
+                            {
+                                new_bpmn_association(
+                                    None,
+                                    (source.model().as_associable().unwrap(), source),
+                                    (d, element.clone()),
+                                )
+                                .1
+                                .into()
+                            }
+                            _ => new_bpmn_sequenceedge(
+                                BpmnSequenceEdgeKind::Normal,
+                                "",
+                                None,
+                                (source.model().as_sequence_nonfinal().unwrap(), source),
+                                (
+                                    element.model().as_sequence_noninitial().unwrap(),
+                                    element.clone(),
+                                ),
+                            )
+                            .1
+                            .into(),
+                        };
                         Some((nearest_common_container, edge_view))
                     }
                     _ => None,
@@ -3090,11 +3167,12 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
             .ui_scale()
             .filter(|_| self.temporaries.highlight.selected)
         {
-            draw_nonfinal_node_button_rects(
+            draw_button_rects(
                 settings,
                 canvas,
                 self.bounds_rect.right_top(),
                 ui_scale,
+                &self.model.clone().into(),
             );
         }
 
@@ -3254,15 +3332,15 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
             InputEvent::Click(pos)
                 if k_status.is_none()
                     && self.temporaries.highlight.selected
-                    && let Some(f) = handle_nonfinal_node_button_click(
-                        settings,
-                        self.bounds_rect.right_top(),
-                        ehc.ui_scale,
-                        pos,
-                    ) =>
+                    && let Some((initial_stage, current_stage, result, event_lock)) =
+                        handle_button_click(
+                            settings,
+                            self.bounds_rect.right_top(),
+                            ehc.ui_scale,
+                            pos,
+                            self.model.clone().into(),
+                        ) =>
             {
-                let (initial_stage, current_stage, result, event_lock) =
-                    f(self.model.clone().into());
                 *tool = Some(NaiveBpmnTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage,
@@ -5558,7 +5636,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
     }
 }
 
-fn nonfinal_node_button_rect(
+fn button_rect(
     origin: egui::Pos2,
     ui_scale: f32,
     row_index: usize,
@@ -5572,40 +5650,120 @@ fn nonfinal_node_button_rect(
         );
     egui::Rect::from_center_size(b_center, egui::Vec2::splat(2.0 * BUTTON_RADIUS / ui_scale))
 }
-fn draw_nonfinal_node_button_rects(
+fn draw_button_rects(
     settings: &<BpmnDomain as Domain>::SettingsT,
     canvas: &mut dyn NHCanvas,
     origin: egui::Pos2,
     ui_scale: f32,
+    element: &BpmnElement,
 ) {
-    for (row_idx, col_idx, l, _f) in settings.nonfinal_buttons.iter() {
-        let r = nonfinal_node_button_rect(origin, ui_scale, *row_idx, *col_idx);
-        canvas.draw_rectangle(
-            r,
-            egui::CornerRadius::ZERO,
-            egui::Color32::WHITE,
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            canvas::Highlight::NONE,
-        );
-        canvas.draw_text(
-            r.center(),
-            egui::Align2::CENTER_CENTER,
-            l,
-            14.0 / ui_scale,
-            egui::Color32::BLACK,
-        );
+    let mut row_idx = 0;
+    if let Some(_) = element.as_sequence_nonfinal() {
+        for row in settings.nonfinal_buttons.iter() {
+            for (col_idx, (l, _f)) in row.iter().enumerate() {
+                let r = button_rect(origin, ui_scale, row_idx, col_idx);
+                canvas.draw_rectangle(
+                    r,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    l,
+                    14.0 / ui_scale,
+                    egui::Color32::BLACK,
+                );
+            }
+            row_idx += 1;
+        }
+    }
+    if let Some(_) = element.as_messageable() {
+        for row in settings.messageable_buttons.iter() {
+            for (col_idx, (l, _f)) in row.iter().enumerate() {
+                let r = button_rect(origin, ui_scale, row_idx, col_idx);
+                canvas.draw_rectangle(
+                    r,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    l,
+                    14.0 / ui_scale,
+                    egui::Color32::BLACK,
+                );
+            }
+            row_idx += 1;
+        }
+    }
+    if let Some(_) = element.as_associable() {
+        for row in settings.associable_buttons.iter() {
+            for (col_idx, (l, _f)) in row.iter().enumerate() {
+                let r = button_rect(origin, ui_scale, row_idx, col_idx);
+                canvas.draw_rectangle(
+                    r,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    r.center(),
+                    egui::Align2::CENTER_CENTER,
+                    l,
+                    14.0 / ui_scale,
+                    egui::Color32::BLACK,
+                );
+            }
+            row_idx += 1;
+        }
     }
 }
-fn handle_nonfinal_node_button_click(
+fn handle_button_click(
     settings: &<BpmnDomain as Domain>::SettingsT,
     origin: egui::Pos2,
     ui_scale: f32,
     click_pos: egui::Pos2,
-) -> Option<&NonFinalElementButtonF> {
-    for (row_idx, col_idx, _l, f) in settings.nonfinal_buttons.iter() {
-        let r = nonfinal_node_button_rect(origin, ui_scale, *row_idx, *col_idx);
-        if r.contains(click_pos) {
-            return Some(f);
+    element: BpmnElement,
+) -> ElementButtonFResult {
+    let mut row_idx = 0;
+    if let Some(_) = element.as_sequence_nonfinal() {
+        for row in settings.nonfinal_buttons.iter() {
+            for (col_idx, (_l, f)) in row.iter().enumerate() {
+                let r = button_rect(origin, ui_scale, row_idx, col_idx);
+                if r.contains(click_pos) {
+                    return f(element);
+                }
+            }
+            row_idx += 1;
+        }
+    }
+    if let Some(_) = element.as_messageable() {
+        for row in settings.messageable_buttons.iter() {
+            for (col_idx, (_l, f)) in row.iter().enumerate() {
+                let r = button_rect(origin, ui_scale, row_idx, col_idx);
+                if r.contains(click_pos) {
+                    return f(element);
+                }
+            }
+            row_idx += 1;
+        }
+    }
+    if let Some(_) = element.as_associable() {
+        for row in settings.associable_buttons.iter() {
+            for (col_idx, (_l, f)) in row.iter().enumerate() {
+                let r = button_rect(origin, ui_scale, row_idx, col_idx);
+                if r.contains(click_pos) {
+                    return f(element);
+                }
+            }
+            row_idx += 1;
         }
     }
     None
@@ -6034,11 +6192,12 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             .ui_scale()
             .filter(|_| self.temporaries.highlight.selected)
         {
-            draw_nonfinal_node_button_rects(
+            draw_button_rects(
                 settings,
                 canvas,
                 self.bounds_rect.right_top(),
                 ui_scale,
+                &self.model.clone().into(),
             );
         }
 
@@ -6125,15 +6284,15 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             }
             InputEvent::Click(pos)
                 if self.temporaries.highlight.selected
-                    && let Some(f) = handle_nonfinal_node_button_click(
-                        settings,
-                        self.bounds_rect.right_top(),
-                        ehc.ui_scale,
-                        pos,
-                    ) =>
+                    && let Some((initial_stage, current_stage, result, event_lock)) =
+                        handle_button_click(
+                            settings,
+                            self.bounds_rect.right_top(),
+                            ehc.ui_scale,
+                            pos,
+                            self.model.clone().into(),
+                        ) =>
             {
-                let (initial_stage, current_stage, result, event_lock) =
-                    f(self.model.clone().into());
                 *tool = Some(NaiveBpmnTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage,
@@ -7263,9 +7422,14 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
         if let Some(ui_scale) = canvas
             .ui_scale()
             .filter(|_| self.temporaries.highlight.selected)
-            .filter(|_| !matches!(self.model, BpmnEvent::EndEvent(_)))
         {
-            draw_nonfinal_node_button_rects(settings, canvas, self.buttons_origin(), ui_scale);
+            draw_button_rects(
+                settings,
+                canvas,
+                self.buttons_origin(),
+                ui_scale,
+                &self.model.clone().to_element(),
+            );
         }
 
         if canvas.ui_scale().is_some()
@@ -7319,15 +7483,15 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
             }
             InputEvent::Click(pos)
                 if self.temporaries.highlight.selected
-                    && let Some(f) = handle_nonfinal_node_button_click(
-                        settings,
-                        self.buttons_origin(),
-                        ehc.ui_scale,
-                        pos,
-                    )
-                    && let Some(nf) = self.model.clone().to_element().as_sequence_nonfinal() =>
+                    && let Some((initial_stage, current_stage, result, event_lock)) =
+                        handle_button_click(
+                            settings,
+                            self.buttons_origin(),
+                            ehc.ui_scale,
+                            pos,
+                            self.model.clone().to_element(),
+                        ) =>
             {
-                let (initial_stage, current_stage, result, event_lock) = f(nf);
                 *tool = Some(NaiveBpmnTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage,
@@ -7984,7 +8148,13 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            draw_nonfinal_node_button_rects(settings, canvas, self.buttons_origin(), ui_scale);
+            draw_button_rects(
+                settings,
+                canvas,
+                self.buttons_origin(),
+                ui_scale,
+                &self.model.clone().into(),
+            );
         }
 
         // Draw targetting ellipse
@@ -8042,15 +8212,15 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
             }
             InputEvent::Click(pos)
                 if self.highlight.selected
-                    && let Some(f) = handle_nonfinal_node_button_click(
-                        settings,
-                        self.buttons_origin(),
-                        ehc.ui_scale,
-                        pos,
-                    ) =>
+                    && let Some((initial_stage, current_stage, result, event_lock)) =
+                        handle_button_click(
+                            settings,
+                            self.buttons_origin(),
+                            ehc.ui_scale,
+                            pos,
+                            self.model.clone().into(),
+                        ) =>
             {
-                let (initial_stage, current_stage, result, event_lock) =
-                    f(self.model.clone().into());
                 *tool = Some(NaiveBpmnTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage,
