@@ -3566,6 +3566,14 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                 self.contained_elements.event_order_foreach_mut(|v| {
                     v.apply_command(diagram_model, command, undo_accumulator, affected_models)
                 });
+                self.attached_events.iter().for_each(|v| {
+                    v.write().apply_command(
+                        diagram_model,
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    )
+                });
             };
         }
         macro_rules! resize_to {
@@ -3648,6 +3656,14 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                         affected_models,
                     );
                 });
+                self.attached_events.iter().for_each(|v| {
+                    v.write().apply_command(
+                        diagram_model,
+                        &InsensitiveCommand::MovePositionalAll(*delta),
+                        &mut void,
+                        affected_models,
+                    )
+                });
             }
             InsensitiveCommand::MoveOrdinal(..) => {
                 recurse!();
@@ -3710,8 +3726,36 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                         into_model: false,
                     });
                 }
-
                 self.contained_elements.retain(|k, _v| !uuids.contains(k));
+
+                for (_uuid, element) in self
+                    .attached_events
+                    .iter()
+                    .map(|e| (*e.read().uuid, e))
+                    .filter(|e| uuids.contains(&e.0))
+                {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (0, None)
+                    } else if let Some((b, pos)) = self
+                        .model
+                        .read()
+                        .get_element_pos(&element.read().model_uuid())
+                    {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: BpmnElementView::from(element.clone()).into(),
+                        into_model: false,
+                    });
+                }
+                self.attached_events
+                    .retain(|v| !uuids.contains(&v.read().uuid));
 
                 recurse!();
             }
@@ -3724,12 +3768,13 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
             } => {
                 let model_uuid = *self.model_uuid();
                 if *target == *self.uuid
-                    && *bucket == 0
+                    && (*bucket == 0 || *bucket == BpmnSubprocess::STANDALONE_ELEMENTS_BUCKET)
                     && let BpmnElementOrVertex::Element(mut view) = element.clone()
+                    && view.model().as_standalone().is_some()
                     && (!*into_model
                         || diagram_model
                             .write()
-                            .insert_element_into(model_uuid, 0, *position, view.model())
+                            .insert_element_into(model_uuid, *bucket, *position, view.model())
                             .is_ok())
                 {
                     let uuid = *view.uuid();
@@ -3753,6 +3798,57 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
 
                     self.contained_elements.push(uuid, view);
                 }
+                if *target == *self.uuid
+                    && (*bucket == 0 || *bucket == BpmnSubprocess::ATTACHED_EVENTS_BUCKET)
+                    && let BpmnElementOrVertex::Element(BpmnElementView::Event(view)) =
+                        element.clone()
+                    && matches!(
+                        view.read().model(),
+                        BpmnElement::BoundaryIntermediateEvent(_)
+                    )
+                    && (!*into_model
+                        || diagram_model
+                            .write()
+                            .insert_element_into(
+                                model_uuid,
+                                *bucket,
+                                *position,
+                                view.read().model(),
+                            )
+                            .is_ok())
+                {
+                    let uuid = *view.read().uuid();
+                    {
+                        let mut w = view.write();
+                        let d = canvas::nearest_point_on_rect_edge(self.bounds_rect, w.position)
+                            - w.position;
+                        w.apply_command(
+                            diagram_model,
+                            &InsensitiveCommand::MovePositionalAll(d),
+                            undo_accumulator,
+                            affected_models,
+                        );
+                    }
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        element: uuid,
+                        including_model: *into_model,
+                    });
+
+                    if *into_model {
+                        affected_models.insert(model_uuid);
+                    }
+                    let mut model_transitives = HashMap::new();
+                    view.write().head_count(
+                        &mut HashMap::new(),
+                        &mut HashMap::new(),
+                        &mut model_transitives,
+                    );
+                    affected_models.extend(model_transitives.into_keys());
+
+                    self.attached_events.push(view);
+                }
 
                 recurse!();
             }
@@ -3764,7 +3860,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
             } => {
                 let model_uuid = *self.model_uuid();
                 if *target == *self.uuid
-                    && *bucket == 0
+                    && (*bucket == 0 || *bucket == BpmnSubprocess::STANDALONE_ELEMENTS_BUCKET)
                     && let Some(view) = self.contained_elements.get(element)
                     && let Some((_, pos)) = diagram_model
                         .write()
@@ -3783,6 +3879,31 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                     }
 
                     self.contained_elements.retain(|k, _v| *k != *element);
+                }
+                if *target == *self.uuid
+                    && (*bucket == 0 || *bucket == BpmnSubprocess::ATTACHED_EVENTS_BUCKET)
+                    && let Some(view) = self
+                        .attached_events
+                        .iter()
+                        .find(|e| *e.read().uuid == *element)
+                        .cloned()
+                    && let Some((_, pos)) = diagram_model
+                        .write()
+                        .remove_element_from(model_uuid, &view.read().model_uuid())
+                {
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        position: Some(pos),
+                        element: BpmnElementView::from(view.clone()).into(),
+                        into_model: *including_model,
+                    });
+
+                    if *including_model {
+                        affected_models.insert(model_uuid);
+                    }
+
+                    self.attached_events.retain(|v| *v.read().uuid != *element);
                 }
                 recurse!();
             }
@@ -5987,6 +6108,19 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             InsensitiveCommand<BpmnOrdinalMovement, BpmnElementOrVertex, BpmnPropChange>,
         >,
     ) -> PropertiesStatus<BpmnDomain> {
+        if let Some(child) = self
+            .attached_events
+            .iter_mut()
+            .flat_map(|e| {
+                e.write()
+                    .show_properties(gdc, q, ui, commands)
+                    .non_default()
+            })
+            .next()
+        {
+            return child;
+        }
+
         if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -6594,16 +6728,32 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             } => {
                 let model_uuid = *self.model_uuid();
                 if *target == *self.uuid
-                    && *bucket == 0
+                    && (*bucket == 0 || *bucket == BpmnSubprocess::ATTACHED_EVENTS_BUCKET)
                     && let BpmnElementOrVertex::Element(BpmnElementView::Event(view)) =
                         element.clone()
                     && (!*into_model
                         || diagram_model
                             .write()
-                            .insert_element_into(model_uuid, 0, *position, view.read().model())
+                            .insert_element_into(
+                                model_uuid,
+                                *bucket,
+                                *position,
+                                view.read().model(),
+                            )
                             .is_ok())
                 {
                     let uuid = *view.read().uuid();
+                    {
+                        let mut w = view.write();
+                        let d = canvas::nearest_point_on_rect_edge(self.bounds_rect, w.position)
+                            - w.position;
+                        w.apply_command(
+                            diagram_model,
+                            &InsensitiveCommand::MovePositionalAll(d),
+                            undo_accumulator,
+                            affected_models,
+                        );
+                    }
                     undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                         target: *self.uuid,
                         bucket: *bucket,
@@ -6635,7 +6785,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
             } => {
                 let model_uuid = *self.model_uuid();
                 if *target == *self.uuid
-                    && *bucket == 0
+                    && (*bucket == 0 || *bucket == BpmnSubprocess::ATTACHED_EVENTS_BUCKET)
                     && let Some(view) = self
                         .attached_events
                         .iter()

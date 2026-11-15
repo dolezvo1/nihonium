@@ -34,6 +34,23 @@ fn point_to_segment_distance(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32
     p.distance(proj)
 }
 
+pub fn nearest_point_on_rect_edge(rect: egui::Rect, p: egui::Pos2) -> egui::Pos2 {
+    let x = p.x.clamp(rect.min.x, rect.max.x);
+    let y = p.y.clamp(rect.min.y, rect.max.y);
+
+    let candidates = [
+        egui::pos2(x, rect.min.y),
+        egui::pos2(x, rect.max.y),
+        egui::pos2(rect.min.x, y),
+        egui::pos2(rect.max.x, y),
+    ];
+
+    candidates
+        .into_iter()
+        .min_by(|a, b| (p - *a).length_sq().total_cmp(&(p - *b).length_sq()))
+        .unwrap()
+}
+
 // find unique intersection between segments (s1a, s1b) and (s2a, s2b)
 // based on https://stackoverflow.com/a/1968345
 fn unique_segments_intersection(

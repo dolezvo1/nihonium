@@ -740,7 +740,12 @@ impl BpmnDiagram {
                     let mut w = inner.write();
                     for (idx, e) in w.attached_events.iter().enumerate() {
                         if uuids.contains(&e.read().uuid()) {
-                            undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+                            undo.push((
+                                *w.uuid,
+                                e.clone().into(),
+                                BpmnSubprocess::ATTACHED_EVENTS_BUCKET,
+                                idx.try_into().unwrap(),
+                            ));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -755,7 +760,7 @@ impl BpmnDiagram {
                             undo.push((
                                 *w.uuid,
                                 e.clone().to_element(),
-                                0,
+                                BpmnSubprocess::STANDALONE_ELEMENTS_BUCKET,
                                 idx.try_into().unwrap(),
                             ));
                         } else {
@@ -765,7 +770,12 @@ impl BpmnDiagram {
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
                     for (idx, e) in w.attached_events.iter().enumerate() {
                         if uuids.contains(&e.read().uuid()) {
-                            undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+                            undo.push((
+                                *w.uuid,
+                                e.clone().into(),
+                                BpmnSubprocess::ATTACHED_EVENTS_BUCKET,
+                                idx.try_into().unwrap(),
+                            ));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -1040,7 +1050,7 @@ impl BpmnTask {
         position: Option<PositionNoT>,
         element: BpmnElement,
     ) -> Result<PositionNoT, BpmnElement> {
-        if bucket == 0
+        if (bucket == 0 || bucket == BpmnSubprocess::ATTACHED_EVENTS_BUCKET)
             && let BpmnElement::BoundaryIntermediateEvent(event) = element
         {
             let pos = position
@@ -1057,7 +1067,10 @@ impl BpmnTask {
         for (idx, e) in self.attached_events.iter().enumerate() {
             if *e.read().uuid == *uuid {
                 self.attached_events.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+                return Some((
+                    BpmnSubprocess::ATTACHED_EVENTS_BUCKET,
+                    idx.try_into().unwrap(),
+                ));
             }
         }
         None
@@ -1091,7 +1104,10 @@ impl ContainerModel for BpmnTask {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.attached_events.iter().enumerate() {
             if *e.read().uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
+                return Some((
+                    BpmnSubprocess::ATTACHED_EVENTS_BUCKET,
+                    idx.try_into().unwrap(),
+                ));
             }
         }
         None
@@ -1144,6 +1160,9 @@ pub struct BpmnSubprocess {
 }
 
 impl BpmnSubprocess {
+    pub const STANDALONE_ELEMENTS_BUCKET: BucketNoT = 1;
+    pub const ATTACHED_EVENTS_BUCKET: BucketNoT = 2;
+
     pub fn new(
         uuid: ModelUuid,
         kind: BpmnSubprocessKind,
@@ -1190,7 +1209,7 @@ impl BpmnSubprocess {
         position: Option<PositionNoT>,
         element: BpmnElement,
     ) -> Result<PositionNoT, BpmnElement> {
-        if bucket == 0
+        if (bucket == 0 || bucket == Self::STANDALONE_ELEMENTS_BUCKET)
             && let Some(s) = element.as_standalone()
         {
             let pos = position
@@ -1198,7 +1217,7 @@ impl BpmnSubprocess {
                 .unwrap_or(self.contained_elements.len());
             self.contained_elements.insert(pos, s);
             Ok(pos.try_into().unwrap())
-        } else if bucket == 0
+        } else if (bucket == 0 || bucket == Self::ATTACHED_EVENTS_BUCKET)
             && let BpmnElement::BoundaryIntermediateEvent(event) = element
         {
             let pos = position
@@ -1215,13 +1234,13 @@ impl BpmnSubprocess {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
                 self.contained_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+                return Some((Self::STANDALONE_ELEMENTS_BUCKET, idx.try_into().unwrap()));
             }
         }
         for (idx, e) in self.attached_events.iter().enumerate() {
             if *e.read().uuid == *uuid {
                 self.attached_events.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+                return Some((Self::ATTACHED_EVENTS_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
@@ -1263,12 +1282,12 @@ impl ContainerModel for BpmnSubprocess {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
+                return Some((Self::STANDALONE_ELEMENTS_BUCKET, idx.try_into().unwrap()));
             }
         }
         for (idx, e) in self.attached_events.iter().enumerate() {
             if *e.read().uuid() == *uuid {
-                return Some((0, idx.try_into().unwrap()));
+                return Some((Self::ATTACHED_EVENTS_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
@@ -1282,12 +1301,12 @@ impl FullTextSearchable for BpmnSubprocess {
             &[&self.uuid.to_string(), self.kind.as_str(), &self.name],
         );
 
-        for e in &self.attached_events {
-            e.read().full_text_search(acc);
-        }
-
         for e in &self.contained_elements {
             e.full_text_search(acc);
+        }
+
+        for e in &self.attached_events {
+            e.read().full_text_search(acc);
         }
     }
 }
