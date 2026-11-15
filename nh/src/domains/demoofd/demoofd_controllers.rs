@@ -1627,9 +1627,15 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_) | Ok(DemoOfdElement::Package(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                standard_container!(),
                 DemoOfdToolStage::Entity(EntityStageData {
                     name,
                     properties,
@@ -1642,20 +1648,26 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 self.result = PartialDemoOfdElement::Some(entity_view.into());
                 self.event_lock = true;
             }
-            (_, DemoOfdToolStage::EventEnd, PartialDemoOfdElement::Event { pos: p, .. }) => {
+            (
+                standard_container!(),
+                DemoOfdToolStage::EventEnd,
+                PartialDemoOfdElement::Event { pos: p, .. },
+            ) => {
                 *p = Some(pos);
                 self.event_lock = true;
             }
-            (_, DemoOfdToolStage::PackageStart { .. }, _) => {
+            (standard_container!(), DemoOfdToolStage::PackageStart { .. }, _) => {
                 self.result = PartialDemoOfdElement::Package { a: pos, b: None };
                 self.current_stage = DemoOfdToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (_, DemoOfdToolStage::PackageEnd, PartialDemoOfdElement::Package { b, .. }) => {
-                *b = Some(pos)
-            }
             (
-                _,
+                standard_container!(),
+                DemoOfdToolStage::PackageEnd,
+                PartialDemoOfdElement::Package { b, .. },
+            ) => *b = Some(pos),
+            (
+                standard_container!(),
                 DemoOfdToolStage::Note {
                     text,
                     align,

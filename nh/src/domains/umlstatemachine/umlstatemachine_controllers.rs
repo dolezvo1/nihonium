@@ -1901,9 +1901,17 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_)
+                    | Ok(UmlStateMachineElement::StateMachine(_)
+                        | UmlStateMachineElement::CompositeStateRegion(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                standard_container!(),
                 UmlStateMachineToolStage::SimpleState {
                     stereotype,
                     name,
@@ -1924,23 +1932,31 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, UmlStateMachineToolStage::InitialPseudostate {}, _) => {
+            (standard_container!(), UmlStateMachineToolStage::InitialPseudostate {}, _) => {
                 let (_model, view) = new_umlstatemachine_initialpseudostate(pos);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, UmlStateMachineToolStage::TerminatePseudostate { with_edge_from: _ }, _) => {
+            (
+                standard_container!(),
+                UmlStateMachineToolStage::TerminatePseudostate { with_edge_from: _ },
+                _,
+            ) => {
                 let (_model, view) = new_umlstatemachine_terminatepseudostate(pos);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, UmlStateMachineToolStage::FinalState { with_edge_from: _ }, _) => {
+            (
+                standard_container!(),
+                UmlStateMachineToolStage::FinalState { with_edge_from: _ },
+                _,
+            ) => {
                 let (_model, view) = new_umlstatemachine_finalstate(pos);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlStateMachineToolStage::Note {
                     stereotype,
                     text,
@@ -1960,26 +1976,26 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, UmlStateMachineToolStage::StateMachineStart { .. }, _) => {
+            (standard_container!(), UmlStateMachineToolStage::StateMachineStart { .. }, _) => {
                 self.result = PartialUmlStateMachineElement::StateMachine { a: pos, b: None };
                 self.current_stage = UmlStateMachineToolStage::StateMachineEnd;
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlStateMachineToolStage::StateMachineEnd,
                 PartialUmlStateMachineElement::StateMachine { b, .. },
             ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (_, UmlStateMachineToolStage::CompositeStateStart { .. }, _) => {
+            (standard_container!(), UmlStateMachineToolStage::CompositeStateStart { .. }, _) => {
                 self.result = PartialUmlStateMachineElement::CompositeState { a: pos, b: None };
                 self.current_stage = UmlStateMachineToolStage::CompositeStateEnd;
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlStateMachineToolStage::CompositeStateEnd,
                 PartialUmlStateMachineElement::CompositeState { b, .. },
             ) => {
@@ -4566,7 +4582,10 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             }
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_click(Ok(self.model()), pos);
+                    if k_status.is_none() {
+                        tool.add_click(Ok(self.model()), pos);
+                    }
+
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer

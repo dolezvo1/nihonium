@@ -1744,9 +1744,15 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_) | Ok(NetworkElement::Container(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                standard_container!(),
                 NetworkToolStage::Node {
                     name,
                     kind,
@@ -1760,7 +1766,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 NetworkToolStage::User {
                     name,
                     kind,
@@ -1774,7 +1780,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 NetworkToolStage::File {
                     name,
                     kind,
@@ -1788,7 +1794,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 NetworkToolStage::Location {
                     name,
                     kind,
@@ -1800,16 +1806,18 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, NetworkToolStage::ContainerStart { .. }, _) => {
+            (standard_container!(), NetworkToolStage::ContainerStart { .. }, _) => {
                 self.result = PartialNetworkElement::Container { a: pos, b: None };
                 self.current_stage = NetworkToolStage::ContainerEnd;
                 self.event_lock = true;
             }
-            (_, NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => {
-                *b = Some(pos)
-            }
             (
-                _,
+                standard_container!(),
+                NetworkToolStage::ContainerEnd,
+                PartialNetworkElement::Container { b, .. },
+            ) => *b = Some(pos),
+            (
+                standard_container!(),
                 NetworkToolStage::Note {
                     text,
                     align,

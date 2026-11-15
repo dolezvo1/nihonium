@@ -1451,9 +1451,15 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_) | Ok(DemoCsdElement::Package(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                standard_container!(),
                 DemoCsdToolStage::Transactor {
                     identifier,
                     name,
@@ -1488,7 +1494,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!() | Ok(DemoCsdElement::Transactor(_)),
                 DemoCsdToolStage::Bank(TransactionStageData {
                     identifier,
                     name,
@@ -1502,16 +1508,18 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.result = PartialDemoCsdElement::Some(transaction_view.into());
                 self.event_lock = true;
             }
-            (_, DemoCsdToolStage::PackageStart { .. }, _) => {
+            (standard_container!(), DemoCsdToolStage::PackageStart { .. }, _) => {
                 self.result = PartialDemoCsdElement::Package { a: pos, b: None };
                 self.current_stage = DemoCsdToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (_, DemoCsdToolStage::PackageEnd, PartialDemoCsdElement::Package { b, .. }) => {
-                *b = Some(pos)
-            }
             (
-                _,
+                standard_container!(),
+                DemoCsdToolStage::PackageEnd,
+                PartialDemoCsdElement::Package { b, .. },
+            ) => *b = Some(pos),
+            (
+                standard_container!(),
                 DemoCsdToolStage::Note {
                     text,
                     align,

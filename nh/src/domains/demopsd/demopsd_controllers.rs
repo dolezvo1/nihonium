@@ -1526,14 +1526,20 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_) | Ok(DemoPsdElementTargettingSection::Package(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
-            (_, DemoPsdToolStage::TransactionStart { .. }, _) => {
+            (standard_container!(), DemoPsdToolStage::TransactionStart { .. }, _) => {
                 self.result = PartialDemoPsdElement::TransactionStart { start_pos: pos };
                 self.current_stage = DemoPsdToolStage::TransactionEnd;
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 DemoPsdToolStage::TransactionEnd,
                 PartialDemoPsdElement::TransactionStart { start_pos },
             ) if let DemoPsdToolStage::TransactionStart {
@@ -1562,7 +1568,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!() | Ok(DemoPsdElementTargettingSection::Transaction(..)),
                 DemoPsdToolStage::Fact {
                     identifier,
                     internal,
@@ -1574,7 +1580,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!() | Ok(DemoPsdElementTargettingSection::Transaction(..)),
                 DemoPsdToolStage::Act {
                     identifier,
                     internal,
@@ -1585,16 +1591,18 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.result = PartialDemoPsdElement::Some(act_view.into());
                 self.event_lock = true;
             }
-            (_, DemoPsdToolStage::PackageStart { .. }, _) => {
+            (standard_container!(), DemoPsdToolStage::PackageStart { .. }, _) => {
                 self.result = PartialDemoPsdElement::Package { a: pos, b: None };
                 self.current_stage = DemoPsdToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (_, DemoPsdToolStage::PackageEnd, PartialDemoPsdElement::Package { b, .. }) => {
-                *b = Some(pos)
-            }
             (
-                _,
+                standard_container!(),
+                DemoPsdToolStage::PackageEnd,
+                PartialDemoPsdElement::Package { b, .. },
+            ) => *b = Some(pos),
+            (
+                standard_container!(),
                 DemoPsdToolStage::Note {
                     text,
                     align,

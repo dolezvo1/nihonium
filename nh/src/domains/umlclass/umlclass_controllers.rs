@@ -2789,9 +2789,15 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_) | Ok(UmlClassElement::Package(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                Err(_) | Ok(UmlClassElement::Package(_)),
+                standard_container!(),
                 UmlClassToolStage::Instance {
                     instance_name,
                     instance_type,
@@ -2814,7 +2820,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.event_lock = true;
             }
             (
-                Err(_) | Ok(UmlClassElement::Package(_)),
+                standard_container!(),
                 UmlClassToolStage::Class {
                     name,
                     stereotype,
@@ -2840,7 +2846,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.event_lock = true;
             }
             (
-                Err(_) | Ok(UmlClassElement::Package(_)),
+                standard_container!(),
                 UmlClassToolStage::UseCase {
                     name,
                     stereotype,
@@ -2863,17 +2869,13 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
-            (
-                Err(_) | Ok(UmlClassElement::Package(_)),
-                UmlClassToolStage::PackageStart { .. },
-                _,
-            ) => {
+            (standard_container!(), UmlClassToolStage::PackageStart { .. }, _) => {
                 self.result = PartialUmlClassElement::Package { a: pos, b: None };
                 self.current_stage = UmlClassToolStage::PackageEnd;
                 self.event_lock = true;
             }
             (
-                Err(_) | Ok(UmlClassElement::Package(_)),
+                standard_container!(),
                 UmlClassToolStage::PackageEnd,
                 PartialUmlClassElement::Package { b, .. },
             ) => {
@@ -2881,7 +2883,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.event_lock = true;
             }
             (
-                Err(_) | Ok(UmlClassElement::Package(_)),
+                standard_container!(),
                 UmlClassToolStage::Note {
                     stereotype,
                     text,

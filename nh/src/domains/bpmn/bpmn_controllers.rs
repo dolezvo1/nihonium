@@ -2199,9 +2199,15 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_) | Ok(BpmnElement::Subprocess(_) | BpmnElement::PoolSwimlane(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                standard_container!(),
                 BpmnToolStage::Task {
                     name,
                     kind,
@@ -2217,7 +2223,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 BpmnToolStage::StartEvent {
                     kind,
                     subkind,
@@ -2230,7 +2236,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 BpmnToolStage::IntermediateEvent {
                     kind,
                     subkind,
@@ -2244,7 +2250,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 BpmnToolStage::EndEvent {
                     kind,
                     name,
@@ -2257,7 +2263,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
-                _,
+                Ok(BpmnElement::Task(_) | BpmnElement::Subprocess(_)),
                 BpmnToolStage::BoundaryIntermediateEvent {
                     kind,
                     subkind,
@@ -2271,7 +2277,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 BpmnToolStage::Gateway {
                     kind,
                     condition,
@@ -2284,7 +2290,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 BpmnToolStage::Data {
                     kind,
                     is_collection,
@@ -2300,19 +2306,23 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 BpmnToolStage::AnnotationEnd { .. },
                 PartialBpmnElement::Annotation { dest, .. },
             ) => {
                 *dest = Some(pos);
                 self.event_lock = true;
             }
-            (_, BpmnToolStage::SubprocessStart { .. }, _) => {
+            (standard_container!(), BpmnToolStage::SubprocessStart { .. }, _) => {
                 self.result = PartialBpmnElement::Subprocess { a: pos, b: None };
                 self.current_stage = BpmnToolStage::SubprocessEnd;
                 self.event_lock = true;
             }
-            (_, BpmnToolStage::SubprocessEnd, PartialBpmnElement::Subprocess { b, .. }) => {
+            (
+                standard_container!(),
+                BpmnToolStage::SubprocessEnd,
+                PartialBpmnElement::Subprocess { b, .. },
+            ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
@@ -5238,7 +5248,9 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
             }
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_click(Ok(self.model()), *event.mouse_position());
+                    if k_status.is_none() {
+                        tool.add_click(Ok(self.model()), pos);
+                    }
 
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 

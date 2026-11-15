@@ -2108,7 +2108,10 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
 
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                Ok(UmlSequenceViewTargettingSection {
+                    element: UmlSequenceElement::Diagram(_),
+                    end: _,
+                }),
                 UmlSequenceToolStage::Lifeline {
                     name,
                     stereotype,
@@ -2127,12 +2130,16 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 self.result = PartialUmlSequenceElement::Some(class_view.into());
                 self.event_lock = true;
             }
-            (_, UmlSequenceToolStage::DiagramStart, _) => {
+            (Err(_), UmlSequenceToolStage::DiagramStart, _) => {
                 self.result = PartialUmlSequenceElement::Diagram { a: pos, b: None };
                 self.current_stage = UmlSequenceToolStage::DiagramEnd;
                 self.event_lock = true;
             }
-            (_, UmlSequenceToolStage::DiagramEnd, PartialUmlSequenceElement::Diagram { b, .. }) => {
+            (
+                Err(_),
+                UmlSequenceToolStage::DiagramEnd,
+                PartialUmlSequenceElement::Diagram { b, .. },
+            ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
@@ -3269,21 +3276,23 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                 if let Some(tool) = tool {
                     let horizontal_place = self.horizontal_insertion_place(pos);
-                    tool.add_click(
-                        Ok(UmlSequenceViewTargettingSection {
-                            element: self.model.clone().into(),
-                            end: false,
-                        }),
-                        pos,
-                    );
-                    if let Some(h) = &horizontal_place {
+                    if k_status.is_none() {
                         tool.add_click(
                             Ok(UmlSequenceViewTargettingSection {
-                                element: h.1.clone().into(),
+                                element: self.model.clone().into(),
                                 end: false,
                             }),
                             pos,
                         );
+                        if let Some(h) = &horizontal_place {
+                            tool.add_click(
+                                Ok(UmlSequenceViewTargettingSection {
+                                    element: h.1.clone().into(),
+                                    end: false,
+                                }),
+                                pos,
+                            );
+                        }
                     }
 
                     let pos = match &tool.initial_stage {

@@ -1149,9 +1149,15 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_) | Ok(RdfElement::Graph(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                standard_container!(),
                 RdfToolStage::Literal {
                     content,
                     datatype,
@@ -1168,7 +1174,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 RdfToolStage::Node {
                     iri,
                     background_color,
@@ -1180,12 +1186,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 self.result = PartialRdfElement::Some(node_view.into());
                 self.event_lock = true;
             }
-            (_, RdfToolStage::GraphStart { .. }, _) => {
+            (standard_container!(), RdfToolStage::GraphStart { .. }, _) => {
                 self.result = PartialRdfElement::Graph { a: pos, b: None };
                 self.current_stage = RdfToolStage::GraphEnd;
                 self.event_lock = true;
             }
-            (_, RdfToolStage::GraphEnd, PartialRdfElement::Graph { b, .. }) => *b = Some(pos),
+            (standard_container!(), RdfToolStage::GraphEnd, PartialRdfElement::Graph { b, .. }) => {
+                *b = Some(pos)
+            }
             (
                 Ok(RdfElement::Node(inner)),
                 RdfToolStage::PredicateStart { .. },

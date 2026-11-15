@@ -2112,9 +2112,18 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
             return;
         }
 
+        macro_rules! standard_container {
+            () => {
+                Err(_)
+                    | Ok(UmlActivityElement::Activity(_)
+                        | UmlActivityElement::InterruptibleRegion(_)
+                        | UmlActivityElement::PartitionSection(_))
+            };
+        }
+
         match (element, &self.current_stage, &mut self.result) {
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::ActionNode {
                     stereotype,
                     name,
@@ -2135,13 +2144,13 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, UmlActivityToolStage::InitialNode {}, _) => {
+            (standard_container!(), UmlActivityToolStage::InitialNode {}, _) => {
                 let (_model, view) = new_umlactivity_initialnode(pos);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::FinalNode {
                     kind,
                     with_edge_from: _,
@@ -2153,7 +2162,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::DecisionNode {
                     name,
                     with_edge_from: _,
@@ -2164,13 +2173,13 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, UmlActivityToolStage::ForkNodeStart, _) => {
+            (standard_container!(), UmlActivityToolStage::ForkNodeStart, _) => {
                 self.result = PartialUmlActivityElement::ForkNode { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::ForkNodeEnd;
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::ForkNodeEnd,
                 PartialUmlActivityElement::ForkNode { b, .. },
             ) => {
@@ -2178,7 +2187,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::ObjectNode {
                     name,
                     stereotype,
@@ -2193,7 +2202,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::Note {
                     stereotype,
                     text,
@@ -2207,39 +2216,39 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (_, UmlActivityToolStage::ActivityStart { .. }, _) => {
+            (standard_container!(), UmlActivityToolStage::ActivityStart { .. }, _) => {
                 self.result = PartialUmlActivityElement::Activity { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::ActivityEnd;
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::ActivityEnd,
                 PartialUmlActivityElement::Activity { b, .. },
             ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (_, UmlActivityToolStage::InterruptibleRegionStart { .. }, _) => {
+            (standard_container!(), UmlActivityToolStage::InterruptibleRegionStart { .. }, _) => {
                 self.result = PartialUmlActivityElement::InterruptibleRegion { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::InterruptibleRegionEnd;
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::InterruptibleRegionEnd,
                 PartialUmlActivityElement::InterruptibleRegion { b, .. },
             ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (_, UmlActivityToolStage::PartitionStart { .. }, _) => {
+            (standard_container!(), UmlActivityToolStage::PartitionStart { .. }, _) => {
                 self.result = PartialUmlActivityElement::Partition { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::PartitionEnd;
                 self.event_lock = true;
             }
             (
-                _,
+                standard_container!(),
                 UmlActivityToolStage::PartitionEnd,
                 PartialUmlActivityElement::Partition { b, .. },
             ) => {
@@ -4467,7 +4476,9 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             }
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_click(Ok(self.model()), pos);
+                    if k_status.is_none() {
+                        tool.add_click(Ok(self.model()), pos);
+                    }
 
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
