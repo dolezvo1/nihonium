@@ -1666,8 +1666,11 @@ pub trait Tool<DomainT: Domain> {
         pos: egui::Pos2,
     );
 
-    fn add_position(&mut self, pos: egui::Pos2);
-    fn add_section(&mut self, element: DomainT::ViewTargettingSectionT);
+    fn add_click(
+        &mut self,
+        element: Result<DomainT::ViewTargettingSectionT, ERef<DomainT::DiagramModelT>>,
+        pos: egui::Pos2,
+    );
 
     fn try_flush(
         &mut self,
@@ -3193,7 +3196,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                     .is_ok();
 
                 if !handled && let Some(t) = self.temporaries.current_tool.as_mut() {
-                    t.add_position(pos);
+                    t.add_click(Err(self.adapter.model()), pos);
                 }
 
                 let mut tool = self.temporaries.current_tool.take();

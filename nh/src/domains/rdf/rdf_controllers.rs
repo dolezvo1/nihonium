@@ -1144,13 +1144,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(&mut self, element: Result<RdfElement, ERef<RdfDiagram>>, pos: egui::Pos2) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 RdfToolStage::Literal {
                     content,
                     datatype,
@@ -1167,6 +1168,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 self.event_lock = true;
             }
             (
+                _,
                 RdfToolStage::Node {
                     iri,
                     background_color,
@@ -1178,45 +1180,31 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 self.result = PartialRdfElement::Some(node_view.into());
                 self.event_lock = true;
             }
-            (RdfToolStage::GraphStart { .. }, _) => {
+            (_, RdfToolStage::GraphStart { .. }, _) => {
                 self.result = PartialRdfElement::Graph { a: pos, b: None };
                 self.current_stage = RdfToolStage::GraphEnd;
                 self.event_lock = true;
             }
-            (RdfToolStage::GraphEnd, PartialRdfElement::Graph { b, .. }) => *b = Some(pos),
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, controller: RdfElement) {
-        if self.event_lock {
-            return;
-        }
-
-        match controller {
-            RdfElement::Graph(..) => {}
-            RdfElement::Literal(inner) => {
-                if let (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) =
-                    (&self.current_stage, &mut self.result)
-                {
-                    *dest = Some(RdfTargettableElement::from(inner));
-                    self.event_lock = true;
-                }
+            (_, RdfToolStage::GraphEnd, PartialRdfElement::Graph { b, .. }) => *b = Some(pos),
+            (
+                Ok(RdfElement::Node(inner)),
+                RdfToolStage::PredicateStart { .. },
+                PartialRdfElement::None,
+            ) => {
+                self.result = PartialRdfElement::Predicate {
+                    source: inner,
+                    dest: None,
+                };
+                self.current_stage = RdfToolStage::PredicateEnd;
+                self.event_lock = true;
             }
-            RdfElement::Node(inner) => match (&self.current_stage, &mut self.result) {
-                (RdfToolStage::PredicateStart { .. }, PartialRdfElement::None) => {
-                    self.result = PartialRdfElement::Predicate {
-                        source: inner,
-                        dest: None,
-                    };
-                    self.current_stage = RdfToolStage::PredicateEnd;
-                    self.event_lock = true;
-                }
-                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
-                    *dest = Some(RdfTargettableElement::from(inner));
-                }
-                _ => {}
-            },
-            RdfElement::Predicate(..) => {}
+            (Ok(e), RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. })
+                if let Some(e) = e.as_targettable_element() =>
+            {
+                *dest = Some(e);
+                self.event_lock = true;
+            }
+            _ => {}
         }
     }
 
@@ -1961,7 +1949,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -2402,7 +2390,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement

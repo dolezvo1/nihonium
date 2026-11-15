@@ -1618,13 +1618,18 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<DemoOfdElement, ERef<DemoOfdDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 DemoOfdToolStage::Entity(EntityStageData {
                     name,
                     properties,
@@ -1637,19 +1642,20 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 self.result = PartialDemoOfdElement::Some(entity_view.into());
                 self.event_lock = true;
             }
-            (DemoOfdToolStage::EventEnd, PartialDemoOfdElement::Event { pos: p, .. }) => {
+            (_, DemoOfdToolStage::EventEnd, PartialDemoOfdElement::Event { pos: p, .. }) => {
                 *p = Some(pos);
                 self.event_lock = true;
             }
-            (DemoOfdToolStage::PackageStart { .. }, _) => {
+            (_, DemoOfdToolStage::PackageStart { .. }, _) => {
                 self.result = PartialDemoOfdElement::Package { a: pos, b: None };
                 self.current_stage = DemoOfdToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (DemoOfdToolStage::PackageEnd, PartialDemoOfdElement::Package { b, .. }) => {
+            (_, DemoOfdToolStage::PackageEnd, PartialDemoOfdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
             (
+                _,
                 DemoOfdToolStage::Note {
                     text,
                     align,
@@ -1661,16 +1667,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 self.result = PartialDemoOfdElement::Some(view.into());
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, element: DemoOfdElement) {
-        if self.event_lock {
-            return;
-        }
-
-        match element {
-            DemoOfdElement::EntityType(inner) => match (&self.current_stage, &mut self.result) {
+            (Ok(DemoOfdElement::EntityType(inner)), cs, r) => match (cs, r) {
                 (DemoOfdToolStage::EventStart { .. }, PartialDemoOfdElement::None) => {
                     self.result = PartialDemoOfdElement::Event {
                         source: inner,
@@ -1752,7 +1749,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
                 _ => {}
             },
-            DemoOfdElement::EventType(inner) => match (&self.current_stage, &mut self.result) {
+            (Ok(DemoOfdElement::EventType(inner)), cs, r) => match (cs, r) {
                 (
                     DemoOfdToolStage::Entity(EntityStageData {
                         name,
@@ -1819,14 +1816,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
                 _ => {}
             },
-
-            DemoOfdElement::Package(..)
-            | DemoOfdElement::PropertyType(..)
-            | DemoOfdElement::Specialization(..)
-            | DemoOfdElement::Aggregation(..)
-            | DemoOfdElement::Precedence(..)
-            | DemoOfdElement::Exclusion(..)
-            | DemoOfdElement::Note(..) => {}
+            _ => {}
         }
     }
 
@@ -2804,7 +2794,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -3371,11 +3361,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
 
-                    if !self.specialization_view.is_some() {
-                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else {
@@ -5369,7 +5357,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings

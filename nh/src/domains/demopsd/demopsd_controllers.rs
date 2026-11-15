@@ -1517,18 +1517,23 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<DemoPsdElementTargettingSection, ERef<DemoPsdDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
-            (DemoPsdToolStage::TransactionStart { .. }, _) => {
+        match (element, &self.current_stage, &mut self.result) {
+            (_, DemoPsdToolStage::TransactionStart { .. }, _) => {
                 self.result = PartialDemoPsdElement::TransactionStart { start_pos: pos };
                 self.current_stage = DemoPsdToolStage::TransactionEnd;
                 self.event_lock = true;
             }
             (
+                _,
                 DemoPsdToolStage::TransactionEnd,
                 PartialDemoPsdElement::TransactionStart { start_pos },
             ) if let DemoPsdToolStage::TransactionStart {
@@ -1557,6 +1562,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.event_lock = true;
             }
             (
+                _,
                 DemoPsdToolStage::Fact {
                     identifier,
                     internal,
@@ -1568,6 +1574,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.event_lock = true;
             }
             (
+                _,
                 DemoPsdToolStage::Act {
                     identifier,
                     internal,
@@ -1578,15 +1585,16 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.result = PartialDemoPsdElement::Some(act_view.into());
                 self.event_lock = true;
             }
-            (DemoPsdToolStage::PackageStart { .. }, _) => {
+            (_, DemoPsdToolStage::PackageStart { .. }, _) => {
                 self.result = PartialDemoPsdElement::Package { a: pos, b: None };
                 self.current_stage = DemoPsdToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (DemoPsdToolStage::PackageEnd, PartialDemoPsdElement::Package { b, .. }) => {
+            (_, DemoPsdToolStage::PackageEnd, PartialDemoPsdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
             (
+                _,
                 DemoPsdToolStage::Note {
                     text,
                     align,
@@ -1598,37 +1606,27 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 self.result = PartialDemoPsdElement::Some(view.into());
                 self.event_lock = true;
             }
+            (
+                Ok(DemoPsdElementTargettingSection::Fact(inner)),
+                DemoPsdToolStage::LinkStart { .. },
+                _,
+            ) => {
+                self.result = PartialDemoPsdElement::Link {
+                    source: inner,
+                    dest: None,
+                };
+                self.current_stage = DemoPsdToolStage::LinkEnd;
+                self.event_lock = true;
+            }
+            (
+                Ok(DemoPsdElementTargettingSection::Act(inner)),
+                DemoPsdToolStage::LinkEnd,
+                PartialDemoPsdElement::Link { dest, .. },
+            ) => {
+                *dest = Some(inner);
+                self.event_lock = true;
+            }
             _ => {}
-        }
-    }
-    fn add_section(&mut self, section: DemoPsdElementTargettingSection) {
-        if self.event_lock {
-            return;
-        }
-
-        type TS = DemoPsdElementTargettingSection;
-
-        match section {
-            TS::Package(..) | TS::Transaction(..) => {}
-            TS::Fact(inner) => {
-                if let DemoPsdToolStage::LinkStart { .. } = &self.current_stage {
-                    self.result = PartialDemoPsdElement::Link {
-                        source: inner,
-                        dest: None,
-                    };
-                    self.current_stage = DemoPsdToolStage::LinkEnd;
-                    self.event_lock = true;
-                }
-            }
-            TS::Act(inner) => {
-                if let DemoPsdToolStage::LinkEnd = self.current_stage
-                    && let PartialDemoPsdElement::Link { dest, .. } = &mut self.result
-                {
-                    *dest = Some(inner);
-                    self.event_lock = true;
-                }
-            }
-            TS::Link(..) | TS::Note(..) => {}
         }
     }
 
@@ -2647,13 +2645,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 if let Some(tool) = tool {
                     let section = self.section_for(pos);
                     let quadrant = section.1;
-                    tool.add_section(section.into());
 
                     if (self.p_act_view.as_ref().is_none()
                         && !matches!(tool.initial_stage, DemoPsdToolStage::Fact { .. }))
                         || quadrant != egui::Align2::CENTER_CENTER
                     {
-                        tool.add_position(pos);
+                        tool.add_click(Ok(section.into()), pos);
                         let quadrant_no = match quadrant {
                             egui::Align2::CENTER_CENTER => DemoPsdTransaction::CENTER_BUCKET,
                             egui::Align2::LEFT_TOP => DemoPsdTransaction::BEFORE_INITIATOR_BUCKET,
@@ -3815,9 +3812,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Click(_) => {
+            InputEvent::Click(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model.clone().into()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -4300,9 +4297,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Click(_) => {
+            InputEvent::Click(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model.clone().into()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -5078,7 +5075,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model.clone().into()), pos);
                 } else {
                     if ehc
                         .modifier_settings

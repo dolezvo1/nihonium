@@ -2103,13 +2103,18 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<UmlActivityElement, ERef<UmlActivityDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 UmlActivityToolStage::ActionNode {
                     stereotype,
                     name,
@@ -2130,12 +2135,13 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::InitialNode {}, _) => {
+            (_, UmlActivityToolStage::InitialNode {}, _) => {
                 let (_model, view) = new_umlactivity_initialnode(pos);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
             (
+                _,
                 UmlActivityToolStage::FinalNode {
                     kind,
                     with_edge_from: _,
@@ -2147,6 +2153,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.event_lock = true;
             }
             (
+                _,
                 UmlActivityToolStage::DecisionNode {
                     name,
                     with_edge_from: _,
@@ -2157,16 +2164,21 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::ForkNodeStart, _) => {
+            (_, UmlActivityToolStage::ForkNodeStart, _) => {
                 self.result = PartialUmlActivityElement::ForkNode { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::ForkNodeEnd;
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::ForkNodeEnd, PartialUmlActivityElement::ForkNode { b, .. }) => {
+            (
+                _,
+                UmlActivityToolStage::ForkNodeEnd,
+                PartialUmlActivityElement::ForkNode { b, .. },
+            ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
             (
+                _,
                 UmlActivityToolStage::ObjectNode {
                     name,
                     stereotype,
@@ -2181,6 +2193,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.event_lock = true;
             }
             (
+                _,
                 UmlActivityToolStage::Note {
                     stereotype,
                     text,
@@ -2194,92 +2207,90 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::ActivityStart { .. }, _) => {
+            (_, UmlActivityToolStage::ActivityStart { .. }, _) => {
                 self.result = PartialUmlActivityElement::Activity { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::ActivityEnd;
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::ActivityEnd, PartialUmlActivityElement::Activity { b, .. }) => {
+            (
+                _,
+                UmlActivityToolStage::ActivityEnd,
+                PartialUmlActivityElement::Activity { b, .. },
+            ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::InterruptibleRegionStart { .. }, _) => {
+            (_, UmlActivityToolStage::InterruptibleRegionStart { .. }, _) => {
                 self.result = PartialUmlActivityElement::InterruptibleRegion { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::InterruptibleRegionEnd;
                 self.event_lock = true;
             }
             (
+                _,
                 UmlActivityToolStage::InterruptibleRegionEnd,
                 PartialUmlActivityElement::InterruptibleRegion { b, .. },
             ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::PartitionStart { .. }, _) => {
+            (_, UmlActivityToolStage::PartitionStart { .. }, _) => {
                 self.result = PartialUmlActivityElement::Partition { a: pos, b: None };
                 self.current_stage = UmlActivityToolStage::PartitionEnd;
                 self.event_lock = true;
             }
             (
+                _,
                 UmlActivityToolStage::PartitionEnd,
                 PartialUmlActivityElement::Partition { b, .. },
             ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, element: UmlActivityElement) {
-        if self.event_lock {
-            return;
-        }
-
-        match element {
-            e @ (UmlActivityElement::ActionNode(..)
-            | UmlActivityElement::InitialNode(..)
-            | UmlActivityElement::FinalNode(..)
-            | UmlActivityElement::DecisionNode(..)
-            | UmlActivityElement::ForkNode(..)
-            | UmlActivityElement::ObjectNode(..)) => {
-                match (&self.current_stage, &mut self.result) {
-                    (
-                        UmlActivityToolStage::LinkStart { link_type },
-                        PartialUmlActivityElement::None,
-                    ) if let Some(e) = e.as_nonfinal() => {
-                        self.result = PartialUmlActivityElement::Link {
-                            source: e,
-                            dest: None,
-                        };
-                        self.current_stage = UmlActivityToolStage::LinkEnd;
-                        self.event_lock = true;
-                    }
-                    (
-                        UmlActivityToolStage::LinkEnd,
-                        PartialUmlActivityElement::Link { dest, .. },
-                    ) if let Some(e) = e.as_noninitial() => {
-                        *dest = Some(e);
-                        self.event_lock = true;
-                    }
-                    (
-                        UmlActivityToolStage::NoteLinkEnd,
-                        PartialUmlActivityElement::NoteLink { dest, .. },
-                    ) => {
-                        *dest = Some(e);
-                        self.event_lock = true;
-                    }
-                    _ => {}
-                }
-            }
-            UmlActivityElement::Note(inner) => {
-                if let UmlActivityToolStage::NoteLinkStart = &self.current_stage {
-                    self.result = PartialUmlActivityElement::NoteLink {
-                        source: inner,
+            (
+                Ok(
+                    e @ (UmlActivityElement::ActionNode(..)
+                    | UmlActivityElement::InitialNode(..)
+                    | UmlActivityElement::FinalNode(..)
+                    | UmlActivityElement::DecisionNode(..)
+                    | UmlActivityElement::ForkNode(..)
+                    | UmlActivityElement::ObjectNode(..)),
+                ),
+                cs,
+                r,
+            ) => match (cs, r) {
+                (
+                    UmlActivityToolStage::LinkStart { link_type },
+                    PartialUmlActivityElement::None,
+                ) if let Some(e) = e.as_nonfinal() => {
+                    self.result = PartialUmlActivityElement::Link {
+                        source: e,
                         dest: None,
                     };
-                    self.current_stage = UmlActivityToolStage::NoteLinkEnd;
+                    self.current_stage = UmlActivityToolStage::LinkEnd;
                     self.event_lock = true;
                 }
+                (UmlActivityToolStage::LinkEnd, PartialUmlActivityElement::Link { dest, .. })
+                    if let Some(e) = e.as_noninitial() =>
+                {
+                    *dest = Some(e);
+                    self.event_lock = true;
+                }
+                (
+                    UmlActivityToolStage::NoteLinkEnd,
+                    PartialUmlActivityElement::NoteLink { dest, .. },
+                ) => {
+                    *dest = Some(e);
+                    self.event_lock = true;
+                }
+                _ => {}
+            },
+            (Ok(UmlActivityElement::Note(inner)), UmlActivityToolStage::NoteLinkStart, _) => {
+                self.result = PartialUmlActivityElement::NoteLink {
+                    source: inner,
+                    dest: None,
+                };
+                self.current_stage = UmlActivityToolStage::NoteLinkEnd;
+                self.event_lock = true;
             }
             _ => {}
         }
@@ -4456,8 +4467,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             }
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model()), pos);
+
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
@@ -5450,7 +5461,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -5864,7 +5875,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -6258,7 +6269,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -6689,7 +6700,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -7093,7 +7104,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -7565,7 +7576,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -8450,7 +8461,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings

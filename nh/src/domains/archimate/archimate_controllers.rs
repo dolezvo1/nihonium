@@ -1568,13 +1568,18 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<ArchiMateElement, ERef<ArchiMateDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 ArchiMateToolStage::Concept {
                     stereotype,
                     name,
@@ -1597,59 +1602,53 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                 self.result = PartialArchiMateElement::Some(view.into());
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, section: ArchiMateElement) {
-        if self.event_lock {
-            return;
-        }
+            (
+                Ok(ArchiMateElement::Concept(c)),
+                ArchiMateToolStage::RelationshipStart { .. },
+                PartialArchiMateElement::None,
+            ) => {
+                self.result = PartialArchiMateElement::Relationship {
+                    source: c,
+                    dest: None,
+                };
+                self.current_stage = ArchiMateToolStage::RelationshipEnd;
+                self.event_lock = true;
+            }
+            (
+                Ok(ArchiMateElement::Concept(c)),
+                ArchiMateToolStage::RelationshipEnd,
+                PartialArchiMateElement::Relationship { dest, .. },
+            ) => {
+                *dest = Some(c);
+                self.event_lock = true;
+            }
+            (
+                Ok(ArchiMateElement::Concept(c)),
+                ArchiMateToolStage::RelationshipAddEnding { source },
+                &mut PartialArchiMateElement::RelationshipEnding {
+                    ref relationship_model,
+                    ref mut new_model,
+                },
+            ) => {
+                let concept_uuid = *c.read().uuid;
+                let r = relationship_model.read();
 
-        match section {
-            ArchiMateElement::Concept(c) => match (&self.current_stage, &mut self.result) {
-                (ArchiMateToolStage::RelationshipStart { .. }, PartialArchiMateElement::None) => {
-                    self.result = PartialArchiMateElement::Relationship {
-                        source: c,
-                        dest: None,
-                    };
-                    self.current_stage = ArchiMateToolStage::RelationshipEnd;
-                    self.event_lock = true;
-                }
-                (
-                    ArchiMateToolStage::RelationshipEnd,
-                    PartialArchiMateElement::Relationship { dest, .. },
-                ) => {
-                    *dest = Some(c);
-                    self.event_lock = true;
-                }
-                (
-                    ArchiMateToolStage::RelationshipAddEnding { source },
-                    &mut PartialArchiMateElement::RelationshipEnding {
-                        ref relationship_model,
-                        ref mut new_model,
-                    },
-                ) => {
-                    let concept_uuid = *c.read().uuid;
-                    let r = relationship_model.read();
-
-                    if (*source
+                if (*source
+                    && !r
+                        .sources
+                        .iter()
+                        .any(|e| *e.concept.read().uuid == concept_uuid))
+                    || (!source
                         && !r
-                            .sources
+                            .targets
                             .iter()
                             .any(|e| *e.concept.read().uuid == concept_uuid))
-                        || (!source
-                            && !r
-                                .targets
-                                .iter()
-                                .any(|e| *e.concept.read().uuid == concept_uuid))
-                    {
-                        *new_model = Some(concept_uuid);
-                    }
-                    self.event_lock = true;
+                {
+                    *new_model = Some(concept_uuid);
                 }
-                _ => {}
-            },
-            ArchiMateElement::Relationship(..) => {}
+                self.event_lock = true;
+            }
+            _ => {}
         }
     }
 
@@ -1770,7 +1769,8 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                 new_model,
             } if let ArchiMateToolStage::RelationshipAddEnding { source } = &self.initial_stage
                 && let Some(target) = q.get_viewuuid_for(&relationship_model.read().uuid())
-                && let Some(element) = q.get_view_for(&new_model.unwrap()) =>
+                && let Some(new_m) = new_model.as_ref()
+                && let Some(element) = q.get_view_for(&new_m) =>
             {
                 commands.push(InsensitiveCommand::AddDependency {
                     target,
@@ -3321,8 +3321,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
 
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 

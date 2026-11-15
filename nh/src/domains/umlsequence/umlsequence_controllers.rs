@@ -2097,13 +2097,18 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<UmlSequenceViewTargettingSection, ERef<UmlSequenceDiagramBoard>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 UmlSequenceToolStage::Lifeline {
                     name,
                     stereotype,
@@ -2122,16 +2127,17 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 self.result = PartialUmlSequenceElement::Some(class_view.into());
                 self.event_lock = true;
             }
-            (UmlSequenceToolStage::DiagramStart, _) => {
+            (_, UmlSequenceToolStage::DiagramStart, _) => {
                 self.result = PartialUmlSequenceElement::Diagram { a: pos, b: None };
                 self.current_stage = UmlSequenceToolStage::DiagramEnd;
                 self.event_lock = true;
             }
-            (UmlSequenceToolStage::DiagramEnd, PartialUmlSequenceElement::Diagram { b, .. }) => {
+            (_, UmlSequenceToolStage::DiagramEnd, PartialUmlSequenceElement::Diagram { b, .. }) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
             (
+                _,
                 UmlSequenceToolStage::DurationConstraintX,
                 PartialUmlSequenceElement::DurationConstraint { x, .. },
             ) => {
@@ -2139,6 +2145,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 self.event_lock = true;
             }
             (
+                _,
                 UmlSequenceToolStage::Note {
                     text,
                     align,
@@ -2150,84 +2157,79 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 self.result = PartialUmlSequenceElement::Some(view.into());
                 self.event_lock = true;
             }
+            (Ok(e), cs, r) if let UmlSequenceElement::Lifeline(inner) = e.element.clone() => {
+                match (cs, r) {
+                    (UmlSequenceToolStage::LinkStart { .. }, PartialUmlSequenceElement::None) => {
+                        self.result = PartialUmlSequenceElement::Link {
+                            source: inner,
+                            dest: None,
+                        };
+                        self.current_stage = UmlSequenceToolStage::LinkEnd;
+                        self.event_lock = true;
+                    }
+                    (
+                        UmlSequenceToolStage::LinkEnd,
+                        PartialUmlSequenceElement::Link { dest, .. },
+                    ) => {
+                        *dest = Some(inner);
+                        self.event_lock = true;
+                    }
+                    (
+                        UmlSequenceToolStage::CombinedFragmentStart { .. },
+                        PartialUmlSequenceElement::None,
+                    ) => {
+                        self.result = PartialUmlSequenceElement::CombinedFragment {
+                            source: inner,
+                            dest: None,
+                        };
+                        self.current_stage = UmlSequenceToolStage::CombinedFragmentEnd;
+                        self.event_lock = true;
+                    }
+                    (
+                        UmlSequenceToolStage::CombinedFragmentEnd,
+                        PartialUmlSequenceElement::CombinedFragment { dest, .. },
+                    ) => {
+                        *dest = Some(inner);
+                        self.event_lock = true;
+                    }
+                    (UmlSequenceToolStage::RefStart { .. }, PartialUmlSequenceElement::None) => {
+                        self.result = PartialUmlSequenceElement::Ref {
+                            source: inner,
+                            dest: None,
+                        };
+                        self.current_stage = UmlSequenceToolStage::RefEnd;
+                        self.event_lock = true;
+                    }
+                    (UmlSequenceToolStage::RefEnd, PartialUmlSequenceElement::Ref { dest, .. }) => {
+                        *dest = Some(inner);
+                        self.event_lock = true;
+                    }
+                    _ => {}
+                }
+            }
+            (
+                Ok(e),
+                UmlSequenceToolStage::DurationConstraintY1 { .. },
+                PartialUmlSequenceElement::None,
+            ) if let Some(element) = e.element.as_horizontal() => {
+                self.result = PartialUmlSequenceElement::DurationConstraint {
+                    y1: (e.end, element),
+                    y2: None,
+                    x: None,
+                };
+                self.current_stage = UmlSequenceToolStage::DurationConstraintY2;
+                self.event_lock = true;
+            }
+            (
+                Ok(e),
+                UmlSequenceToolStage::DurationConstraintY2,
+                PartialUmlSequenceElement::DurationConstraint { y1, y2, x },
+            ) if let Some(element) = e.element.as_horizontal() => {
+                *y2 = Some((e.end, element));
+                self.current_stage = UmlSequenceToolStage::DurationConstraintX;
+                self.event_lock = true;
+            }
             _ => {}
-        }
-    }
-    fn add_section(&mut self, section: UmlSequenceViewTargettingSection) {
-        if self.event_lock {
-            return;
-        }
-
-        if let UmlSequenceElement::Lifeline(inner) = section.element {
-            match (&self.current_stage, &mut self.result) {
-                (UmlSequenceToolStage::LinkStart { .. }, PartialUmlSequenceElement::None) => {
-                    self.result = PartialUmlSequenceElement::Link {
-                        source: inner,
-                        dest: None,
-                    };
-                    self.current_stage = UmlSequenceToolStage::LinkEnd;
-                    self.event_lock = true;
-                }
-                (UmlSequenceToolStage::LinkEnd, PartialUmlSequenceElement::Link { dest, .. }) => {
-                    *dest = Some(inner);
-                    self.event_lock = true;
-                }
-                (
-                    UmlSequenceToolStage::CombinedFragmentStart { .. },
-                    PartialUmlSequenceElement::None,
-                ) => {
-                    self.result = PartialUmlSequenceElement::CombinedFragment {
-                        source: inner,
-                        dest: None,
-                    };
-                    self.current_stage = UmlSequenceToolStage::CombinedFragmentEnd;
-                    self.event_lock = true;
-                }
-                (
-                    UmlSequenceToolStage::CombinedFragmentEnd,
-                    PartialUmlSequenceElement::CombinedFragment { dest, .. },
-                ) => {
-                    *dest = Some(inner);
-                    self.event_lock = true;
-                }
-                (UmlSequenceToolStage::RefStart { .. }, PartialUmlSequenceElement::None) => {
-                    self.result = PartialUmlSequenceElement::Ref {
-                        source: inner,
-                        dest: None,
-                    };
-                    self.current_stage = UmlSequenceToolStage::RefEnd;
-                    self.event_lock = true;
-                }
-                (UmlSequenceToolStage::RefEnd, PartialUmlSequenceElement::Ref { dest, .. }) => {
-                    *dest = Some(inner);
-                    self.event_lock = true;
-                }
-                _ => {}
-            }
-        } else {
-            match (&self.current_stage, &mut self.result) {
-                (
-                    UmlSequenceToolStage::DurationConstraintY1 { .. },
-                    PartialUmlSequenceElement::None,
-                ) if let Some(e) = section.element.as_horizontal() => {
-                    self.result = PartialUmlSequenceElement::DurationConstraint {
-                        y1: (section.end, e),
-                        y2: None,
-                        x: None,
-                    };
-                    self.current_stage = UmlSequenceToolStage::DurationConstraintY2;
-                    self.event_lock = true;
-                }
-                (
-                    UmlSequenceToolStage::DurationConstraintY2,
-                    PartialUmlSequenceElement::DurationConstraint { y1, y2, x },
-                ) if let Some(e) = section.element.as_horizontal() => {
-                    *y2 = Some((section.end, e));
-                    self.current_stage = UmlSequenceToolStage::DurationConstraintX;
-                    self.event_lock = true;
-                }
-                _ => {}
-            }
         }
     }
 
@@ -3267,22 +3269,29 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                 if let Some(tool) = tool {
                     let horizontal_place = self.horizontal_insertion_place(pos);
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(UmlSequenceViewTargettingSection {
-                        element: self.model.clone().into(),
-                        end: false,
-                    });
-                    if let Some(h) = &horizontal_place {
-                        tool.add_section(UmlSequenceViewTargettingSection {
-                            element: h.1.clone().into(),
+                    tool.add_click(
+                        Ok(UmlSequenceViewTargettingSection {
+                            element: self.model.clone().into(),
                             end: false,
-                        });
+                        }),
+                        pos,
+                    );
+                    if let Some(h) = &horizontal_place {
+                        tool.add_click(
+                            Ok(UmlSequenceViewTargettingSection {
+                                element: h.1.clone().into(),
+                                end: false,
+                            }),
+                            pos,
+                        );
                     }
 
                     let pos = match &tool.initial_stage {
-                        UmlSequenceToolStage::Lifeline { .. } => {
-                            Some(self.lifeline_insertion_place(pos).0)
-                        }
+                        UmlSequenceToolStage::Lifeline { .. } => Some(
+                            self.lifeline_insertion_place(pos)
+                                .0
+                                .clamp(0, self.lifeline_views.len()),
+                        ),
                         UmlSequenceToolStage::CombinedFragmentStart { .. }
                         | UmlSequenceToolStage::LinkStart { .. }
                         | UmlSequenceToolStage::RefStart { .. } => {
@@ -5426,16 +5435,21 @@ impl UmlSequenceCombinedFragmentSectionView {
 
                 if let Some(tool) = tool {
                     let horizontal_place = self.horizontal_insertion_place(lifeline_views, pos);
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(UmlSequenceViewTargettingSection {
-                        element: self.model.clone().into(),
-                        end: false,
-                    });
-                    if let Some(h) = &horizontal_place {
-                        tool.add_section(UmlSequenceViewTargettingSection {
-                            element: h.1.clone().into(),
+                    tool.add_click(
+                        Ok(UmlSequenceViewTargettingSection {
+                            element: self.model.clone().into(),
                             end: false,
-                        });
+                        }),
+                        pos,
+                    );
+                    if let Some(h) = &horizontal_place {
+                        tool.add_click(
+                            Ok(UmlSequenceViewTargettingSection {
+                                element: h.1.clone().into(),
+                                end: false,
+                            }),
+                            pos,
+                        );
                         let _ = tool.try_flush(q, &self.uuid, 0, h.0, commands);
                     }
 
@@ -6819,10 +6833,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(UmlSequenceViewTargettingSection {
-                        element: self.model(),
-                        end: false,
-                    });
+                    tool.add_click(
+                        Ok(UmlSequenceViewTargettingSection {
+                            element: self.model(),
+                            end: false,
+                        }),
+                        pos,
+                    );
                 } else {
                     if ehc
                         .modifier_settings
@@ -7503,17 +7520,20 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.temporaries.outer_rect.contains(pos) => {
-                if let Some(t) = tool {
+                if let Some(tool) = tool {
                     let end = if self.source.uuid() == self.target.uuid() {
                         pos.y > self.temporaries.outer_rect.center().y
                     } else {
                         pos.x > self.temporaries.outer_rect.center().x
                     };
 
-                    t.add_section(UmlSequenceViewTargettingSection {
-                        element: self.model.clone().into(),
-                        end,
-                    });
+                    tool.add_click(
+                        Ok(UmlSequenceViewTargettingSection {
+                            element: self.model.clone().into(),
+                            end,
+                        }),
+                        pos,
+                    );
                 }
 
                 if self.bounds_rect.expand(5.0).contains(pos) {
@@ -8003,10 +8023,13 @@ impl UmlSequenceRefView {
         match event {
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(UmlSequenceViewTargettingSection {
-                        element: self.model.clone().into(),
-                        end: pos.y > self.bounds_rect.center().y,
-                    });
+                    tool.add_click(
+                        Ok(UmlSequenceViewTargettingSection {
+                            element: self.model.clone().into(),
+                            end: pos.y > self.bounds_rect.center().y,
+                        }),
+                        pos,
+                    );
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -9049,10 +9072,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(UmlSequenceViewTargettingSection {
-                        element: self.model(),
-                        end: false,
-                    });
+                    tool.add_click(
+                        Ok(UmlSequenceViewTargettingSection {
+                            element: self.model(),
+                            end: false,
+                        }),
+                        pos,
+                    );
                 } else {
                     if ehc
                         .modifier_settings

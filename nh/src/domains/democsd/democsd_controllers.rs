@@ -1442,13 +1442,18 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<DemoCsdElement, ERef<DemoCsdDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 DemoCsdToolStage::Transactor {
                     identifier,
                     name,
@@ -1476,6 +1481,14 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.event_lock = true;
             }
             (
+                Ok(DemoCsdElement::Transactor(inner)),
+                DemoCsdToolStage::Bank { .. },
+                PartialDemoCsdElement::None,
+            ) if inner.read().transaction.is_some() => {
+                self.event_lock = true;
+            }
+            (
+                _,
                 DemoCsdToolStage::Bank(TransactionStageData {
                     identifier,
                     name,
@@ -1489,15 +1502,16 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.result = PartialDemoCsdElement::Some(transaction_view.into());
                 self.event_lock = true;
             }
-            (DemoCsdToolStage::PackageStart { .. }, _) => {
+            (_, DemoCsdToolStage::PackageStart { .. }, _) => {
                 self.result = PartialDemoCsdElement::Package { a: pos, b: None };
                 self.current_stage = DemoCsdToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (DemoCsdToolStage::PackageEnd, PartialDemoCsdElement::Package { b, .. }) => {
+            (_, DemoCsdToolStage::PackageEnd, PartialDemoCsdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
             (
+                _,
                 DemoCsdToolStage::Note {
                     text,
                     align,
@@ -1509,52 +1523,36 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.result = PartialDemoCsdElement::Some(view.into());
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, element: DemoCsdElement) {
-        if self.event_lock {
-            return;
-        }
-
-        match element {
-            DemoCsdElement::Package(..) => {}
-            DemoCsdElement::Transactor(inner) => match (&self.current_stage, &mut self.result) {
-                (DemoCsdToolStage::LinkStart { .. }, PartialDemoCsdElement::None) => {
-                    self.result = PartialDemoCsdElement::Link {
-                        source: inner,
-                        dest: None,
-                    };
-                    self.current_stage = DemoCsdToolStage::LinkEnd;
-                    self.event_lock = true;
-                }
-                (DemoCsdToolStage::Bank { .. }, PartialDemoCsdElement::None)
-                    if inner.read().transaction.is_some() =>
-                {
-                    self.event_lock = true;
-                }
-                _ => {}
-            },
-            DemoCsdElement::Transaction(inner) => {
-                if let (
-                    DemoCsdToolStage::LinkEnd,
-                    PartialDemoCsdElement::Link { source, dest, .. },
-                ) = (&self.current_stage, &mut self.result)
-                {
-                    if source
-                        .read()
-                        .transaction
-                        .as_ref()
-                        .is_some_and(|e| *e.read().uuid == *inner.read().uuid)
-                    {
-                        return;
-                    }
-
-                    *dest = Some(inner);
-                    self.event_lock = true;
-                }
+            (
+                Ok(DemoCsdElement::Transactor(inner)),
+                DemoCsdToolStage::LinkStart { .. },
+                PartialDemoCsdElement::None,
+            ) => {
+                self.result = PartialDemoCsdElement::Link {
+                    source: inner,
+                    dest: None,
+                };
+                self.current_stage = DemoCsdToolStage::LinkEnd;
+                self.event_lock = true;
             }
-            DemoCsdElement::Link(..) | DemoCsdElement::Note(..) => {}
+            (
+                Ok(DemoCsdElement::Transaction(inner)),
+                DemoCsdToolStage::LinkEnd,
+                PartialDemoCsdElement::Link { source, dest, .. },
+            ) => {
+                if source
+                    .read()
+                    .transaction
+                    .as_ref()
+                    .is_some_and(|e| *e.read().uuid == *inner.read().uuid)
+                {
+                    return;
+                }
+
+                *dest = Some(inner);
+                self.event_lock = true;
+            }
+            _ => {}
         }
     }
 
@@ -2552,12 +2550,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
 
-                    if self.transaction_view.as_ref().is_none() {
-                        tool.add_position(*event.mouse_position());
-                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    }
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
                 } else {
@@ -3306,7 +3301,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             }
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
                 } else {
                     if ehc
                         .modifier_settings
@@ -4112,7 +4107,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings

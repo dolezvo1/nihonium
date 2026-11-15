@@ -1735,13 +1735,18 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<NetworkElement, ERef<NetworkDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 NetworkToolStage::Node {
                     name,
                     kind,
@@ -1755,6 +1760,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.event_lock = true;
             }
             (
+                _,
                 NetworkToolStage::User {
                     name,
                     kind,
@@ -1768,6 +1774,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.event_lock = true;
             }
             (
+                _,
                 NetworkToolStage::File {
                     name,
                     kind,
@@ -1781,6 +1788,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.event_lock = true;
             }
             (
+                _,
                 NetworkToolStage::Location {
                     name,
                     kind,
@@ -1792,15 +1800,16 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::ContainerStart { .. }, _) => {
+            (_, NetworkToolStage::ContainerStart { .. }, _) => {
                 self.result = PartialNetworkElement::Container { a: pos, b: None };
                 self.current_stage = NetworkToolStage::ContainerEnd;
                 self.event_lock = true;
             }
-            (NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => {
+            (_, NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => {
                 *b = Some(pos)
             }
             (
+                _,
                 NetworkToolStage::Note {
                     text,
                     align,
@@ -1813,24 +1822,21 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(view.into());
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, section: NetworkElement) {
-        if self.event_lock {
-            return;
-        }
-
-        match section {
-            NetworkElement::Container(_)
-            | NetworkElement::Node(_)
-            | NetworkElement::User(_)
-            | NetworkElement::File(_)
-            | NetworkElement::Location(_)
-            | NetworkElement::Note(_) => match (&self.current_stage, &mut self.result) {
+            (
+                Ok(
+                    e @ (NetworkElement::Container(_)
+                    | NetworkElement::Node(_)
+                    | NetworkElement::User(_)
+                    | NetworkElement::File(_)
+                    | NetworkElement::Location(_)
+                    | NetworkElement::Note(_)),
+                ),
+                cs,
+                r,
+            ) => match (cs, r) {
                 (NetworkToolStage::AssociationStart { .. }, PartialNetworkElement::None) => {
                     self.result = PartialNetworkElement::Association {
-                        source: section,
+                        source: e,
                         dest: None,
                     };
                     self.current_stage = NetworkToolStage::AssociationEnd;
@@ -1840,12 +1846,12 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     NetworkToolStage::AssociationEnd,
                     PartialNetworkElement::Association { dest, .. },
                 ) => {
-                    *dest = Some(section);
+                    *dest = Some(e);
                     self.event_lock = true;
                 }
                 _ => {}
             },
-            NetworkElement::Association(..) => {}
+            _ => {}
         }
     }
 
@@ -3360,7 +3366,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -4051,7 +4057,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -4623,7 +4629,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -5261,7 +5267,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -6374,7 +6380,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings

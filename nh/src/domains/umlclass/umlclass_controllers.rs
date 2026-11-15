@@ -2780,13 +2780,18 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<UmlClassElement, ERef<UmlClassDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                Err(_) | Ok(UmlClassElement::Package(_)),
                 UmlClassToolStage::Instance {
                     instance_name,
                     instance_type,
@@ -2809,6 +2814,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.event_lock = true;
             }
             (
+                Err(_) | Ok(UmlClassElement::Package(_)),
                 UmlClassToolStage::Class {
                     name,
                     stereotype,
@@ -2834,6 +2840,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.event_lock = true;
             }
             (
+                Err(_) | Ok(UmlClassElement::Package(_)),
                 UmlClassToolStage::UseCase {
                     name,
                     stereotype,
@@ -2856,16 +2863,25 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::PackageStart { .. }, _) => {
+            (
+                Err(_) | Ok(UmlClassElement::Package(_)),
+                UmlClassToolStage::PackageStart { .. },
+                _,
+            ) => {
                 self.result = PartialUmlClassElement::Package { a: pos, b: None };
                 self.current_stage = UmlClassToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (UmlClassToolStage::PackageEnd, PartialUmlClassElement::Package { b, .. }) => {
+            (
+                Err(_) | Ok(UmlClassElement::Package(_)),
+                UmlClassToolStage::PackageEnd,
+                PartialUmlClassElement::Package { b, .. },
+            ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
             (
+                Err(_) | Ok(UmlClassElement::Package(_)),
                 UmlClassToolStage::Note {
                     stereotype,
                     text,
@@ -2879,26 +2895,16 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.result = PartialUmlClassElement::Some(view.into());
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, element: UmlClassElement) {
-        if self.event_lock {
-            return;
-        }
 
-        match element {
-            UmlClassElement::Package(inner) => {
-                if let (
-                    UmlClassToolStage::NoteLinkEnd,
-                    PartialUmlClassElement::NoteLink { dest, .. },
-                ) = (&self.current_stage, &mut self.result)
-                {
-                    *dest = Some(inner.into());
-                    self.event_lock = true;
-                }
+            (
+                Ok(UmlClassElement::Package(inner)),
+                UmlClassToolStage::NoteLinkEnd,
+                PartialUmlClassElement::NoteLink { dest, .. },
+            ) => {
+                *dest = Some(inner.into());
+                self.event_lock = true;
             }
-            UmlClassElement::Instance(inner) => match (&self.current_stage, &mut self.result) {
+            (Ok(UmlClassElement::Instance(inner)), cs, r) => match (cs, r) {
                 (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None)
                     if !matches!(link_type, LinkType::Generalization { .. }) =>
                 {
@@ -2923,7 +2929,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 }
                 _ => {}
             },
-            UmlClassElement::Class(inner) => match (&self.current_stage, &mut self.result) {
+            (Ok(UmlClassElement::Class(inner)), cs, r) => match (cs, r) {
                 (
                     UmlClassToolStage::ClassProperty {
                         name,
@@ -3006,8 +3012,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 }
                 _ => {}
             },
-            UmlClassElement::Property(..) | UmlClassElement::Operation(..) => {}
-            UmlClassElement::UseCase(inner) => match (&self.current_stage, &mut self.result) {
+            (Ok(UmlClassElement::UseCase(inner)), cs, r) => match (cs, r) {
                 (UmlClassToolStage::LinkStart { .. }, PartialUmlClassElement::None) => {
                     self.result = PartialUmlClassElement::Link {
                         source: inner.into(),
@@ -3051,23 +3056,19 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 }
                 _ => {}
             },
-            UmlClassElement::Note(inner) => {
-                if let (UmlClassToolStage::NoteLinkStart, PartialUmlClassElement::None) =
-                    (&self.current_stage, &mut self.result)
-                {
-                    self.result = PartialUmlClassElement::NoteLink {
-                        source: inner,
-                        dest: None,
-                    };
-                    self.current_stage = UmlClassToolStage::NoteLinkEnd;
-                    self.event_lock = true;
-                }
+            (
+                Ok(UmlClassElement::Note(inner)),
+                UmlClassToolStage::NoteLinkStart,
+                PartialUmlClassElement::None,
+            ) => {
+                self.result = PartialUmlClassElement::NoteLink {
+                    source: inner,
+                    dest: None,
+                };
+                self.current_stage = UmlClassToolStage::NoteLinkEnd;
+                self.event_lock = true;
             }
-            UmlClassElement::Generalization(..)
-            | UmlClassElement::Dependency(..)
-            | UmlClassElement::Association(..)
-            | UmlClassElement::UseCaseGeneralization(..)
-            | UmlClassElement::NoteLink(..) => {}
+            _ => {}
         }
     }
 
@@ -4498,7 +4499,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -6973,7 +6974,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 });
 
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                 }
 
@@ -7036,14 +7037,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
-                    if matches!(
-                        tool.initial_stage,
-                        UmlClassToolStage::ClassProperty { .. }
-                            | UmlClassToolStage::ClassOperation { .. }
-                    ) {
-                        let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    }
+                    tool.add_click(Ok(self.model()), pos);
+
+                    let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                 } else {
                     if ehc
                         .modifier_settings
@@ -8179,7 +8175,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -10545,7 +10541,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings

@@ -554,8 +554,9 @@ where
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.adapter.model_section());
+                    if k_status.is_none() {
+                        tool.add_click(Ok(self.adapter.model_section()), *event.mouse_position());
+                    }
 
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 

@@ -1892,13 +1892,18 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(
+        &mut self,
+        element: Result<UmlStateMachineElement, ERef<UmlStateMachineDiagram>>,
+        pos: egui::Pos2,
+    ) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 UmlStateMachineToolStage::SimpleState {
                     stereotype,
                     name,
@@ -1919,22 +1924,23 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlStateMachineToolStage::InitialPseudostate {}, _) => {
+            (_, UmlStateMachineToolStage::InitialPseudostate {}, _) => {
                 let (_model, view) = new_umlstatemachine_initialpseudostate(pos);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlStateMachineToolStage::TerminatePseudostate { with_edge_from: _ }, _) => {
+            (_, UmlStateMachineToolStage::TerminatePseudostate { with_edge_from: _ }, _) => {
                 let (_model, view) = new_umlstatemachine_terminatepseudostate(pos);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlStateMachineToolStage::FinalState { with_edge_from: _ }, _) => {
+            (_, UmlStateMachineToolStage::FinalState { with_edge_from: _ }, _) => {
                 let (_model, view) = new_umlstatemachine_finalstate(pos);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
             (
+                _,
                 UmlStateMachineToolStage::Note {
                     stereotype,
                     text,
@@ -1954,42 +1960,37 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlStateMachineToolStage::StateMachineStart { .. }, _) => {
+            (_, UmlStateMachineToolStage::StateMachineStart { .. }, _) => {
                 self.result = PartialUmlStateMachineElement::StateMachine { a: pos, b: None };
                 self.current_stage = UmlStateMachineToolStage::StateMachineEnd;
                 self.event_lock = true;
             }
             (
+                _,
                 UmlStateMachineToolStage::StateMachineEnd,
                 PartialUmlStateMachineElement::StateMachine { b, .. },
             ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlStateMachineToolStage::CompositeStateStart { .. }, _) => {
+            (_, UmlStateMachineToolStage::CompositeStateStart { .. }, _) => {
                 self.result = PartialUmlStateMachineElement::CompositeState { a: pos, b: None };
                 self.current_stage = UmlStateMachineToolStage::CompositeStateEnd;
                 self.event_lock = true;
             }
             (
+                _,
                 UmlStateMachineToolStage::CompositeStateEnd,
                 PartialUmlStateMachineElement::CompositeState { b, .. },
             ) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, element: UmlStateMachineElement) {
-        if self.event_lock {
-            return;
-        }
-
-        match &self.current_stage {
-            UmlStateMachineToolStage::CompositeStateRegion {}
-                if let UmlStateMachineElement::CompositeState(_) = element =>
-            {
+            (
+                Ok(UmlStateMachineElement::CompositeState(_)),
+                UmlStateMachineToolStage::CompositeStateRegion {},
+                _,
+            ) => {
                 let (_model, view) = new_umlstatemachine_compositestateregion(
                     egui::Rect::from_x_y_ranges(0.0..=50.0, 0.0..=100.0),
                     true,
@@ -1998,78 +1999,85 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 self.event_lock = true;
                 return;
             }
-            UmlStateMachineToolStage::InternalTransition {
-                trigger,
-                guard,
-                behavior,
-            } if let UmlStateMachineElement::CompositeState(_) = element => {
+            (
+                Ok(UmlStateMachineElement::CompositeState(_)),
+                UmlStateMachineToolStage::InternalTransition {
+                    trigger,
+                    guard,
+                    behavior,
+                },
+                _,
+            ) => {
                 let (_model, view) =
                     new_umlstatemachine_internaltransition(trigger, guard, behavior, true);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
                 return;
             }
-            _ => {}
-        }
 
-        match element {
-            e @ (UmlStateMachineElement::CompositeState(..)
-            | UmlStateMachineElement::InitialPseudostate(..)
-            | UmlStateMachineElement::TerminatePseudostate(..)
-            | UmlStateMachineElement::FinalState(..)) => {
-                match (&self.current_stage, &mut self.result) {
-                    (
-                        UmlStateMachineToolStage::LinkStart { link_type },
-                        PartialUmlStateMachineElement::None,
-                    ) if let Some(e) = e.as_nonfinal() => {
-                        self.result = PartialUmlStateMachineElement::Link {
-                            link_type: link_type.clone(),
-                            source: e,
-                            dest: None,
-                        };
-                        self.current_stage = UmlStateMachineToolStage::LinkEnd;
-                        self.event_lock = true;
-                    }
-                    (
-                        UmlStateMachineToolStage::LinkEnd,
-                        PartialUmlStateMachineElement::Link { source, dest, .. },
-                    ) if let Some(e) = e.as_noninitial() => {
-                        if source
-                            .clone()
-                            .to_element()
-                            .find_element(&e.uuid())
-                            .is_some()
-                            || e.clone()
-                                .to_element()
-                                .find_element(&source.uuid())
-                                .is_some()
-                        {
-                            self.event_lock = true;
-                            return;
-                        }
-
-                        *dest = Some(e);
-                        self.event_lock = true;
-                    }
-                    (
-                        UmlStateMachineToolStage::NoteLinkEnd,
-                        PartialUmlStateMachineElement::NoteLink { dest, .. },
-                    ) => {
-                        *dest = Some(e);
-                        self.event_lock = true;
-                    }
-                    _ => {}
-                }
-            }
-            UmlStateMachineElement::Note(inner) => {
-                if let UmlStateMachineToolStage::NoteLinkStart = &self.current_stage {
-                    self.result = PartialUmlStateMachineElement::NoteLink {
-                        source: inner,
+            (
+                Ok(
+                    e @ (UmlStateMachineElement::CompositeState(..)
+                    | UmlStateMachineElement::InitialPseudostate(..)
+                    | UmlStateMachineElement::TerminatePseudostate(..)
+                    | UmlStateMachineElement::FinalState(..)),
+                ),
+                cs,
+                r,
+            ) => match (cs, r) {
+                (
+                    UmlStateMachineToolStage::LinkStart { link_type },
+                    PartialUmlStateMachineElement::None,
+                ) if let Some(e) = e.as_nonfinal() => {
+                    self.result = PartialUmlStateMachineElement::Link {
+                        link_type: link_type.clone(),
+                        source: e,
                         dest: None,
                     };
-                    self.current_stage = UmlStateMachineToolStage::NoteLinkEnd;
+                    self.current_stage = UmlStateMachineToolStage::LinkEnd;
                     self.event_lock = true;
                 }
+                (
+                    UmlStateMachineToolStage::LinkEnd,
+                    PartialUmlStateMachineElement::Link { source, dest, .. },
+                ) if let Some(e) = e.as_noninitial() => {
+                    if source
+                        .clone()
+                        .to_element()
+                        .find_element(&e.uuid())
+                        .is_some()
+                        || e.clone()
+                            .to_element()
+                            .find_element(&source.uuid())
+                            .is_some()
+                    {
+                        self.event_lock = true;
+                        return;
+                    }
+
+                    *dest = Some(e);
+                    self.event_lock = true;
+                }
+                (
+                    UmlStateMachineToolStage::NoteLinkEnd,
+                    PartialUmlStateMachineElement::NoteLink { dest, .. },
+                ) => {
+                    *dest = Some(e);
+                    self.event_lock = true;
+                }
+                _ => {}
+            },
+            (
+                Ok(UmlStateMachineElement::Note(inner)),
+                UmlStateMachineToolStage::NoteLinkStart,
+                _,
+            ) => {
+                self.result = PartialUmlStateMachineElement::NoteLink {
+                    source: inner,
+                    dest: None,
+                };
+                self.current_stage = UmlStateMachineToolStage::NoteLinkEnd;
+                self.event_lock = true;
             }
             _ => {}
         }
@@ -3235,7 +3243,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 });
 
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
                 }
 
@@ -3249,9 +3257,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
                 }
 
                 if let Some(tool) = tool {
+                    tool.add_click(Ok(self.model()), pos);
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
 
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
@@ -4559,8 +4566,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
             }
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model()), pos);
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
                     EventHandlingStatus::HandledByContainer
@@ -5695,7 +5701,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInitialPseu
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -6043,7 +6049,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineTerminatePs
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -6387,7 +6393,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineFinalStateV
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings
@@ -7199,7 +7205,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), pos);
                 } else {
                     if ehc
                         .modifier_settings

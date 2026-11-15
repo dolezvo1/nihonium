@@ -2194,13 +2194,14 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
         }
     }
 
-    fn add_position(&mut self, pos: egui::Pos2) {
+    fn add_click(&mut self, element: Result<BpmnElement, ERef<BpmnDiagram>>, pos: egui::Pos2) {
         if self.event_lock {
             return;
         }
 
-        match (&self.current_stage, &mut self.result) {
+        match (element, &self.current_stage, &mut self.result) {
             (
+                _,
                 BpmnToolStage::Task {
                     name,
                     kind,
@@ -2216,6 +2217,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
+                _,
                 BpmnToolStage::StartEvent {
                     kind,
                     subkind,
@@ -2228,6 +2230,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
+                _,
                 BpmnToolStage::IntermediateEvent {
                     kind,
                     subkind,
@@ -2241,6 +2244,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
+                _,
                 BpmnToolStage::EndEvent {
                     kind,
                     name,
@@ -2253,6 +2257,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
+                _,
                 BpmnToolStage::BoundaryIntermediateEvent {
                     kind,
                     subkind,
@@ -2266,6 +2271,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
+                _,
                 BpmnToolStage::Gateway {
                     kind,
                     condition,
@@ -2278,6 +2284,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.event_lock = true;
             }
             (
+                _,
                 BpmnToolStage::Data {
                     kind,
                     is_collection,
@@ -2292,46 +2299,47 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 self.result = PartialBpmnElement::Some(view.into());
                 self.event_lock = true;
             }
-            (BpmnToolStage::AnnotationEnd { .. }, PartialBpmnElement::Annotation { dest, .. }) => {
+            (
+                _,
+                BpmnToolStage::AnnotationEnd { .. },
+                PartialBpmnElement::Annotation { dest, .. },
+            ) => {
                 *dest = Some(pos);
                 self.event_lock = true;
             }
-            (BpmnToolStage::SubprocessStart { .. }, _) => {
+            (_, BpmnToolStage::SubprocessStart { .. }, _) => {
                 self.result = PartialBpmnElement::Subprocess { a: pos, b: None };
                 self.current_stage = BpmnToolStage::SubprocessEnd;
                 self.event_lock = true;
             }
-            (BpmnToolStage::SubprocessEnd, PartialBpmnElement::Subprocess { b, .. }) => {
+            (_, BpmnToolStage::SubprocessEnd, PartialBpmnElement::Subprocess { b, .. }) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (BpmnToolStage::PoolStart { .. }, _) => {
+            (_, BpmnToolStage::PoolStart { .. }, _) => {
                 self.result = PartialBpmnElement::Pool { a: pos, b: None };
                 self.current_stage = BpmnToolStage::PoolEnd;
                 self.event_lock = true;
             }
-            (BpmnToolStage::PoolEnd, PartialBpmnElement::Pool { b, .. }) => {
+            (_, BpmnToolStage::PoolEnd, PartialBpmnElement::Pool { b, .. }) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            _ => {}
-        }
-    }
-    fn add_section(&mut self, element: BpmnElement) {
-        if self.event_lock {
-            return;
-        }
-
-        match element {
-            e @ (BpmnElement::Task(..)
-            | BpmnElement::Subprocess(..)
-            | BpmnElement::Pool(..)
-            | BpmnElement::StartEvent(..)
-            | BpmnElement::IntermediateEvent(..)
-            | BpmnElement::EndEvent(..)
-            | BpmnElement::BoundaryIntermediateEvent(..)
-            | BpmnElement::Gateway(..)
-            | BpmnElement::Data(..)) => match (&self.current_stage, &mut self.result) {
+            (
+                Ok(
+                    e @ (BpmnElement::Task(..)
+                    | BpmnElement::Subprocess(..)
+                    | BpmnElement::Pool(..)
+                    | BpmnElement::StartEvent(..)
+                    | BpmnElement::IntermediateEvent(..)
+                    | BpmnElement::EndEvent(..)
+                    | BpmnElement::BoundaryIntermediateEvent(..)
+                    | BpmnElement::Gateway(..)
+                    | BpmnElement::Data(..)),
+                ),
+                cs,
+                r,
+            ) => match (cs, r) {
                 (BpmnToolStage::SequenceEdgeStart { .. }, PartialBpmnElement::None)
                     if let Some(e) = e.as_sequence_nonfinal() =>
                 {
@@ -3392,8 +3400,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
 
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
@@ -4127,7 +4134,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             }
             InputEvent::Click(pos) => {
                 if let Some(tool) = tool.as_mut().filter(|_| self.bounds_rect.contains(pos)) {
-                    tool.add_section(self.model().into());
+                    tool.add_click(Ok(self.model().into()), pos);
                 }
 
                 if let Some((k, status)) = k_status {
@@ -5231,8 +5238,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
             }
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
 
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
@@ -6367,8 +6373,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
-                    tool.add_section(self.model.clone().into());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
 
                     let _ = tool.try_flush(q, &self.uuid, 0, None, commands);
 
@@ -7560,7 +7565,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
                 } else {
                     if ehc
                         .modifier_settings
@@ -8289,7 +8294,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -8865,7 +8870,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -10105,7 +10110,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnAnnotationView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_section(self.model());
+                    tool.add_click(Ok(self.model()), *event.mouse_position());
                 } else {
                     if ehc
                         .modifier_settings
