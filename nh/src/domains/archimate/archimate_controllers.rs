@@ -1379,8 +1379,8 @@ fn view_for_stage(s: &ArchiMateToolStage) -> ArchiMateElementView {
                 name,
                 stereotype,
                 None,
-                (d1.0.into(), d1.1.into()),
-                (d2.0.into(), d2.1.into()),
+                (d1.0, d1.1.into()),
+                (d2.0, d2.1.into()),
                 *color,
             )
             .1;
@@ -1685,7 +1685,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
                             "",
                             "",
                             None,
-                            (source_model, source.clone().into()),
+                            (source_model, source.clone()),
                             (target_model, element.clone()),
                             MGlobalColor::None,
                         )
@@ -1766,7 +1766,7 @@ impl Tool<ArchiMateDomain> for NaiveArchiMateTool {
             } if let ArchiMateToolStage::RelationshipAddEnding { source } = &self.initial_stage
                 && let Some(target) = q.get_viewuuid_for(&relationship_model.read().uuid())
                 && let Some(new_m) = new_model.as_ref()
-                && let Some(element) = q.get_view_for(&new_m) =>
+                && let Some(element) = q.get_view_for(new_m) =>
             {
                 commands.push(InsensitiveCommand::AddDependency {
                     target,
@@ -2378,10 +2378,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                let all_pts = right_side
-                    .into_iter()
-                    .chain(left_side.into_iter())
-                    .collect();
+                let all_pts = right_side.into_iter().chain(left_side).collect();
                 canvas.draw_polygon(
                     all_pts,
                     egui::Color32::TRANSPARENT,
@@ -2716,10 +2713,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                let all_pts = bottom_side
-                    .into_iter()
-                    .chain(top_side.into_iter())
-                    .collect();
+                let all_pts = bottom_side.into_iter().chain(top_side).collect();
                 canvas.draw_polygon(
                     all_pts,
                     egui::Color32::TRANSPARENT,
@@ -3297,8 +3291,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
                         pos,
                     ) =>
             {
-                let (initial_stage, current_stage, result, event_lock) =
-                    f(self.model.clone().into());
+                let (initial_stage, current_stage, result, event_lock) = f(self.model.clone());
                 *tool = Some(NaiveArchiMateTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage,
@@ -4057,7 +4050,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 initial_stage: ArchiMateToolStage::RelationshipAddEnding { source: true },
                 current_stage: ArchiMateToolStage::RelationshipAddEnding { source: true },
                 result: PartialArchiMateElement::RelationshipEnding {
-                    relationship_model: self.model.clone().into(),
+                    relationship_model: self.model.clone(),
                     new_model: None,
                 },
                 event_lock: false,
@@ -4070,7 +4063,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
                 initial_stage: ArchiMateToolStage::RelationshipAddEnding { source: false },
                 current_stage: ArchiMateToolStage::RelationshipAddEnding { source: false },
                 result: PartialArchiMateElement::RelationshipEnding {
-                    relationship_model: self.model.clone().into(),
+                    relationship_model: self.model.clone(),
                     new_model: None,
                 },
                 event_lock: false,

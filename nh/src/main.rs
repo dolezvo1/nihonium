@@ -1046,7 +1046,7 @@ impl NHContext {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
                     builder.node(
-                        NodeBuilder::dir(uuid.clone().into())
+                        NodeBuilder::dir((*uuid).into())
                             .label(&**name)
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
@@ -1112,9 +1112,7 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
                                     .clicked()
                                 {
-                                    *cma = Some(ContextMenuAction::RenameElements(
-                                        uuid.clone().into(),
-                                    ));
+                                    *cma = Some(ContextMenuAction::RenameElements((*uuid).into()));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -1122,9 +1120,7 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
                                     .clicked()
                                 {
-                                    *cma = Some(ContextMenuAction::DeleteElements(
-                                        uuid.clone().into(),
-                                    ));
+                                    *cma = Some(ContextMenuAction::DeleteElements((*uuid).into()));
                                     ui.close();
                                 }
                             }),
@@ -1139,7 +1135,7 @@ impl NHContext {
                 HierarchyNode::Diagram(uuid, c) => {
                     let view_name = c.read().view_name(uuid);
                     builder.node(
-                        NodeBuilder::leaf(uuid.clone().into())
+                        NodeBuilder::leaf((*uuid).into())
                             .label(&*view_name)
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
@@ -1187,9 +1183,7 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
                                     .clicked()
                                 {
-                                    *cma = Some(ContextMenuAction::RenameElements(
-                                        uuid.clone().into(),
-                                    ));
+                                    *cma = Some(ContextMenuAction::RenameElements((*uuid).into()));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -1197,9 +1191,7 @@ impl NHContext {
                                     .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
                                     .clicked()
                                 {
-                                    *cma = Some(ContextMenuAction::DeleteElements(
-                                        uuid.clone().into(),
-                                    ));
+                                    *cma = Some(ContextMenuAction::DeleteElements((*uuid).into()));
                                     ui.close();
                                 }
                             }),
@@ -1207,78 +1199,72 @@ impl NHContext {
                 }
                 HierarchyNode::Resource(uuid) => {
                     let r = resources.get(uuid).unwrap();
-                    builder.node(
-                        NodeBuilder::leaf(uuid.clone().into())
-                            .label(&r.0)
-                            .context_menu(|ui| {
-                                ui.set_min_width(MIN_MENU_WIDTH);
+                    builder.node(NodeBuilder::leaf((*uuid).into()).label(&r.0).context_menu(
+                        |ui| {
+                            ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if is_previewable_resource(&r.0)
-                                    && ui
-                                        .button(gdc.translate_0("nh-tab-projecthierarchy-open"))
-                                        .clicked()
-                                {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Resource {
-                                            uuid: *uuid,
-                                            mode: ResourceTabMode::Preview,
-                                        },
-                                        None,
-                                    ));
-                                    ui.close();
-                                }
-                                if ui.button(gdc.translate_0("nh-edit")).clicked() {
-                                    commands.push(ProjectCommand::OpenAndFocusTab(
-                                        NHTab::Resource {
-                                            uuid: *uuid,
-                                            mode: ResourceTabMode::Edit,
-                                        },
-                                        None,
-                                    ));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
+                            if is_previewable_resource(&r.0)
+                                && ui
+                                    .button(gdc.translate_0("nh-tab-projecthierarchy-open"))
                                     .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::NewFolder {
-                                        target: *target_folder,
-                                    });
-                                    ui.close();
-                                }
+                            {
+                                commands.push(ProjectCommand::OpenAndFocusTab(
+                                    NHTab::Resource {
+                                        uuid: *uuid,
+                                        mode: ResourceTabMode::Preview,
+                                    },
+                                    None,
+                                ));
+                                ui.close();
+                            }
+                            if ui.button(gdc.translate_0("nh-edit")).clicked() {
+                                commands.push(ProjectCommand::OpenAndFocusTab(
+                                    NHTab::Resource {
+                                        uuid: *uuid,
+                                        mode: ResourceTabMode::Edit,
+                                    },
+                                    None,
+                                ));
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-newfolder"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::NewFolder {
+                                    target: *target_folder,
+                                });
+                                ui.close();
+                            }
 
-                                add_project_element_block(gdc, ui, commands, target_folder);
+                            add_project_element_block(gdc, ui, commands, target_folder);
 
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-duplicate"))
-                                    .clicked()
-                                {
-                                    commands.push(ProjectCommand::DuplicateResource(*uuid));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::RenameElements(
-                                        uuid.clone().into(),
-                                    ));
-                                    ui.close();
-                                }
-                                ui.separator();
-                                if ui
-                                    .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
-                                    .clicked()
-                                {
-                                    *cma = Some(ContextMenuAction::DeleteElements(
-                                        uuid.clone().into(),
-                                    ));
-                                    ui.close();
-                                }
-                            }),
-                    );
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-duplicate"))
+                                .clicked()
+                            {
+                                commands.push(ProjectCommand::DuplicateResource(*uuid));
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-rename"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::RenameElements((*uuid).into()));
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(gdc.translate_0("nh-tab-projecthierarchy-delete"))
+                                .clicked()
+                            {
+                                *cma = Some(ContextMenuAction::DeleteElements((*uuid).into()));
+                                ui.close();
+                            }
+                        },
+                    ));
                 }
             }
         }
@@ -1975,7 +1961,7 @@ impl NHContext {
                     match e {
                         egui_ltreeview::Action::SetSelected(items) => {
                             self.selected_global_color =
-                                items.iter().filter(|e| !e.is_nil()).next().cloned();
+                                items.iter().find(|e| !e.is_nil()).cloned();
                         }
                         egui_ltreeview::Action::Move(drag_and_drop) => {
                             for src in drag_and_drop.source {
@@ -3657,8 +3643,8 @@ impl NHApp {
             match t {
                 EntityUuid::Model(_) => unreachable!(),
                 EntityUuid::View(t) => {
-                    self.context.project_hierarchy.remove(&t.clone().into());
-                    self.context.diagram_controllers.remove(&t);
+                    self.context.project_hierarchy.remove(&(*t).into());
+                    self.context.diagram_controllers.remove(t);
                     self.context.last_focused_diagram.take_if(|e| e == t);
                     if let Some(snt) = self.tree.find_tab(&NHTab::Diagram { uuid: *t }) {
                         self.tree.remove_tab(snt);
@@ -3666,8 +3652,8 @@ impl NHApp {
                 }
                 EntityUuid::Controller(_) => unreachable!(),
                 EntityUuid::Resource(t) => {
-                    self.context.project_hierarchy.remove(&t.clone().into());
-                    self.context.drawing_context.raw_resources.remove(&t);
+                    self.context.project_hierarchy.remove(&(*t).into());
+                    self.context.drawing_context.raw_resources.remove(t);
                     self.tree
                         .retain_tabs(|e| !matches!(e, NHTab::Resource { uuid, .. } if uuid == t));
                 }
@@ -4536,7 +4522,7 @@ impl eframe::App for NHApp {
                 )
                 .id_salt("nh-window-svgexport-diagramspecificsettings")
                 .show(ui, |ui| {
-                    s_reduced.show_reduced(&mut self.context.drawing_context, ui);
+                    s_reduced.show_reduced(&self.context.drawing_context, ui);
                 })
                 .header_response
                 .context_menu(|ui| {
@@ -5064,13 +5050,13 @@ impl eframe::App for NHApp {
                                             otherwise.unwrap_or_default(),
                                         );
                                         let v_no = v.iter().map(|e| e.0).sum::<usize>();
-                                        if u.is_none() && (m1.len() > 0 || v_no > 0) {
+                                        if u.is_none() && (!m1.is_empty() || v_no > 0) {
                                             self.context.unintended_deletes_data = Some((m1, m2, v));
                                             self.context.confirm_modal_reason =
                                                 Some(
                                                 SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(otherwise, None)).into());
-                                        } else if (m1.len() == 0 && v_no == 0)
-                                            || u.is_some_and(|e| e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m1.len() == 0)
+                                        } else if (m1.is_empty() && v_no == 0)
+                                            || u.is_some_and(|e| e == UnintendedDeleteBehavior::CancelIfUnintendedModels && m1.is_empty())
                                             || u.is_some_and(|e| e == UnintendedDeleteBehavior::DeleteAll) {
                                             ac.write().apply_diagram_command(
                                                 uuid,
@@ -5209,7 +5195,7 @@ impl eframe::App for NHApp {
                             HierarchyNode::Folder(uuid, name, children) => {
                                 let mut any_changed = false;
 
-                                if targets.contains(&uuid.clone().into()) {
+                                if targets.contains(&(*uuid).into()) {
                                     *name = new_name.to_owned().into();
                                     any_changed = true;
                                 }
@@ -5221,7 +5207,7 @@ impl eframe::App for NHApp {
                                 any_changed
                             }
                             HierarchyNode::Diagram(uuid, inner) => {
-                                if targets.contains(&uuid.clone().into()) {
+                                if targets.contains(&(*uuid).into()) {
                                     inner
                                         .write()
                                         .set_view_name(uuid, new_name.to_owned().into());
@@ -5231,7 +5217,7 @@ impl eframe::App for NHApp {
                                 }
                             }
                             HierarchyNode::Resource(uuid) => {
-                                if targets.contains(&uuid.clone().into())
+                                if targets.contains(&(*uuid).into())
                                     && let Some(e) = resources.get_mut(uuid)
                                 {
                                     e.0 = new_name.to_owned();

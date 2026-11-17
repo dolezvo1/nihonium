@@ -248,9 +248,9 @@ pub enum HierarchyNode {
 impl HierarchyNode {
     pub fn uuid(&self) -> EntityUuid {
         match self {
-            Self::Folder(uuid, ..) => uuid.clone().into(),
-            Self::Diagram(uuid, ..) => uuid.clone().into(),
-            Self::Resource(uuid) => uuid.clone().into(),
+            Self::Folder(uuid, ..) => (*uuid).into(),
+            Self::Diagram(uuid, ..) => (*uuid).into(),
+            Self::Resource(uuid) => (*uuid).into(),
         }
     }
 
@@ -756,7 +756,7 @@ impl GlobalDrawingContext {
             .and_then(|e| e.to_str())
         {
             uri.push('.');
-            uri.push_str(&ext);
+            uri.push_str(ext);
         }
         uri
     }
@@ -2667,7 +2667,7 @@ where
                     self.adapter
                         .model()
                         .read()
-                        .find_element(*e)
+                        .find_element(e)
                         .is_none_or(|e| !all.0.contains(&e.1))
                 });
         (
@@ -3200,9 +3200,10 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
                 }
 
                 let mut tool = self.temporaries.current_tool.take();
-                if let Some(_) = tool
+                if tool
                     .as_mut()
                     .and_then(|e| e.try_flush(&q, &self.uuid, 0, None, &mut commands).ok())
+                    .is_some()
                 {
                     handled = true;
                 }

@@ -5315,7 +5315,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             if !m.stereotype.is_empty() {
                 t.push_str(" «");
                 t.push_str(&m.stereotype);
-                t.push_str("»");
+                t.push('»');
             }
 
             if m.is_read_only || m.is_ordered || m.is_unique || m.is_id {
@@ -5952,7 +5952,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             if !m.stereotype.is_empty() {
                 t.push_str(" «");
                 t.push_str(&m.stereotype);
-                t.push_str("»");
+                t.push('»');
             }
 
             if m.is_query || m.is_ordered || m.is_unique {

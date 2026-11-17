@@ -284,7 +284,7 @@ impl NHProjectSerialization {
 
         for (key, (name, content)) in resources.iter() {
             let path = format_resource_path(key, name);
-            wa.write_source_file(&path, &content)?;
+            wa.write_source_file(&path, content)?;
         }
 
         fn ch(e: &ColorHierarchyNode, gc: &ColorBundle) -> ColorHierarchyNodeDTO {
@@ -350,7 +350,7 @@ impl NHProjectSerialization {
                     )
                 }
                 ColorHierarchyNodeDTO::Color(uuid, name, color) => {
-                    colors.insert(*uuid, (name.clone(), color.clone()));
+                    colors.insert(*uuid, (name.clone(), *color));
                     ColorHierarchyNode::Color(*uuid)
                 }
             }
@@ -478,7 +478,7 @@ fn format_resource_path(uuid: &ResourceUuid, name: &str) -> String {
     let mut p = format!("resources/{}", uuid.to_string());
     if let Some(e) = Path::new(&name).extension().and_then(|e| e.to_str()) {
         p.push('.');
-        p.push_str(&e);
+        p.push_str(e);
     }
     p
 }

@@ -453,7 +453,7 @@ impl VisitableElement for BpmnElement {
             | BpmnElement::SequenceEdge(_)
             | BpmnElement::MessageEdge(_)
             | BpmnElement::Association(_)
-            | BpmnElement::Annotation(_) => v.visit_simple(&self),
+            | BpmnElement::Annotation(_) => v.visit_simple(self),
         }
     }
 }
@@ -874,7 +874,7 @@ impl ContainerModel for BpmnDiagram {
                 return Some(e);
             }
         }
-        return None;
+        None
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.contained_elements.iter().enumerate() {
@@ -882,7 +882,7 @@ impl ContainerModel for BpmnDiagram {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
-        return None;
+        None
     }
 }
 

@@ -435,27 +435,25 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
                 let r = inner.read();
                 format!("{} ({})", r.kind.as_str(), r.name).into()
             }
-            BpmnElement::Pool(_inner) => format!("Pool").into(),
+            BpmnElement::Pool(_inner) => "Pool".into(),
             BpmnElement::PoolSwimlane(inner) => format!("Swimlane ({})", inner.read().name).into(),
             BpmnElement::SequenceEdge(inner) => {
                 let r = inner.read();
                 if r.condition.is_empty() {
-                    format!("Sequence Edge")
+                    "Sequence Edge".into()
                 } else {
-                    format!("Sequence Edge ({})", r.condition)
+                    format!("Sequence Edge ({})", r.condition).into()
                 }
-                .into()
             }
             BpmnElement::MessageEdge(inner) => {
                 let r = inner.read();
                 if r.name.is_empty() {
-                    format!("Message Edge")
+                    "Message Edge".into()
                 } else {
                     format!("Message Edge ({})", inner.read().name).into()
                 }
-                .into()
             }
-            BpmnElement::Association(_inner) => format!("Association").into(),
+            BpmnElement::Association(_inner) => "Association".into(),
             BpmnElement::Annotation(inner) => format!(
                 "Annotation ({})",
                 LabelProvider::sanitize(&inner.read().text)
@@ -1330,7 +1328,7 @@ mod buttons {
             },
             BpmnToolStage::SequenceEdgeEnd,
             PartialBpmnElement::SequenceEdge {
-                source: m.into(),
+                source: m,
                 dest: None,
             },
             true,
@@ -1423,7 +1421,7 @@ mod buttons {
             },
             BpmnToolStage::MessageEdgeEnd,
             PartialBpmnElement::MessageEdge {
-                source: m.into(),
+                source: m,
                 dest: None,
             },
             true,
@@ -1441,7 +1439,7 @@ mod buttons {
             BpmnToolStage::AssociationStart,
             BpmnToolStage::AssociationEnd,
             PartialBpmnElement::Association {
-                source: m.into(),
+                source: m,
                 dest: None,
             },
             true,
@@ -2031,7 +2029,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     BpmnToolStage::BoundaryIntermediateEvent { .. }
                     | BpmnToolStage::SequenceEdgeStart { .. }
                     | BpmnToolStage::SequenceEdgeEnd
-                    | BpmnToolStage::AssociationStart { .. }
+                    | BpmnToolStage::AssociationStart
                     | BpmnToolStage::AssociationEnd
                     | BpmnToolStage::AnnotationStart { .. } => NON_TARGETTABLE_COLOR,
                     _ => TARGETTABLE_COLOR,
@@ -2303,7 +2301,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
             }
             (
                 standard_container!(),
-                BpmnToolStage::AnnotationEnd { .. },
+                BpmnToolStage::AnnotationEnd,
                 PartialBpmnElement::Annotation { dest, .. },
             ) => {
                 *dest = Some(pos);
@@ -2378,7 +2376,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     *dest = Some(e);
                     self.event_lock = true;
                 }
-                (BpmnToolStage::AssociationStart { .. }, PartialBpmnElement::None)
+                (BpmnToolStage::AssociationStart, PartialBpmnElement::None)
                     if let Some(e) = e.as_associable() =>
                 {
                     self.result = PartialBpmnElement::Association {
@@ -2525,7 +2523,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                     target: *preferred_container,
                     bucket: preferred_bucket,
                     position: preferred_position,
-                    element: BpmnElementView::from(element).into(),
+                    element: element.into(),
                     into_model: true,
                 });
                 if let Some((parent, e)) = additional_edge {
@@ -2533,7 +2531,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                         target: parent,
                         bucket: 0,
                         position: None,
-                        element: BpmnElementView::from(e).into(),
+                        element: e.into(),
                         into_model: true,
                     });
                 }
@@ -2658,7 +2656,7 @@ impl Tool<BpmnDomain> for NaiveBpmnTool {
                 source,
                 dest: Some(dest),
                 ..
-            } if let BpmnToolStage::AssociationStart {} = &self.initial_stage => {
+            } if let BpmnToolStage::AssociationStart = &self.initial_stage => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.read().uuid);
                 if let Some(source_view_uuid) = q.get_viewuuid_for(&source_uuid)
                     && q.is_contained(&source_view_uuid, preferred_container)
@@ -4200,7 +4198,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             }
         }
 
-        return PropertiesStatus::NotShown;
+        PropertiesStatus::NotShown
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
@@ -4261,7 +4259,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
             }
             InputEvent::Click(pos) => {
                 if let Some(tool) = tool.as_mut().filter(|_| self.bounds_rect.contains(pos)) {
-                    tool.add_click(Ok(self.model().into()), pos);
+                    tool.add_click(Ok(self.model()), pos);
                 }
 
                 if let Some((k, status)) = k_status {
@@ -4271,30 +4269,21 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(
-                                    false,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.temporaries.selected_direct_elements.contains(&k),
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -4655,21 +4644,21 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
                                 view_pos
                             };
 
-                            let old_position = if self.swimlane_views.len() == view_pos.into() {
+                            let old_position = if self.swimlane_views.len() == view_pos {
                                 self.swimlane_views
                                     .last()
                                     .map(|e| e.read().bounds_rect.left_bottom())
                             } else {
                                 self.swimlane_views
                                     .iter()
-                                    .skip(view_pos.into())
+                                    .skip(view_pos)
                                     .map(|e| e.read().bounds_rect.min)
                                     .next()
                             }
                             .unwrap_or_default();
                             let delta = (0.0, vw.bounds_rect.height()).into();
                             let (mut u, mut m) = Default::default();
-                            for e in self.swimlane_views.iter().skip(view_pos.into()) {
+                            for e in self.swimlane_views.iter().skip(view_pos) {
                                 e.write().apply_command(
                                     diagram_model,
                                     &InsensitiveCommand::MovePositionalAll(delta),
@@ -4869,7 +4858,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -5375,30 +5364,21 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
                             .hold_selection
                             .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
                         {
-                            commands.push(
-                                InsensitiveCommand::HighlightAll(
-                                    false,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightAll(
+                                false,
+                                canvas::Highlight::SELECTED,
+                            ));
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ));
                         } else {
-                            commands.push(
-                                InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.temporaries.selected_direct_elements.contains(&k),
-                                    canvas::Highlight::SELECTED,
-                                )
-                                .into(),
-                            );
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ));
                         }
                     }
                     EventHandlingStatus::HandledByContainer
@@ -5776,7 +5756,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -5797,8 +5777,8 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
             model,
             contained_elements: OrderedViews::new(inner.into_values().collect()),
 
-            bounds_rect: self.bounds_rect.clone(),
-            background_color: self.background_color.clone(),
+            bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
             temporaries: self.temporaries.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -5845,7 +5825,7 @@ fn draw_button_rects(
     element: &BpmnElement,
 ) {
     let mut row_idx = 0;
-    if let Some(_) = element.as_sequence_nonfinal() {
+    if element.as_sequence_nonfinal().is_some() {
         for row in settings.nonfinal_buttons.iter() {
             for (col_idx, (l, _f)) in row.iter().enumerate() {
                 let r = button_rect(origin, ui_scale, row_idx, col_idx);
@@ -5867,7 +5847,7 @@ fn draw_button_rects(
             row_idx += 1;
         }
     }
-    if let Some(_) = element.as_messageable() {
+    if element.as_messageable().is_some() {
         for row in settings.messageable_buttons.iter() {
             for (col_idx, (l, _f)) in row.iter().enumerate() {
                 let r = button_rect(origin, ui_scale, row_idx, col_idx);
@@ -5889,7 +5869,7 @@ fn draw_button_rects(
             row_idx += 1;
         }
     }
-    if let Some(_) = element.as_associable() {
+    if element.as_associable().is_some() {
         for row in settings.associable_buttons.iter() {
             for (col_idx, (l, _f)) in row.iter().enumerate() {
                 let r = button_rect(origin, ui_scale, row_idx, col_idx);
@@ -5920,7 +5900,7 @@ fn handle_button_click(
     element: BpmnElement,
 ) -> ElementButtonFResult {
     let mut row_idx = 0;
-    if let Some(_) = element.as_sequence_nonfinal() {
+    if element.as_sequence_nonfinal().is_some() {
         for row in settings.nonfinal_buttons.iter() {
             for (col_idx, (_l, f)) in row.iter().enumerate() {
                 let r = button_rect(origin, ui_scale, row_idx, col_idx);
@@ -5931,7 +5911,7 @@ fn handle_button_click(
             row_idx += 1;
         }
     }
-    if let Some(_) = element.as_messageable() {
+    if element.as_messageable().is_some() {
         for row in settings.messageable_buttons.iter() {
             for (col_idx, (_l, f)) in row.iter().enumerate() {
                 let r = button_rect(origin, ui_scale, row_idx, col_idx);
@@ -5942,7 +5922,7 @@ fn handle_button_click(
             row_idx += 1;
         }
     }
-    if let Some(_) = element.as_associable() {
+    if element.as_associable().is_some() {
         for row in settings.associable_buttons.iter() {
             for (col_idx, (_l, f)) in row.iter().enumerate() {
                 let r = button_rect(origin, ui_scale, row_idx, col_idx);
@@ -6898,7 +6878,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -7972,7 +7952,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
     ) {
         let old_model_uuid = *self.model.uuid();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, old_model_uuid)
@@ -8526,9 +8506,9 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
                         BpmnPropChange::GatewayKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                BpmnPropChange::GatewayKindChange(model.kind.clone()),
+                                BpmnPropChange::GatewayKindChange(model.kind),
                             ));
-                            model.kind = kind.clone();
+                            model.kind = *kind;
                         }
                         _ => {}
                     }
@@ -8562,7 +8542,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -9102,9 +9082,9 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
                         BpmnPropChange::DataKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                BpmnPropChange::DataKindChange(model.kind.clone()),
+                                BpmnPropChange::DataKindChange(model.kind),
                             ));
-                            model.kind = kind.clone();
+                            model.kind = *kind;
                         }
                         BpmnPropChange::DataIsCollectionChange(is_collection) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -9157,7 +9137,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
@@ -9730,7 +9710,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnMessageEdgeAdapter {
 
         self.temporaries.midpoint_label = match model.name.is_empty() {
             true => None,
-            false => Some(model.name.clone().into()),
+            false => Some(model.name.clone()),
         };
         self.temporaries.condition_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
@@ -10390,7 +10370,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnAnnotationView {
     ) {
         let old_model = self.model.read();
 
-        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+        let (view_uuid, model_uuid) = if uuid_present(&self.uuid) {
             (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)

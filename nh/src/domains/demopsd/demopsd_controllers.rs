@@ -523,7 +523,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                 if !r.name.is_empty() {
                     l.push_str(" (");
                     l.push_str(&r.name);
-                    l.push_str(")");
+                    l.push(')');
                 }
 
                 l.into()
@@ -534,7 +534,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                 if !r.identifier.is_empty() {
                     l.push_str(" (");
                     l.push_str(&r.identifier);
-                    l.push_str(")");
+                    l.push(')');
                 }
 
                 l.into()
@@ -545,7 +545,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                 if !r.identifier.is_empty() {
                     l.push_str(" (");
                     l.push_str(&r.identifier);
-                    l.push_str(")");
+                    l.push(')');
                 }
 
                 l.into()

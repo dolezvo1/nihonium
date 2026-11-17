@@ -2006,7 +2006,6 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                 );
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
-                return;
             }
             (
                 Ok(UmlStateMachineElement::CompositeState(_)),
@@ -2021,7 +2020,6 @@ impl Tool<UmlStateMachineDomain> for NaiveUmlStateMachineTool {
                     new_umlstatemachine_internaltransition(trigger, guard, behavior, true);
                 self.result = PartialUmlStateMachineElement::Some(view.into());
                 self.event_lock = true;
-                return;
             }
 
             (
@@ -2654,7 +2652,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
-            is_protocol_buffer: self.is_protocol_buffer.clone(),
+            is_protocol_buffer: self.is_protocol_buffer,
             comment_buffer: self.comment_buffer.clone(),
         }
     }
@@ -5419,7 +5417,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTra
             if !m.guard.is_empty() && !matches!(&*m.trigger, "entry" | "do" | "exit") {
                 t.push_str(" [");
                 t.push_str(&m.guard);
-                t.push_str("]");
+                t.push(']');
             }
 
             t.push_str(" / ");
@@ -6706,15 +6704,12 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            match property {
-                UmlStateMachinePropChange::NameChange(name) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(*view_uuid).collect(),
-                        UmlStateMachinePropChange::NameChange(model.name.clone()),
-                    ));
-                    model.name = name.clone();
-                }
-                _ => {}
+            if let UmlStateMachinePropChange::NameChange(name) = property {
+                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    UmlStateMachinePropChange::NameChange(model.name.clone()),
+                ));
+                model.name = name.clone();
             }
         }
     }

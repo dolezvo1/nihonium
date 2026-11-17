@@ -718,7 +718,7 @@ where
 
         for e in self.sources.iter_mut().chain(self.targets.iter_mut()) {
             let shape = e.element.min_shape();
-            let next_point = e.points.iter().nth(1).map(|p| p.1).unwrap_or(center_point);
+            let next_point = e.points.get(1).map(|p| p.1).unwrap_or(center_point);
             let intersect = shape
                 .orthogonal_intersect(next_point)
                 .unwrap_or_else(|| shape.center_intersect(next_point));
@@ -813,10 +813,7 @@ where
                 canvas,
                 shape,
                 shape_intersect,
-                [
-                    data.multiplicity.as_ref().map(|e| &**e),
-                    data.role.as_ref().map(|e| &**e),
-                ],
+                [data.multiplicity.as_deref(), data.role.as_deref()],
             );
 
             fn draw_reading(
@@ -1333,14 +1330,10 @@ where
                 let mut retain =
                     |b: BucketNoT, target: bool, e: &Ending<DomainT::CommonElementViewT>| {
                         if uuids.contains(&e.element.uuid()) {
-                            undo_accumulator.extend(
-                                self.adapter
-                                    .jettison_ending_data(
-                                        &self_uuid,
-                                        (target, *e.element.model_uuid()),
-                                    )
-                                    .into_iter(),
-                            );
+                            undo_accumulator.extend(self.adapter.jettison_ending_data(
+                                &self_uuid,
+                                (target, *e.element.model_uuid()),
+                            ));
 
                             let p0 = e.points.first().unwrap().0;
                             for p in e.points.iter().skip(1) {

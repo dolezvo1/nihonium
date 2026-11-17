@@ -1545,8 +1545,8 @@ impl NHCanvas for UiCanvas {
                     resvg::render(
                         &rtree,
                         resvg::usvg::Transform::from_scale(
-                            TEXTURE_SIZE.x as f32 / source_size.x,
-                            TEXTURE_SIZE.y as f32 / source_size.y,
+                            TEXTURE_SIZE.x / source_size.x,
+                            TEXTURE_SIZE.y / source_size.y,
                         ),
                         &mut pixmap.as_mut(),
                     );

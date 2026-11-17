@@ -104,15 +104,12 @@ pub fn enumerate_diagram(d: &ArchiMateDiagram) -> HashMap<ModelUuid, ArchiMateEl
 }
 fn enumerate_elements(e: &ArchiMateElement, into: &mut HashMap<ModelUuid, ArchiMateElement>) {
     into.insert(*e.uuid(), e.clone());
-    match e {
-        ArchiMateElement::Concept(inner) => {
-            let model = inner.read();
+    if let ArchiMateElement::Concept(inner) = e {
+        let model = inner.read();
 
-            for e in &model.contained_elements {
-                enumerate_elements(e, into);
-            }
+        for e in &model.contained_elements {
+            enumerate_elements(e, into);
         }
-        _ => {}
     }
 }
 
@@ -366,23 +363,19 @@ impl DiagramModel for ArchiMateDiagram {
         p: Option<PositionNoT>,
         element: ArchiMateElement,
     ) -> Result<PositionNoT, ArchiMateElement> {
-        match &element {
-            ArchiMateElement::Relationship(inner) => {
-                if inner
+        if let ArchiMateElement::Relationship(inner) = &element
+            && (inner
+                .read()
+                .sources
+                .iter()
+                .any(|e| self.find_element(&e.concept.read().uuid).is_none())
+                || inner
                     .read()
-                    .sources
+                    .targets
                     .iter()
-                    .any(|e| self.find_element(&e.concept.read().uuid).is_none())
-                    || inner
-                        .read()
-                        .targets
-                        .iter()
-                        .any(|e| self.find_element(&e.concept.read().uuid).is_none())
-                {
-                    return Err(element);
-                }
-            }
-            _ => {}
+                    .any(|e| self.find_element(&e.concept.read().uuid).is_none()))
+        {
+            return Err(element);
         }
 
         if *self.uuid == target {
@@ -817,7 +810,7 @@ impl ContainerModel for ArchiMateConcept {
     fn find_element(&self, uuid: &ModelUuid) -> Option<(ArchiMateElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
-                return Some((e.clone().into(), *self.uuid));
+                return Some((e.clone(), *self.uuid));
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
@@ -841,7 +834,7 @@ impl FullTextSearchable for ArchiMateConcept {
             *self.uuid,
             &[
                 &self.uuid.to_string(),
-                &self.kind.as_str(),
+                self.kind.as_str(),
                 &self.stereotype,
                 &self.name,
                 &self.comment,

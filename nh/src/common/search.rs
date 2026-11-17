@@ -49,7 +49,7 @@ impl<'a> ModelSearcher<'a> {
     }
 
     pub fn check_element(&mut self, uuid: ModelUuid, fields: &[&str]) {
-        if check_model(&self.expr, fields) {
+        if check_model(self.expr, fields) {
             self.current_found_matches.push(uuid);
         }
     }
@@ -127,7 +127,7 @@ impl ModelSearchResults {
                 );
                 for e in sr {
                     builder.node(
-                        egui_ltreeview::NodeBuilder::leaf(e.clone().into())
+                        egui_ltreeview::NodeBuilder::leaf((*e).into())
                             .label(&*gdc.model_labels.get(e))
                             .context_menu(|ui| {
                                 ui.set_min_width(crate::MIN_MENU_WIDTH);
@@ -210,7 +210,7 @@ impl<'a> ResourceSearcher<'a> {
     }
 
     pub fn check_resource(&mut self, uuid: ResourceUuid, contents: &str) {
-        if check_resource(&self.expr, contents) {
+        if check_resource(self.expr, contents) {
             self.found_matches.push((uuid, Vec::new()));
         }
     }

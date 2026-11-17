@@ -859,7 +859,7 @@ impl UmlActivity {
         });
 
         into.insert(*self.uuid, new_model.clone().into());
-        new_model.into()
+        new_model
     }
 
     fn insert_element(
@@ -1244,7 +1244,7 @@ impl UmlActivityPartitionSection {
         });
 
         into.insert(*self.uuid, new_model.clone().into());
-        new_model.into()
+        new_model
     }
 
     fn insert_element(

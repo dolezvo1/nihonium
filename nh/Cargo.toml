@@ -9,7 +9,6 @@ lalrpop = "0.23"
 
 [dependencies]
 nh-derive = { path = "../nh-derive" }
-lalrpop = "0.23"
 lalrpop-util = "0.23"
 
 derive_more = { version = "2.1", features = [ "from", "try_into", "not" ] }

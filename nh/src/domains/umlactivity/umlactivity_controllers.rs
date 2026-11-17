@@ -3615,7 +3615,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         delta.x += w.bounds_rect.width();
                     } else {
                         w.apply_command(
-                            &diagram_model,
+                            diagram_model,
                             &InsensitiveCommand::MovePositionalAll(-delta),
                             &mut u,
                             &mut m,

@@ -49,9 +49,8 @@ impl DemoCsdElement {
         }
     }
     pub fn deep_copy_relink(&self, m: &HashMap<ModelUuid, DemoCsdElement>) {
-        match self {
-            DemoCsdElement::Link(inner) => inner.write().deep_copy_relink(m),
-            _ => {}
+        if let DemoCsdElement::Link(inner) = self {
+            inner.write().deep_copy_relink(m)
         }
     }
 }

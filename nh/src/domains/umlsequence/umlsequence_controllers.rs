@@ -63,9 +63,9 @@ pub struct UmlSequenceViewTargettingSection {
     element: UmlSequenceElement,
     end: bool,
 }
-impl Into<UmlSequenceElement> for UmlSequenceViewTargettingSection {
-    fn into(self) -> UmlSequenceElement {
-        self.element
+impl From<UmlSequenceViewTargettingSection> for UmlSequenceElement {
+    fn from(val: UmlSequenceViewTargettingSection) -> Self {
+        val.element
     }
 }
 

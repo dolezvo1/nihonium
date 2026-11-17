@@ -856,7 +856,7 @@ impl UmlClassPackage {
             uuid: new_uuid.into(),
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
-            visibility: self.visibility.clone(),
+            visibility: self.visibility,
             kind: self.kind,
             contained_elements: self
                 .contained_elements
@@ -1292,7 +1292,7 @@ impl UmlClass {
             name: self.name.clone(),
             stereotype: self.stereotype.clone(),
             template_parameters: self.template_parameters.clone(),
-            visibility: self.visibility.clone(),
+            visibility: self.visibility,
             is_abstract: self.is_abstract,
             properties: self
                 .properties

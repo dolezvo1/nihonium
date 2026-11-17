@@ -1906,7 +1906,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     {
                         let edge_view = new_network_association(
                             NetworkAssociationLineType::Solid,
-                            (source.model(), source.clone().into()),
+                            (source.model(), source.clone()),
                             NetworkAssociationArrowheadType::None,
                             (element.model(), element.clone()),
                             NetworkAssociationArrowheadType::None,
@@ -2226,7 +2226,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
                         std::iter::once(*view_uuid).collect(),
                         NetworkPropChange::CustomImageChange(self.custom_image),
                     ));
-                    self.custom_image = ci.clone();
+                    self.custom_image = *ci;
                 }
                 _ => {}
             }
@@ -2327,7 +2327,7 @@ fn pick_custom_image(
         .selected_text(
             current_image
                 .as_ref()
-                .and_then(|e| gdc.raw_resources.get(&e))
+                .and_then(|e| gdc.raw_resources.get(e))
                 .map(|e| e.0.clone())
                 .unwrap_or_else(|| "None".to_owned()),
         )
@@ -3488,7 +3488,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                                 std::iter::once(*self.uuid).collect(),
                                 NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone();
+                            self.custom_image = *ci;
                         }
                         _ => {}
                     }
@@ -4178,7 +4178,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                                 std::iter::once(*self.uuid).collect(),
                                 NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone();
+                            self.custom_image = *ci;
                         }
                         _ => {}
                     }
@@ -4750,7 +4750,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                                 std::iter::once(*self.uuid).collect(),
                                 NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone();
+                            self.custom_image = *ci;
                         }
                         _ => {}
                     }
@@ -5374,7 +5374,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
                                 std::iter::once(*self.uuid).collect(),
                                 NetworkPropChange::CustomImageChange(self.custom_image),
                             ));
-                            self.custom_image = ci.clone();
+                            self.custom_image = *ci;
                         }
                         _ => {}
                     }
