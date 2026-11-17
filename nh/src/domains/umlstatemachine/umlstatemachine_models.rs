@@ -452,24 +452,24 @@ impl VisitableElement for UmlStateMachineElement {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct UmlStateMachineDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlStateMachineStandaloneElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlStateMachineDiagram {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         contained_elements: Vec<UmlStateMachineStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -751,30 +751,30 @@ impl FullTextSearchable for UmlStateMachineDiagram {
 #[nh_context_serde(is_entity)]
 pub struct UmlStateMachine {
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     pub is_protocol: bool,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlStateMachineStandaloneElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlStateMachine {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
-        name: String,
+        stereotype: &str,
+        name: &str,
         is_protocol: bool,
         contained_elements: Vec<UmlStateMachineStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             is_protocol,
             contained_elements,
-            comment: "".to_owned().into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -888,8 +888,8 @@ impl FullTextSearchable for UmlStateMachine {
 #[nh_context_serde(is_entity)]
 pub struct UmlStateMachineCompositeState {
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub internal_transitions: Vec<ERef<UmlStateMachineInternalTransition>>,
     #[nh_context_serde(entity)]
@@ -902,15 +902,15 @@ impl UmlStateMachineCompositeState {
 
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
-        name: String,
+        stereotype: &str,
+        name: &str,
         internal_transitions: Vec<ERef<UmlStateMachineInternalTransition>>,
         regions: Vec<ERef<UmlStateMachineCompositeStateRegion>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             internal_transitions,
             regions,
         }
@@ -1196,18 +1196,18 @@ impl FullTextSearchable for UmlStateMachineCompositeStateRegion {
 pub struct UmlStateMachineInternalTransition {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub trigger: Arc<String>,
-    pub guard: Arc<String>,
-    pub behavior: Arc<String>,
+    pub trigger: Arc<str>,
+    pub guard: Arc<str>,
+    pub behavior: Arc<str>,
 }
 
 impl UmlStateMachineInternalTransition {
-    pub fn new(uuid: ModelUuid, trigger: String, guard: String, behavior: String) -> Self {
+    pub fn new(uuid: ModelUuid, trigger: &str, guard: &str, behavior: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            trigger: Arc::new(trigger),
-            guard: Arc::new(guard),
-            behavior: Arc::new(behavior),
+            trigger: trigger.into(),
+            guard: guard.into(),
+            behavior: behavior.into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1369,7 +1369,7 @@ impl Entity for UmlStateMachineFinalState {
 pub struct UmlStateMachineEdge {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 
     #[nh_context_serde(entity)]
     #[full_text_searchable(skip)]
@@ -1382,13 +1382,13 @@ pub struct UmlStateMachineEdge {
 impl UmlStateMachineEdge {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         source: UmlStateMachineNonFinalNode,
         target: UmlStateMachineNonInitialNode,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             source,
             target,
         }
@@ -1439,16 +1439,16 @@ impl Entity for UmlStateMachineEdge {
 pub struct UmlStateMachineNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub text: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub text: Arc<str>,
 }
 
 impl UmlStateMachineNote {
-    pub fn new(uuid: ModelUuid, stereotype: String, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, stereotype: &str, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            text: Arc::new(text),
+            stereotype: stereotype.into(),
+            text: text.into(),
         }
     }
     pub fn deep_copy_clone_inner(

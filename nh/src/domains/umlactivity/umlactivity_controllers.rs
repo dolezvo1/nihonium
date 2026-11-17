@@ -79,10 +79,10 @@ impl UmlActivityOrdinalMovement {
 
 #[derive(Clone)]
 pub enum UmlActivityPropChange {
-    NameChange(Arc<String>),
-    StereotypeChange(Arc<String>),
+    NameChange(Arc<str>),
+    StereotypeChange(Arc<str>),
 
-    ActivityParametersChange(Arc<String>),
+    ActivityParametersChange(Arc<str>),
     ActionKindChange(UmlActivityActionKind),
     FinalNodeKindChange(UmlActivityFinalNodeKind),
 
@@ -93,7 +93,7 @@ pub enum UmlActivityPropChange {
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -272,8 +272,8 @@ impl UmlActivityDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: UmlActivityDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -286,7 +286,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -391,7 +391,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &UmlActivityElement) -> Arc<String> {
+    fn label_for(&self, e: &UmlActivityElement) -> Arc<str> {
         match e {
             UmlActivityElement::Activity(inner) => {
                 let r = inner.read();
@@ -417,7 +417,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 s.push(')');
                 s.into()
             }
-            UmlActivityElement::Partition(_inner) => "Partition".to_owned().into(),
+            UmlActivityElement::Partition(_inner) => "Partition".into(),
             UmlActivityElement::PartitionSection(inner) => {
                 let r = inner.read();
                 let mut s = "Partition Section (".to_owned();
@@ -442,20 +442,19 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 s.push(')');
                 s.into()
             }
-            UmlActivityElement::InitialNode(..) => "Initial Node".to_owned().into(),
+            UmlActivityElement::InitialNode(..) => "Initial Node".into(),
             UmlActivityElement::FinalNode(inner) => {
                 format!("{} Node", inner.read().kind.as_str()).into()
             }
             UmlActivityElement::DecisionNode(inner) => {
                 let r = inner.read();
-                let s = if r.name.is_empty() {
-                    "Decision/Merge Node".to_owned()
+                if r.name.is_empty() {
+                    "Decision/Merge Node".into()
                 } else {
-                    format!("Decision/Merge Node ({})", LabelProvider::sanitize(&r.name))
-                };
-                Arc::new(s)
+                    format!("Decision/Merge Node ({})", LabelProvider::sanitize(&r.name)).into()
+                }
             }
-            UmlActivityElement::ForkNode(..) => "Fork/Join Node".to_owned().into(),
+            UmlActivityElement::ForkNode(..) => "Fork/Join Node".into(),
             UmlActivityElement::ObjectNode(inner) => {
                 let r = inner.read();
                 let mut s = "Object Node (".to_owned();
@@ -478,18 +477,17 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                     s.push_str(&r.name);
                     s.push(')');
                 }
-                Arc::new(s)
+                s.into()
             }
             UmlActivityElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
-            UmlActivityElement::NoteLink(_inner) => Arc::new("Note Link".to_string()),
+            UmlActivityElement::NoteLink(_inner) => "Note Link".into(),
         }
     }
 
@@ -558,7 +556,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlActivityPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                UmlActivityPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         }
 
@@ -568,7 +566,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlActivityPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                UmlActivityPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -622,8 +620,8 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -704,11 +702,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(UmlActivityDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(UmlActivityDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -843,7 +837,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(UmlActivityDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![activity.into()],
     ));
 
@@ -2612,9 +2606,9 @@ pub fn new_umlactivity_activity(
 ) -> (ERef<UmlActivity>, ERef<ActivityViewT>) {
     let package_model = ERef::new(UmlActivity::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
-        parameters.to_owned(),
+        stereotype,
+        name,
+        parameters,
         Vec::new(),
     ));
     let package_view =
@@ -2634,11 +2628,11 @@ pub fn new_umlactivity_activity_view(
             model: model.clone(),
             background_color: MGlobalColor::None,
             request_focus,
-            display_text: Arc::new("".to_owned()),
-            stereotype_buffer: (*m.stereotype).clone(),
-            name_buffer: (*m.name).clone(),
-            parameters_buffer: (*m.parameters).clone(),
-            comment_buffer: (*m.comment).clone(),
+            display_text: "".into(),
+            stereotype_buffer: m.stereotype.to_string(),
+            name_buffer: m.name.to_string(),
+            parameters_buffer: m.parameters.to_string(),
+            comment_buffer: m.comment.to_string(),
         },
         Vec::new(),
         canvas::Highlight::from_selected(request_focus),
@@ -2657,7 +2651,7 @@ pub struct UmlActivityAdapter {
     #[nh_context_serde(skip_and_default)]
     request_focus: bool,
     #[nh_context_serde(skip_and_default)]
-    display_text: Arc<String>,
+    display_text: Arc<str>,
     #[nh_context_serde(skip_and_default)]
     stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2675,7 +2669,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -2709,7 +2703,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         _settings: &<UmlActivityDomain as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
-    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
+    ) -> Result<egui::Rect, (egui::Color32, Arc<str>)> {
         // Draw top left pentagon
         const PENTAGON_PADDING: f32 = 4.0;
         let pentagon_bg = egui::Color32::WHITE;
@@ -2762,7 +2756,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                UmlActivityPropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
 
@@ -2772,7 +2766,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -2783,9 +2777,9 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::ActivityParametersChange(Arc::new(
-                    self.parameters_buffer.clone(),
-                )),
+                UmlActivityPropChange::ActivityParametersChange(
+                    self.parameters_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -2795,7 +2789,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlActivityPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
     }
@@ -2897,10 +2891,10 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
 
             acc.into()
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
-        self.parameters_buffer = (*model.parameters).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.name_buffer = model.name.to_string();
+        self.parameters_buffer = model.parameters.to_string();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -2945,8 +2939,8 @@ pub fn new_umlactivity_interruptibleregion(
 ) {
     let package_model = ERef::new(UmlActivityInterruptibleRegion::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         Vec::new(),
     ));
     let package_view =
@@ -2965,9 +2959,9 @@ pub fn new_umlactivity_interruptibleregion_view(
         UmlActivityInterruptibleRegionAdapter {
             model: model.clone(),
             request_focus,
-            display_text: Arc::new("".to_owned()),
-            stereotype_buffer: (*m.stereotype).clone(),
-            name_buffer: (*m.name).clone(),
+            display_text: "".into(),
+            stereotype_buffer: m.stereotype.to_string(),
+            name_buffer: m.name.to_string(),
         },
         Vec::new(),
         canvas::Highlight::from_selected(request_focus),
@@ -2985,7 +2979,7 @@ pub struct UmlActivityInterruptibleRegionAdapter {
     #[nh_context_serde(skip_and_default)]
     request_focus: bool,
     #[nh_context_serde(skip_and_default)]
-    display_text: Arc<String>,
+    display_text: Arc<str>,
     #[nh_context_serde(skip_and_default)]
     stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2999,7 +2993,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -3031,7 +3025,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         _settings: &<UmlActivityDomain as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
-    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
+    ) -> Result<egui::Rect, (egui::Color32, Arc<str>)> {
         Err((egui::Color32::BLACK, self.display_text.clone()))
     }
 
@@ -3053,7 +3047,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                UmlActivityPropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
 
@@ -3063,7 +3057,7 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -3118,8 +3112,8 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
             acc.push_str(&model.name);
             acc.into()
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.name_buffer = model.name.to_string();
     }
 
     fn deep_copy_init(
@@ -4000,8 +3994,8 @@ pub fn new_umlactivity_partitionsection(
 ) {
     let package_model = ERef::new(UmlActivityPartitionSection::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         Vec::new(),
     ));
     let package_view =
@@ -4023,7 +4017,7 @@ pub fn new_umlactivity_partitionsection_view(
         background_color: MGlobalColor::None,
         temporaries: UmlActivityPartitionSectionViewTemporaries {
             request_focus,
-            name_buffer: (*r.name).clone(),
+            name_buffer: r.name.to_string(),
             highlight: canvas::Highlight::from_selected(request_focus),
             ..Default::default()
         },
@@ -4108,9 +4102,9 @@ impl UmlActivityPartitionSectionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::StereotypeChange(Arc::new(
-                    self.temporaries.stereotype_buffer.clone(),
-                )),
+                UmlActivityPropChange::StereotypeChange(
+                    self.temporaries.stereotype_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -4124,7 +4118,7 @@ impl UmlActivityPartitionSectionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -4854,8 +4848,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         if !r.stereotype.is_empty() {
             self.temporaries.stereotype_in_guillemets = format!("«{}»", r.stereotype);
         }
-        self.temporaries.stereotype_buffer = (*r.stereotype).clone();
-        self.temporaries.name_buffer = (*r.name).clone();
+        self.temporaries.stereotype_buffer = r.stereotype.to_string();
+        self.temporaries.name_buffer = r.name.to_string();
     }
 
     fn head_count(
@@ -5004,8 +4998,8 @@ fn new_umlactivity_actionnode(
 ) -> (ERef<UmlActivityActionNode>, ERef<UmlActivityActionNodeView>) {
     let instance_model = ERef::new(UmlActivityActionNode::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         kind,
     ));
     let instance_view = new_umlactivity_actionnode_view(
@@ -5029,8 +5023,8 @@ fn new_umlactivity_actionnode_view(
         model: model.clone(),
         request_focus,
         stereotype_in_guillemets: String::new(),
-        stereotype_buffer: (*m.stereotype).clone(),
-        name_buffer: (*m.name).clone(),
+        stereotype_buffer: m.stereotype.to_string(),
+        name_buffer: m.name.to_string(),
         kind_buffer: m.kind,
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -5124,7 +5118,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                UmlActivityPropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
 
@@ -5134,7 +5128,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -5617,8 +5611,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         } else {
             format!("«{}»", model.stereotype)
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.name_buffer = model.name.to_string();
         self.kind_buffer = model.kind;
     }
 
@@ -6445,10 +6439,7 @@ pub fn new_umlactivity_decisionnode(
     ERef<UmlActivityDecisionNode>,
     ERef<UmlActivityDecisionNodeView>,
 ) {
-    let node_model = ERef::new(UmlActivityDecisionNode::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-    ));
+    let node_model = ERef::new(UmlActivityDecisionNode::new(ModelUuid::now_v7(), name));
     let node_view = new_umlactivity_decisionnode_view(node_model.clone(), position);
 
     (node_model, node_view)
@@ -6462,7 +6453,7 @@ pub fn new_umlactivity_decisionnode_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        name_buffer: (*m.name).clone(),
+        name_buffer: m.name.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
@@ -6556,7 +6547,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
 
@@ -6813,7 +6804,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
+        self.name_buffer = model.name.to_string();
     }
 
     fn head_count(
@@ -7281,8 +7272,8 @@ pub fn new_umlactivity_objectnode(
 ) -> (ERef<UmlActivityObjectNode>, ERef<UmlActivityObjectNodeView>) {
     let node_model = ERef::new(UmlActivityObjectNode::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
     ));
     let node_view = new_umlactivity_objectnode_view(
         node_model.clone(),
@@ -7306,8 +7297,8 @@ pub fn new_umlactivity_objectnode_view(
 
         request_focus,
         stereotype_in_guillemets: String::new(),
-        stereotype_buffer: (*m.stereotype).clone(),
-        name_buffer: (*m.name).clone(),
+        stereotype_buffer: m.stereotype.to_string(),
+        name_buffer: m.name.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -7399,7 +7390,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                UmlActivityPropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
 
@@ -7409,7 +7400,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -7715,8 +7706,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         } else {
             format!("«{}»", model.stereotype)
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.name_buffer = model.name.to_string();
     }
 
     fn head_count(
@@ -7777,7 +7768,7 @@ pub fn new_umlactivity_edge(
 ) -> (ERef<UmlActivityFlowEdge>, ERef<FlowEdgeViewT>) {
     let link_model = ERef::new(UmlActivityFlowEdge::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         kind,
         source.0,
         target.0,
@@ -7825,7 +7816,7 @@ struct UmlActivityEdgeTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     name_buffer: String,
     kind_buffer: UmlActivityEdgeKind,
 }
@@ -7850,7 +7841,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
         _settings: &<UmlActivityDomain as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         match self.temporaries.midpoint_label.clone() {
             None => Ok(()),
             Some(label) => Err(label),
@@ -7901,7 +7892,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
 
@@ -8008,7 +7999,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
             true => None,
             false => Some(model.name.clone()),
         };
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
     }
 
@@ -8047,11 +8038,7 @@ pub fn new_umlactivity_note(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<UmlActivityNote>, ERef<UmlActivityNoteView>) {
-    let model = ERef::new(UmlActivityNote::new(
-        ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        text.to_owned(),
-    ));
+    let model = ERef::new(UmlActivityNote::new(ModelUuid::now_v7(), stereotype, text));
     let view = new_umlactivity_note_view(
         model.clone(),
         position,
@@ -8076,8 +8063,8 @@ pub fn new_umlactivity_note_view(
 
         request_focus,
         display_text: String::new(),
-        stereotype_buffer: (*m.stereotype).clone(),
-        text_buffer: (*m.text).clone(),
+        stereotype_buffer: m.stereotype.to_string(),
+        text_buffer: m.text.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -8181,7 +8168,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                UmlActivityPropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
         if ui
@@ -8190,7 +8177,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlActivityPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                UmlActivityPropChange::NameChange(self.text_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -8630,8 +8617,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityNoteView {
             s.push_str(&model.text);
             s
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.text_buffer = (*model.text).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.text_buffer = model.text.to_string();
     }
 
     fn head_count(

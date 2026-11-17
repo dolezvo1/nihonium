@@ -918,7 +918,7 @@ impl NHContext {
             children.push(e);
         }
         self.project_meta = pdto.project_meta();
-        *project_name = Arc::new(self.project_meta.name.clone());
+        *project_name = self.project_meta.name.clone().into();
         self.new_diagram_no = pdto.new_diagram_no_counter() as u32;
         for e in &top_level_views {
             e.1.write()
@@ -1450,11 +1450,7 @@ impl NHContext {
                     let _ = self.project_hierarchy.insert(
                         &uuid.into(),
                         egui_ltreeview::DirPosition::Last,
-                        HierarchyNode::Folder(
-                            FolderUuid::now_v7(),
-                            Arc::new("New folder".into()),
-                            vec![],
-                        ),
+                        HierarchyNode::Folder(FolderUuid::now_v7(), "New folder".into(), vec![]),
                     );
                     self.set_has_unsaved_changes(true);
                 }
@@ -1487,8 +1483,8 @@ impl NHContext {
                 ContextMenuAction::RenameElements(uuid) => 'a: {
                     let targets = get_multiple_targets(uuid);
                     let f = |e: &HierarchyNode| match e {
-                        HierarchyNode::Folder(_, name, _) => (**name).clone(),
-                        HierarchyNode::Diagram(uuid, c) => (*c.read().view_name(uuid)).clone(),
+                        HierarchyNode::Folder(_, name, _) => name.to_string(),
+                        HierarchyNode::Diagram(uuid, c) => (*c.read().view_name(uuid)).to_string(),
                         HierarchyNode::Resource(view_uuid) => self
                             .drawing_context
                             .raw_resources
@@ -3486,7 +3482,7 @@ impl NHApp {
             },
             project_hierarchy: HierarchyNode::Folder(
                 FolderUuid::nil(),
-                Arc::new("New Project".to_owned()),
+                "New Project".into(),
                 vec![],
             ),
             tree_view_state: TreeViewState::default(),

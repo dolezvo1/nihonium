@@ -149,11 +149,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(UmlClassDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(UmlClassDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -265,7 +261,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![
             animal_model.into(),
             temp_model.into(),

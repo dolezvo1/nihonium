@@ -240,20 +240,20 @@ impl VisitableElement for NetworkElement {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct NetworkDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<NetworkElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl NetworkDiagram {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<NetworkElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, contained_elements: Vec<NetworkElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -461,21 +461,21 @@ impl FullTextSearchable for NetworkDiagram {
 #[nh_context_serde(is_entity)]
 pub struct NetworkContainer {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<NetworkElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl NetworkContainer {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<NetworkElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, contained_elements: Vec<NetworkElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -653,20 +653,20 @@ impl NetworkNodeKind {
 pub struct NetworkNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: NetworkNodeKind,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl NetworkNode {
-    pub fn new(uuid: ModelUuid, name: String, kind: NetworkNodeKind) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, kind: NetworkNodeKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             kind,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -745,20 +745,20 @@ impl NetworkUserKind {
 pub struct NetworkUser {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: NetworkUserKind,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl NetworkUser {
-    pub fn new(uuid: ModelUuid, name: String, kind: NetworkUserKind) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, kind: NetworkUserKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             kind,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -842,20 +842,20 @@ impl NetworkFileKind {
 pub struct NetworkFile {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: NetworkFileKind,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl NetworkFile {
-    pub fn new(uuid: ModelUuid, name: String, kind: NetworkFileKind) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, kind: NetworkFileKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             kind,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -924,20 +924,20 @@ impl NetworkLocationKind {
 pub struct NetworkLocation {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: NetworkLocationKind,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl NetworkLocation {
-    pub fn new(uuid: ModelUuid, name: String, kind: NetworkLocationKind) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, kind: NetworkLocationKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             kind,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1034,19 +1034,19 @@ pub struct NetworkAssociation {
     pub source: NetworkElement,
     #[full_text_searchable(skip)]
     pub source_arrowhead: NetworkAssociationArrowheadType,
-    pub source_label_multiplicity: Arc<String>,
-    pub source_label_role: Arc<String>,
-    pub source_label_reading: Arc<String>,
+    pub source_label_multiplicity: Arc<str>,
+    pub source_label_role: Arc<str>,
+    pub source_label_reading: Arc<str>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: NetworkElement,
     #[full_text_searchable(skip)]
     pub target_arrowhead: NetworkAssociationArrowheadType,
-    pub target_label_multiplicity: Arc<String>,
-    pub target_label_role: Arc<String>,
-    pub target_label_reading: Arc<String>,
+    pub target_label_multiplicity: Arc<str>,
+    pub target_label_role: Arc<str>,
+    pub target_label_reading: Arc<str>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl NetworkAssociation {
@@ -1064,16 +1064,16 @@ impl NetworkAssociation {
             line_type,
             source,
             source_arrowhead,
-            source_label_multiplicity: "".to_owned().into(),
-            source_label_role: "".to_owned().into(),
-            source_label_reading: "".to_owned().into(),
+            source_label_multiplicity: "".into(),
+            source_label_role: "".into(),
+            source_label_reading: "".into(),
             target,
             target_arrowhead,
-            target_label_multiplicity: "".to_owned().into(),
-            target_label_role: "".to_owned().into(),
-            target_label_reading: "".to_owned().into(),
+            target_label_multiplicity: "".into(),
+            target_label_role: "".into(),
+            target_label_reading: "".into(),
 
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1136,14 +1136,14 @@ impl Model for NetworkAssociation {
 pub struct NetworkNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub text: Arc<String>,
+    pub text: Arc<str>,
 }
 
 impl NetworkNote {
-    pub fn new(uuid: ModelUuid, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            text: Arc::new(text),
+            text: text.into(),
         }
     }
     pub fn deep_copy_clone_inner(

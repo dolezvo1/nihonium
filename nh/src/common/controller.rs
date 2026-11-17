@@ -238,7 +238,7 @@ pub enum Arrangement {
 pub enum HierarchyNode {
     Folder(
         FolderUuid,
-        /*name:*/ Arc<String>,
+        /*name:*/ Arc<str>,
         /*children:*/ Vec<HierarchyNode>,
     ),
     Diagram(ViewUuid, ERef<dyn DiagramController>),
@@ -774,7 +774,7 @@ impl GlobalDrawingContext {
 }
 
 pub struct LabelProvider {
-    labels: HashMap<ModelUuid, Arc<String>>,
+    labels: HashMap<ModelUuid, Arc<str>>,
 }
 
 impl LabelProvider {
@@ -802,14 +802,14 @@ impl LabelProvider {
         }
     }
 
-    pub fn get(&self, uuid: &ModelUuid) -> Arc<String> {
+    pub fn get(&self, uuid: &ModelUuid) -> Arc<str> {
         self.labels
             .get(uuid)
             .cloned()
             .unwrap_or_else(|| format!("{:?}", uuid).into())
     }
 
-    pub fn insert(&mut self, uuid: ModelUuid, label: Arc<String>) {
+    pub fn insert(&mut self, uuid: ModelUuid, label: Arc<str>) {
         self.labels.insert(uuid, label);
     }
 }
@@ -820,8 +820,8 @@ pub trait View: Entity {
 }
 
 pub trait DiagramView: View {
-    fn view_name(&self) -> Arc<String>;
-    fn set_view_name(&mut self, new_name: Arc<String>);
+    fn view_name(&self) -> Arc<str>;
+    fn set_view_name(&mut self, new_name: Arc<str>);
 
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
 }
@@ -981,8 +981,8 @@ pub trait DiagramController: Any + NHContextSerialize {
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn controller_type(&self) -> &'static str;
     fn view_uuids(&self) -> Vec<ViewUuid>;
-    fn view_name(&self, uuid: &ViewUuid) -> Arc<String>;
-    fn set_view_name(&self, uuid: &ViewUuid, new_name: Arc<String>);
+    fn view_name(&self, uuid: &ViewUuid) -> Arc<str>;
+    fn set_view_name(&self, uuid: &ViewUuid, new_name: Arc<str>);
 
     fn get(&self, uuid: &ViewUuid) -> Option<ERef<dyn DiagramView>>;
     fn refresh_all_buffers(&mut self, label_provider: &mut LabelProvider);
@@ -1379,7 +1379,7 @@ pub enum InsensitiveCommand<
         including_model: bool,
     },
     PropertyChange(HashSet<ViewUuid>, PropChangeT),
-    Macro(Arc<String>, usize, Arc<Vec<Self>>),
+    Macro(Arc<str>, usize, Arc<Vec<Self>>),
 }
 
 impl<
@@ -2114,11 +2114,11 @@ where
         self.views.keys().cloned().collect()
     }
 
-    fn view_name(&self, uuid: &ViewUuid) -> Arc<String> {
+    fn view_name(&self, uuid: &ViewUuid) -> Arc<str> {
         self.views.get(uuid).map(|e| e.read().view_name()).unwrap()
     }
 
-    fn set_view_name(&self, uuid: &ViewUuid, new_name: Arc<String>) {
+    fn set_view_name(&self, uuid: &ViewUuid, new_name: Arc<str>) {
         let Some(view) = self.views.get(uuid).cloned() else {
             return;
         };
@@ -2880,7 +2880,7 @@ pub trait DiagramAdapter<DomainT: Domain>:
 {
     fn model(&self) -> ERef<DomainT::DiagramModelT>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
-    fn model_name(&self) -> Arc<String>;
+    fn model_name(&self) -> Arc<str>;
 
     fn find_element(&self, model_uuid: &ModelUuid) -> Option<(DomainT::CommonElementT, ModelUuid)> {
         self.model().read().find_element(model_uuid)
@@ -2899,7 +2899,7 @@ pub trait DiagramAdapter<DomainT: Domain>:
         q: &DomainT::QueryableT<'_>,
         element: DomainT::CommonElementT,
     ) -> Result<DomainT::CommonElementViewT, HashSet<ModelUuid>>;
-    fn label_for(&self, element: &DomainT::CommonElementT) -> Arc<String>;
+    fn label_for(&self, element: &DomainT::CommonElementT) -> Arc<str>;
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
@@ -2981,7 +2981,7 @@ pub trait DiagramAdapter<DomainT: Domain>:
 #[nh_context_serde(is_entity, is_subset_with = Self::depends_on, initialize_with = Self::initialize)]
 pub struct DiagramControllerGen2<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> {
     uuid: Arc<ViewUuid>,
-    name: Arc<String>,
+    name: Arc<str>,
     #[nh_context_serde(entity)]
     adapter: DiagramAdapterT,
     #[nh_context_serde(entity)]
@@ -3038,7 +3038,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
 {
     pub fn new(
         uuid: Arc<ViewUuid>,
-        name: Arc<String>,
+        name: Arc<str>,
         adapter: DiagramAdapterT,
         owned_views: Vec<DomainT::CommonElementViewT>,
     ) -> ERef<Self> {
@@ -3517,12 +3517,12 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> View
 impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView
     for DiagramControllerGen2<DomainT, DiagramAdapterT>
 {
-    fn view_name(&self) -> Arc<String> {
+    fn view_name(&self) -> Arc<str> {
         self.name.clone()
     }
 
-    fn set_view_name(&mut self, new_name: Arc<String>) {
-        self.temporaries.name_buffer = (*new_name).clone();
+    fn set_view_name(&mut self, new_name: Arc<str>) {
+        self.temporaries.name_buffer = new_name.to_string();
         self.name = new_name;
     }
 
@@ -3560,7 +3560,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         // Full label_provider update
         struct V<'a, DomainT: Domain> {
             label_provider: &'a mut LabelProvider,
-            label_f: &'a dyn Fn(&DomainT::CommonElementT) -> Arc<String>,
+            label_f: &'a dyn Fn(&DomainT::CommonElementT) -> Arc<str>,
             domain: PhantomData<DomainT>,
         }
 
@@ -3588,7 +3588,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         label_provider.insert(*self.adapter.model_uuid(), self.adapter.model_name());
 
         // Refresh buffers
-        self.temporaries.name_buffer = (*self.name).clone();
+        self.temporaries.name_buffer = self.name.to_string();
 
         for (v, _) in self.temporaries.flattened_views.values_mut() {
             v.refresh_buffers();
@@ -4235,7 +4235,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                     .labeled_text_edit_singleline("Name:", &mut self.temporaries.name_buffer)
                     .changed()
                 {
-                    self.name = Arc::new(self.temporaries.name_buffer.clone());
+                    self.name = self.temporaries.name_buffer.clone().into();
                 }
                 self.adapter
                     .show_view_props_fun(&self.uuid, context, ui, commands);

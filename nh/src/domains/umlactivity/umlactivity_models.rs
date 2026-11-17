@@ -504,24 +504,24 @@ impl VisitableElement for UmlActivityElement {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct UmlActivityDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlActivityStandaloneElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlActivityDiagram {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         contained_elements: Vec<UmlActivityStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -814,30 +814,30 @@ impl FullTextSearchable for UmlActivityDiagram {
 #[nh_context_serde(is_entity)]
 pub struct UmlActivity {
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
-    pub parameters: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
+    pub parameters: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlActivityStandaloneElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlActivity {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
-        name: String,
-        parameters: String,
+        stereotype: &str,
+        name: &str,
+        parameters: &str,
         contained_elements: Vec<UmlActivityStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
-            parameters: Arc::new(parameters),
+            stereotype: stereotype.into(),
+            name: name.into(),
+            parameters: parameters.into(),
             contained_elements,
-            comment: "".to_owned().into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -952,8 +952,8 @@ impl FullTextSearchable for UmlActivity {
 #[nh_context_serde(is_entity)]
 pub struct UmlActivityInterruptibleRegion {
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlActivityStandaloneElement>,
 }
@@ -961,14 +961,14 @@ pub struct UmlActivityInterruptibleRegion {
 impl UmlActivityInterruptibleRegion {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
-        name: String,
+        stereotype: &str,
+        name: &str,
         contained_elements: Vec<UmlActivityStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             contained_elements,
         }
     }
@@ -1207,8 +1207,8 @@ impl FullTextSearchable for UmlActivityPartition {
 #[nh_context_serde(is_entity)]
 pub struct UmlActivityPartitionSection {
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlActivityStandaloneElement>,
 }
@@ -1216,14 +1216,14 @@ pub struct UmlActivityPartitionSection {
 impl UmlActivityPartitionSection {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
-        name: String,
+        stereotype: &str,
+        name: &str,
         contained_elements: Vec<UmlActivityStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             contained_elements,
         }
     }
@@ -1364,23 +1364,18 @@ impl UmlActivityActionKind {
 pub struct UmlActivityActionNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: UmlActivityActionKind,
 }
 
 impl UmlActivityActionNode {
-    pub fn new(
-        uuid: ModelUuid,
-        stereotype: String,
-        name: String,
-        kind: UmlActivityActionKind,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, stereotype: &str, name: &str, kind: UmlActivityActionKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             kind,
         }
     }
@@ -1524,14 +1519,14 @@ impl Entity for UmlActivityFinalNode {
 pub struct UmlActivityDecisionNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 }
 
 impl UmlActivityDecisionNode {
-    pub fn new(uuid: ModelUuid, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1609,16 +1604,16 @@ impl Entity for UmlActivityForkNode {
 pub struct UmlActivityObjectNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
 }
 
 impl UmlActivityObjectNode {
-    pub fn new(uuid: ModelUuid, stereotype: String, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, stereotype: &str, name: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1674,7 +1669,7 @@ impl UmlActivityEdgeKind {
 pub struct UmlActivityFlowEdge {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: UmlActivityEdgeKind,
 
@@ -1689,14 +1684,14 @@ pub struct UmlActivityFlowEdge {
 impl UmlActivityFlowEdge {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         kind: UmlActivityEdgeKind,
         source: UmlActivityNonFinalNode,
         target: UmlActivityNonInitialNode,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             kind,
             source,
             target,
@@ -1749,16 +1744,16 @@ impl Entity for UmlActivityFlowEdge {
 pub struct UmlActivityNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub text: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub text: Arc<str>,
 }
 
 impl UmlActivityNote {
-    pub fn new(uuid: ModelUuid, stereotype: String, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, stereotype: &str, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            text: Arc::new(text),
+            stereotype: stereotype.into(),
+            text: text.into(),
         }
     }
     pub fn deep_copy_clone_inner(

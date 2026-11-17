@@ -83,8 +83,8 @@ impl DemoPsdOrdinalMovement {
 
 #[derive(Clone)]
 pub enum DemoPsdPropChange {
-    NameChange(Arc<String>),
-    IdentifierChange(Arc<String>),
+    NameChange(Arc<str>),
+    IdentifierChange(Arc<str>),
 
     TransactionKindChange(DemoTransactionKind),
     TransactionPercentageChange(f32),
@@ -92,12 +92,12 @@ pub enum DemoPsdPropChange {
     StateInternalChange(bool),
 
     LinkTypeChange(DemoPsdLinkType),
-    LinkMultiplicityChange(Arc<String>),
+    LinkMultiplicityChange(Arc<str>),
 
     PackageKindChange(DemoPackageKind),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -412,8 +412,8 @@ impl DemoPsdDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: DemoPsdDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -426,7 +426,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -514,7 +514,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &DemoPsdElement) -> Arc<String> {
+    fn label_for(&self, e: &DemoPsdElement) -> Arc<str> {
         match e {
             DemoPsdElement::Package(inner) => inner.read().name.clone(),
             DemoPsdElement::Transaction(inner) => {
@@ -526,7 +526,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                     l.push_str(")");
                 }
 
-                Arc::new(l)
+                l.into()
             }
             DemoPsdElement::Fact(inner) => {
                 let r = inner.read();
@@ -537,7 +537,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                     l.push_str(")");
                 }
 
-                Arc::new(l)
+                l.into()
             }
             DemoPsdElement::Act(inner) => {
                 let r = inner.read();
@@ -548,17 +548,16 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                     l.push_str(")");
                 }
 
-                Arc::new(l)
+                l.into()
             }
-            DemoPsdElement::Link(inner) => Arc::new(inner.read().link_type.as_str().to_owned()),
+            DemoPsdElement::Link(inner) => inner.read().link_type.as_str().into(),
             DemoPsdElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
         }
     }
@@ -607,7 +606,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                DemoPsdPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                DemoPsdPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         };
 
@@ -617,7 +616,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                DemoPsdPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                DemoPsdPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -667,8 +666,8 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -749,11 +748,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(DemoPsdDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(DemoPsdDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -832,11 +827,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     ];
 
     {
-        let diagram = ERef::new(DemoPsdDiagram::new(
-            ModelUuid::now_v7(),
-            name.to_owned(),
-            models,
-        ));
+        let diagram = ERef::new(DemoPsdDiagram::new(ModelUuid::now_v7(), name, models));
         new_controlller(diagram, name.to_owned(), views)
     }
 }
@@ -1767,7 +1758,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -1814,7 +1805,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                DemoPsdPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -1841,7 +1832,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoPsdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
     }
@@ -1887,8 +1878,8 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = model.name.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -1920,12 +1911,7 @@ fn new_demopsd_package(
     bounds_rect: egui::Rect,
     request_focus: bool,
 ) -> (ERef<DemoPsdPackage>, ERef<PackageViewT>) {
-    let graph_model = ERef::new(DemoPsdPackage::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        kind,
-        vec![],
-    ));
+    let graph_model = ERef::new(DemoPsdPackage::new(ModelUuid::now_v7(), name, kind, vec![]));
     let graph_view = new_demopsd_package_view(graph_model.clone(), bounds_rect, request_focus);
 
     (graph_model, graph_view)
@@ -1942,9 +1928,9 @@ fn new_demopsd_package_view(
             model: model.clone(),
             temporaries: DemoPsdPackageAdapterTemporaries {
                 request_focus,
-                name_buffer: (*m.name).clone(),
+                name_buffer: m.name.to_string(),
                 kind_buffer: m.kind,
-                comment_buffer: (*m.comment).clone(),
+                comment_buffer: m.comment.to_string(),
             },
         },
         Vec::new(),
@@ -1983,8 +1969,8 @@ fn new_demopsd_transaction(
     let tx_model = ERef::new(DemoPsdTransaction::new(
         ModelUuid::now_v7(),
         transaction_kind,
-        identifier.to_owned(),
-        name.to_owned(),
+        identifier,
+        name,
         before_models,
         p_act_model,
         after_models,
@@ -2021,9 +2007,9 @@ fn new_demopsd_transaction_view(
 
         request_focus,
         kind_buffer: m.kind,
-        identifier_buffer: (*m.identifier).clone(),
-        name_buffer: (*m.name).clone(),
-        comment_buffer: (*m.comment).to_owned(),
+        identifier_buffer: m.identifier.to_string(),
+        name_buffer: m.name.to_string(),
+        comment_buffer: m.comment.to_string(),
 
         dragged_rect: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -2266,7 +2252,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
+                DemoPsdPropChange::IdentifierChange(self.identifier_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -2277,7 +2263,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                DemoPsdPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
 
@@ -2287,7 +2273,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoPsdPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -3273,8 +3259,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.kind_buffer = model.kind;
-        self.identifier_buffer = (*model.identifier).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.identifier_buffer = model.identifier.to_string();
+        self.comment_buffer = model.comment.to_string();
 
         // Structural refresh
         let views_map = self
@@ -3497,11 +3483,7 @@ fn new_demopsd_fact(
     position: egui::Pos2,
     request_focus: bool,
 ) -> (ERef<DemoPsdFact>, ERef<DemoPsdFactView>) {
-    let model = ERef::new(DemoPsdFact::new(
-        ModelUuid::now_v7(),
-        identifier.to_owned(),
-        internal,
-    ));
+    let model = ERef::new(DemoPsdFact::new(ModelUuid::now_v7(), identifier, internal));
     let view = new_demopsd_fact_view(model.clone(), position, request_focus);
     (model, view)
 }
@@ -3516,9 +3498,9 @@ fn new_demopsd_fact_view(
         model: model.clone(),
 
         request_focus,
-        identifier_buffer: (*r.identifier).clone(),
+        identifier_buffer: r.identifier.to_string(),
         internal_buffer: r.internal,
-        comment_buffer: (*r.comment).clone(),
+        comment_buffer: r.comment.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -3674,7 +3656,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
+                DemoPsdPropChange::IdentifierChange(self.identifier_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -3722,7 +3704,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoPsdPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -3927,9 +3909,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.identifier_buffer = (*model.identifier).clone();
+        self.identifier_buffer = model.identifier.to_string();
         self.internal_buffer = model.internal;
-        self.comment_buffer = (*model.comment).clone();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -3984,11 +3966,7 @@ fn new_demopsd_act(
     position: egui::Pos2,
     request_focus: bool,
 ) -> (ERef<DemoPsdAct>, ERef<DemoPsdActView>) {
-    let model = ERef::new(DemoPsdAct::new(
-        ModelUuid::now_v7(),
-        identifier.to_owned(),
-        internal,
-    ));
+    let model = ERef::new(DemoPsdAct::new(ModelUuid::now_v7(), identifier, internal));
     let view = new_demopsd_act_view(model.clone(), position, request_focus);
     (model, view)
 }
@@ -4003,9 +3981,9 @@ fn new_demopsd_act_view(
         model: model.clone(),
 
         request_focus,
-        identifier_buffer: (*r.identifier).clone(),
+        identifier_buffer: r.identifier.to_string(),
         internal_buffer: r.internal,
-        comment_buffer: (*r.comment).clone(),
+        comment_buffer: r.comment.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -4159,7 +4137,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
+                DemoPsdPropChange::IdentifierChange(self.identifier_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -4207,7 +4185,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoPsdPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -4412,9 +4390,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.identifier_buffer = (*model.identifier).clone();
+        self.identifier_buffer = model.identifier.to_string();
         self.internal_buffer = model.internal;
-        self.comment_buffer = (*model.comment).clone();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -4473,7 +4451,7 @@ fn new_demopsd_link(
     let link_model = ERef::new(DemoPsdLink::new(
         ModelUuid::now_v7(),
         link_type,
-        multiplicity.to_owned().into(),
+        multiplicity,
         source.0,
         target.0,
     ));
@@ -4552,7 +4530,7 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
         _settings: &<DemoPsdDomain as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<DemoPsdDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         Err(self.model.read().multiplicity.clone())
     }
 
@@ -4603,9 +4581,9 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::LinkMultiplicityChange(Arc::new(
-                    self.temporaries.multiplicity_buffer.clone(),
-                )),
+                DemoPsdPropChange::LinkMultiplicityChange(
+                    self.temporaries.multiplicity_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -4615,7 +4593,7 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoPsdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4689,8 +4667,8 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
             .push(*model.target.read().uuid);
 
         self.temporaries.link_type_buffer = model.link_type;
-        self.temporaries.multiplicity_buffer = (*model.multiplicity).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.multiplicity_buffer = model.multiplicity.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -4725,7 +4703,7 @@ pub fn new_demopsd_note(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<DemoPsdNote>, ERef<DemoPsdNoteView>) {
-    let model = ERef::new(DemoPsdNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let model = ERef::new(DemoPsdNote::new(ModelUuid::now_v7(), text));
     let view = new_demopsd_note_view(
         model.clone(),
         position,
@@ -4749,7 +4727,7 @@ pub fn new_demopsd_note_view(
         model: model.clone(),
 
         request_focus,
-        text_buffer: (*m.text).clone(),
+        text_buffer: m.text.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -4839,7 +4817,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoPsdPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                DemoPsdPropChange::NameChange(self.text_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -5219,7 +5197,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdNoteView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.text_buffer = (*model.text).clone();
+        self.text_buffer = model.text.to_string();
     }
 
     fn head_count(

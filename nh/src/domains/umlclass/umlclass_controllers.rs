@@ -47,7 +47,7 @@ use std::{
 pub trait StereotypeController: Default + Clone + Send + Sync + 'static {
     fn show(&mut self, ui: &mut egui::Ui) -> bool;
     fn get_raw(&self) -> String;
-    fn get_arc(&self) -> Arc<String> {
+    fn get_arc(&self) -> Arc<str> {
         self.get_raw().into()
     }
     fn is_valid(&self, _value: &str) -> bool {
@@ -151,25 +151,25 @@ impl UmlClassOrdinalMovement {
 
 #[derive(Clone)]
 pub enum UmlClassPropChange {
-    StereotypeChange(Arc<String>),
+    StereotypeChange(Arc<str>),
 
-    InstanceName(Arc<String>),
-    InstanceType(Arc<String>),
-    InstanceSlots(Arc<String>),
+    InstanceName(Arc<str>),
+    InstanceType(Arc<str>),
+    InstanceSlots(Arc<str>),
 
-    NameChange(Arc<String>),
-    TemplateParametersChange(Arc<String>),
+    NameChange(Arc<str>),
+    TemplateParametersChange(Arc<str>),
     ClassAbstractChange(bool),
     ClassRenderStyleChange(UmlClassRenderStyle),
     ClassSuppressTemplateParameters(bool),
     ClassSuppressProperties(bool),
     ClassSuppressOperations(bool),
 
-    PropertyTypeChange(Arc<String>),
-    PropertyMultiplicityChange(Arc<String>),
-    PropertyDefaultValueChange(Arc<String>),
-    OperationParametersChange(Arc<String>),
-    OperationReturnTypeChange(Arc<String>),
+    PropertyTypeChange(Arc<str>),
+    PropertyMultiplicityChange(Arc<str>),
+    PropertyDefaultValueChange(Arc<str>),
+    OperationParametersChange(Arc<str>),
+    OperationReturnTypeChange(Arc<str>),
     VisibilityChange(UFOption<UmlClassVisibilityKind>),
     IsStaticChange(bool),
     IsDerivedChange(bool),
@@ -180,10 +180,10 @@ pub enum UmlClassPropChange {
     IsAbstractChange(bool),
     IsQueryChange(bool),
 
-    UseCaseExtensionPointsChange(Arc<String>),
+    UseCaseExtensionPointsChange(Arc<str>),
     UseCaseRenderStyleChange(UseCaseRenderStyle),
 
-    SetNameChange(Arc<String>),
+    SetNameChange(Arc<str>),
     SetCoveringChange(bool),
     SetDisjointChange(bool),
 
@@ -191,15 +191,15 @@ pub enum UmlClassPropChange {
 
     LinkNavigabilityChange(/*target?*/ bool, UmlClassAssociationNavigability),
     LinkAggregationChange(/*target?*/ bool, UmlClassAssociationAggregation),
-    LinkMultiplicityChange(/*target?*/ bool, Arc<String>),
-    LinkRoleChange(/*target?*/ bool, Arc<String>),
-    LinkReadingChange(/*target?*/ bool, Arc<String>),
+    LinkMultiplicityChange(/*target?*/ bool, Arc<str>),
+    LinkRoleChange(/*target?*/ bool, Arc<str>),
+    LinkReadingChange(/*target?*/ bool, Arc<str>),
     FlipMulticonnection(FlipMulticonnection),
 
     PackageKindChange(UmlClassPackageKind),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -402,8 +402,8 @@ impl<P: UmlClassProfile> UmlClassDiagramAdapter<P> {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: UmlClassDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
             profile: PhantomData,
         }
@@ -417,7 +417,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -578,24 +578,23 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
 
         Ok(v)
     }
-    fn label_for(&self, e: &UmlClassElement) -> Arc<String> {
+    fn label_for(&self, e: &UmlClassElement) -> Arc<str> {
         match e {
             UmlClassElement::Package(inner) => inner.read().name.clone(),
             UmlClassElement::Instance(inner) => {
                 let r = inner.read();
-                let s = if r.instance_name.is_empty() {
-                    format!(":{}", r.instance_type)
+                if r.instance_name.is_empty() {
+                    format!(":{}", r.instance_type).into()
                 } else {
-                    format!("{}: {}", r.instance_name, r.instance_type)
-                };
-                Arc::new(s)
+                    format!("{}: {}", r.instance_name, r.instance_type).into()
+                }
             }
             UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 if r.stereotype.is_empty() {
                     r.name.clone()
                 } else {
-                    Arc::new(format!("{} «{}»", r.name, r.stereotype))
+                    format!("{} «{}»", r.name, r.stereotype).into()
                 }
             }
             UmlClassElement::Property(inner) => inner.read().name.clone(),
@@ -605,55 +604,50 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 if r.stereotype.is_empty() {
                     r.name.clone()
                 } else {
-                    Arc::new(format!("{} «{}»", r.name, r.stereotype))
+                    format!("{} «{}»", r.name, r.stereotype).into()
                 }
             }
             UmlClassElement::Generalization(inner) => {
                 let r = inner.read();
-                let s = if r.set_name.is_empty() {
-                    "Generalization".to_owned()
+                if r.set_name.is_empty() {
+                    "Generalization".into()
                 } else {
-                    format!("Generalization ({})", r.set_name)
-                };
-                Arc::new(s)
+                    format!("Generalization ({})", r.set_name).into()
+                }
             }
             UmlClassElement::Dependency(inner) => {
                 let r = inner.read();
-                let s = if r.stereotype.is_empty() {
-                    "Dependency".to_owned()
+                if r.stereotype.is_empty() {
+                    "Dependency".into()
                 } else {
-                    format!("Dependency ({})", r.stereotype)
-                };
-                Arc::new(s)
+                    format!("Dependency ({})", r.stereotype).into()
+                }
             }
             UmlClassElement::Association(inner) => {
                 let r = inner.read();
-                let s = if r.stereotype.is_empty() {
-                    "Association".to_owned()
+                if r.stereotype.is_empty() {
+                    "Association".into()
                 } else {
-                    format!("Association «{}»", r.stereotype)
-                };
-                Arc::new(s)
+                    format!("Association «{}»", r.stereotype).into()
+                }
             }
             UmlClassElement::UseCaseGeneralization(inner) => {
                 let r = inner.read();
-                let s = if r.set_name.is_empty() {
-                    "Generalization".to_owned()
+                if r.set_name.is_empty() {
+                    "Generalization".into()
                 } else {
-                    format!("Generalization ({})", r.set_name)
-                };
-                Arc::new(s)
+                    format!("Generalization ({})", r.set_name).into()
+                }
             }
             UmlClassElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
-            UmlClassElement::NoteLink(_inner) => Arc::new("Note Link".to_string()),
+            UmlClassElement::NoteLink(_inner) => "Note Link".into(),
         }
     }
 
@@ -709,7 +703,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlClassPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                UmlClassPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         }
 
@@ -719,7 +713,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlClassPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                UmlClassPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -773,8 +767,8 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -889,11 +883,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(UmlClassDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(UmlClassDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -1210,8 +1200,8 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
         (polygon_model.clone().into(), polygon_view.clone().into()),
         (point_model.clone().into(), point_view.clone().into()),
     );
-    point_assoc_model.write().source_label_multiplicity = Arc::new("0..*".to_owned());
-    point_assoc_model.write().target_label_multiplicity = Arc::new("3..*".to_owned());
+    point_assoc_model.write().source_label_multiplicity = "0..*".into();
+    point_assoc_model.write().target_label_multiplicity = "3..*".into();
     point_assoc_model.write().target_navigability = UmlClassAssociationNavigability::Navigable;
 
     let (note2, note2_view) = new_umlclass_note(
@@ -1248,7 +1238,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram2 = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![
             class_af.into(),
             class_cfx.into(),
@@ -3421,8 +3411,8 @@ pub fn new_umlclass_package<P: UmlClassProfile>(
 ) -> (ERef<UmlClassPackage>, ERef<PackageViewT<P>>) {
     let package_model = ERef::new(UmlClassPackage::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
-        stereotype.to_owned(),
+        name,
+        stereotype,
         kind,
         Vec::new(),
     ));
@@ -3443,12 +3433,12 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
             background_color: MGlobalColor::None,
             temporaries: UmlClassPackageAdapterTemporaries {
                 request_focus,
-                display_text: Arc::new("".to_owned()),
-                name_buffer: (*m.name).clone(),
+                display_text: "".into(),
+                name_buffer: m.name.to_string(),
                 visibility_buffer: m.visibility,
                 stereotype_controller: Default::default(),
                 kind_buffer: m.kind,
-                comment_buffer: (*m.comment).clone(),
+                comment_buffer: m.comment.to_string(),
                 _profile: PhantomData,
             },
         },
@@ -3474,7 +3464,7 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
 #[derive(Clone, Default)]
 struct UmlClassPackageAdapterTemporaries<P: UmlClassProfile> {
     request_focus: bool,
-    display_text: Arc<String>,
+    display_text: Arc<str>,
     name_buffer: String,
     visibility_buffer: UFOption<UmlClassVisibilityKind>,
     stereotype_controller: P::PackageStereotypeController,
@@ -3501,7 +3491,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -3678,7 +3668,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
+    ) -> Result<egui::Rect, (egui::Color32, Arc<str>)> {
         let visibility_size = self.temporaries.visibility_buffer.as_ref().map_or(
             egui::Vec2::ZERO,
             |e| match settings.visibility_style {
@@ -3888,7 +3878,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -3923,9 +3913,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
     }
@@ -4029,10 +4017,10 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         self.temporaries
             .stereotype_controller
             .refresh(&model.stereotype);
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.visibility_buffer = model.visibility;
         self.temporaries.kind_buffer = model.kind;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -4072,10 +4060,10 @@ fn new_umlclass_instance<P: UmlClassProfile>(
 ) -> (ERef<UmlClassInstance>, ERef<UmlClassInstanceView<P>>) {
     let instance_model = ERef::new(UmlClassInstance::new(
         ModelUuid::now_v7(),
-        instance_name.to_owned(),
-        instance_type.to_owned(),
-        stereotype.to_owned(),
-        instance_slots.to_owned(),
+        instance_name,
+        instance_type,
+        stereotype,
+        instance_slots,
     ));
     let instance_view = new_umlclass_instance_view(
         instance_model.clone(),
@@ -4100,11 +4088,11 @@ fn new_umlclass_instance_view<P: UmlClassProfile>(
             request_focus,
             stereotype_in_guillemets: String::new(),
             main_text: String::new(),
-            name_buffer: (*m.instance_name).clone(),
-            type_buffer: (*m.instance_type).clone(),
+            name_buffer: m.instance_name.to_string(),
+            type_buffer: m.instance_type.to_string(),
             stereotype_controller: Default::default(),
-            slots_buffer: (*m.instance_slots).clone(),
-            comment_buffer: (*m.comment).clone(),
+            slots_buffer: m.instance_slots.to_string(),
+            comment_buffer: m.comment.to_string(),
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
             _profile: PhantomData,
@@ -4230,7 +4218,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::InstanceName(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::InstanceName(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -4241,7 +4229,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::InstanceType(Arc::new(self.temporaries.type_buffer.clone())),
+                UmlClassPropChange::InstanceType(self.temporaries.type_buffer.clone().into()),
             ));
         }
 
@@ -4251,7 +4239,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::InstanceSlots(Arc::new(self.temporaries.slots_buffer.clone())),
+                UmlClassPropChange::InstanceSlots(self.temporaries.slots_buffer.clone().into()),
             ));
         }
 
@@ -4261,9 +4249,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4672,13 +4658,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             format!("{}: {}", model.instance_name, model.instance_type)
         };
 
-        self.temporaries.name_buffer = (*model.instance_name).clone();
-        self.temporaries.type_buffer = (*model.instance_type).clone();
+        self.temporaries.name_buffer = model.instance_name.to_string();
+        self.temporaries.type_buffer = model.instance_type.to_string();
         self.temporaries
             .stereotype_controller
             .refresh(&model.stereotype);
-        self.temporaries.slots_buffer = (*model.instance_slots).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.slots_buffer = model.instance_slots.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -4737,11 +4723,11 @@ fn new_umlclass_property<P: UmlClassProfile>(
     let model = ERef::new(UmlClassProperty::new(
         ModelUuid::now_v7(),
         visibility_modifier,
-        name.to_owned(),
-        value_type.to_owned(),
-        multiplicity.to_owned(),
-        default_value.to_owned(),
-        stereotype.to_owned(),
+        name,
+        value_type,
+        multiplicity,
+        default_value,
+        stereotype,
     ));
     let view = new_umlclass_property_view(model.clone(), request_focus);
 
@@ -4762,10 +4748,10 @@ fn new_umlclass_property_view<P: UmlClassProfile>(
             display_text: String::new(),
             visibility_buffer: m.visibility,
             stereotype_controller: Default::default(),
-            name_buffer: (*m.name).clone(),
-            value_type_buffer: (*m.value_type).clone(),
-            multiplicity_buffer: (*m.multiplicity).clone(),
-            default_value_buffer: (*m.default_value).clone(),
+            name_buffer: m.name.to_string(),
+            value_type_buffer: m.value_type.to_string(),
+            multiplicity_buffer: m.multiplicity.to_string(),
+            default_value_buffer: m.default_value.to_string(),
 
             is_static_buffer: m.is_static,
             is_derived_buffer: m.is_derived,
@@ -4972,7 +4958,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -4983,9 +4969,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::PropertyTypeChange(Arc::new(
-                    self.temporaries.value_type_buffer.clone(),
-                )),
+                UmlClassPropChange::PropertyTypeChange(
+                    self.temporaries.value_type_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -4998,9 +4984,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::PropertyMultiplicityChange(Arc::new(
-                    self.temporaries.multiplicity_buffer.clone(),
-                )),
+                UmlClassPropChange::PropertyMultiplicityChange(
+                    self.temporaries.multiplicity_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -5013,9 +4999,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::PropertyDefaultValueChange(Arc::new(
-                    self.temporaries.default_value_buffer.clone(),
-                )),
+                UmlClassPropChange::PropertyDefaultValueChange(
+                    self.temporaries.default_value_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -5361,10 +5347,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         self.temporaries
             .stereotype_controller
             .refresh(&m.stereotype);
-        self.temporaries.name_buffer = (*m.name).clone();
-        self.temporaries.value_type_buffer = (*m.value_type).clone();
-        self.temporaries.multiplicity_buffer = (*m.multiplicity).clone();
-        self.temporaries.default_value_buffer = (*m.default_value).clone();
+        self.temporaries.name_buffer = m.name.to_string();
+        self.temporaries.value_type_buffer = m.value_type.to_string();
+        self.temporaries.multiplicity_buffer = m.multiplicity.to_string();
+        self.temporaries.default_value_buffer = m.default_value.to_string();
 
         self.temporaries.is_static_buffer = m.is_static;
         self.temporaries.is_derived_buffer = m.is_derived;
@@ -5429,10 +5415,10 @@ fn new_umlclass_operation<P: UmlClassProfile>(
     let model = ERef::new(UmlClassOperation::new(
         ModelUuid::now_v7(),
         visibility_modifier,
-        name.to_owned(),
-        parameters.to_owned(),
-        return_type.to_owned(),
-        stereotype.to_owned(),
+        name,
+        parameters,
+        return_type,
+        stereotype,
     ));
     let view = new_umlclass_operation_view(model.clone(), request_focus);
 
@@ -5453,9 +5439,9 @@ fn new_umlclass_operation_view<P: UmlClassProfile>(
             display_text: String::new(),
             visibility_buffer: m.visibility,
             stereotype_controller: Default::default(),
-            name_buffer: (*m.name).clone(),
-            parameters_buffer: (*m.parameters).clone(),
-            return_type_buffer: (*m.return_type).clone(),
+            name_buffer: m.name.to_string(),
+            parameters_buffer: m.parameters.to_string(),
+            return_type_buffer: m.return_type.to_string(),
 
             is_static_buffer: m.is_static,
             is_abstract_buffer: m.is_abstract,
@@ -5664,7 +5650,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -5675,9 +5661,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::OperationParametersChange(Arc::new(
-                    self.temporaries.parameters_buffer.clone(),
-                )),
+                UmlClassPropChange::OperationParametersChange(
+                    self.temporaries.parameters_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -5687,9 +5673,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::OperationReturnTypeChange(Arc::new(
-                    self.temporaries.return_type_buffer.clone(),
-                )),
+                UmlClassPropChange::OperationReturnTypeChange(
+                    self.temporaries.return_type_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -5997,9 +5983,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         self.temporaries
             .stereotype_controller
             .refresh(&m.stereotype);
-        self.temporaries.name_buffer = (*m.name).clone();
-        self.temporaries.parameters_buffer = (*m.parameters).clone();
-        self.temporaries.return_type_buffer = (*m.return_type).clone();
+        self.temporaries.name_buffer = m.name.to_string();
+        self.temporaries.parameters_buffer = m.parameters.to_string();
+        self.temporaries.return_type_buffer = m.return_type.to_string();
 
         self.temporaries.is_static_buffer = m.is_static;
         self.temporaries.is_abstract_buffer = m.is_abstract;
@@ -6065,9 +6051,9 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
 ) -> (ERef<UmlClass>, ERef<UmlClassView<P>>) {
     let class_model = ERef::new(UmlClass::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
-        stereotype.to_owned(),
-        "".to_owned(),
+        name,
+        stereotype,
+        "",
         is_abstract,
         properties.iter().map(|e| e.0.clone()).collect(),
         operations.iter().map(|e| e.0.clone()).collect(),
@@ -6104,11 +6090,11 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
             request_focus,
             stereotype_in_guillemets: None,
             stereotype_controller: Default::default(),
-            name_buffer: (*m.name).clone(),
-            template_parameters_buffer: (*m.template_parameters).clone(),
+            name_buffer: m.name.to_string(),
+            template_parameters_buffer: m.template_parameters.to_string(),
             visibility_buffer: m.visibility,
             is_abstract_buffer: m.is_abstract,
-            comment_buffer: (*m.comment).clone(),
+            comment_buffer: m.comment.to_string(),
 
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
@@ -6166,7 +6152,7 @@ pub struct UmlClassView<P: UmlClassProfile> {
 #[derive(Clone, Default)]
 pub struct UmlClassViewTemporaries<P: UmlClassProfile> {
     request_focus: bool,
-    stereotype_in_guillemets: Option<Arc<String>>,
+    stereotype_in_guillemets: Option<Arc<str>>,
     stereotype_controller: P::ClassStereotypeController,
     name_buffer: String,
     template_parameters_buffer: String,
@@ -6231,9 +6217,9 @@ pub fn draw_uml_class<'a, P: UmlClassProfile>(
     settings: &UmlClassSettings<P>,
     canvas: &'a mut dyn canvas::NHCanvas,
     position: egui::Pos2,
-    top_label: Option<Arc<String>>,
+    top_label: Option<Arc<str>>,
     main_label: &str,
-    bottom_label: Option<Arc<String>>,
+    bottom_label: Option<Arc<str>>,
     visibility_modifier: UFOption<UmlClassVisibilityKind>,
     is_abstract: bool,
     compartments: &[(
@@ -6504,7 +6490,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -6518,9 +6504,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::TemplateParametersChange(Arc::new(
-                    self.temporaries.template_parameters_buffer.clone(),
-                )),
+                UmlClassPropChange::TemplateParametersChange(
+                    self.temporaries.template_parameters_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -6547,9 +6533,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -7541,11 +7525,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         self.temporaries
             .stereotype_controller
             .refresh(&model.stereotype);
-        self.temporaries.name_buffer = (*model.name).clone();
-        self.temporaries.template_parameters_buffer = (*model.template_parameters).clone();
+        self.temporaries.name_buffer = model.name.to_string();
+        self.temporaries.template_parameters_buffer = model.template_parameters.to_string();
         self.temporaries.visibility_buffer = model.visibility;
         self.temporaries.is_abstract_buffer = model.is_abstract;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
 
         // Structural refresh
         let views_map = self
@@ -7706,8 +7690,8 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
 ) -> (ERef<UmlUseCase>, ERef<UmlUseCaseView<P>>) {
     let usecase_model = ERef::new(UmlUseCase::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
-        stereotype.to_owned(),
+        name,
+        stereotype,
         is_abstract,
     ));
     let usecase_view = new_uml_usecase_view(
@@ -7736,10 +7720,10 @@ pub fn new_uml_usecase_view<P: UmlClassProfile>(
             request_focus,
             stereotype_in_guillemets: None,
             stereotype_controller: Default::default(),
-            name_buffer: (*m.name).clone(),
+            name_buffer: m.name.to_string(),
             is_abstract_buffer: m.is_abstract,
-            extension_points_buffer: (*m.extension_points).clone(),
-            comment_buffer: (*m.comment).clone(),
+            extension_points_buffer: m.extension_points.to_string(),
+            comment_buffer: m.comment.to_string(),
 
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
@@ -7785,7 +7769,7 @@ pub struct UmlUseCaseView<P: UmlClassProfile> {
 #[derive(Clone, Default)]
 struct UmlUseCaseViewTemporaries<P: UmlClassProfile> {
     request_focus: bool,
-    stereotype_in_guillemets: Option<Arc<String>>,
+    stereotype_in_guillemets: Option<Arc<str>>,
     stereotype_controller: P::UseCaseStereotypeController,
     name_buffer: String,
     is_abstract_buffer: bool,
@@ -7873,7 +7857,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -7897,9 +7881,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::UseCaseExtensionPointsChange(Arc::new(
-                    self.temporaries.extension_points_buffer.clone(),
-                )),
+                UmlClassPropChange::UseCaseExtensionPointsChange(
+                    self.temporaries.extension_points_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -7909,9 +7893,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -8345,10 +8327,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         self.temporaries
             .stereotype_controller
             .refresh(&model.stereotype);
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.is_abstract_buffer = model.is_abstract;
-        self.temporaries.extension_points_buffer = (*model.extension_points).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.extension_points_buffer = model.extension_points.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -8404,7 +8386,7 @@ pub fn new_umlclass_generalization<P: UmlClassProfile>(
 ) -> (ERef<UmlClassGeneralization>, ERef<GeneralizationViewT<P>>) {
     let link_model = ERef::new(UmlClassGeneralization::new(
         ModelUuid::now_v7(),
-        set_name.to_owned(),
+        set_name,
         vec![source.0],
         vec![target.0],
     ));
@@ -8461,7 +8443,7 @@ pub struct UmlClassGeneralizationAdapter {
 
 #[derive(Clone, Default)]
 struct UmlClassGeneralizationTemporaries {
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
@@ -8493,7 +8475,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         match self.temporaries.midpoint_label.clone() {
             None => Ok(()),
             Some(label) => Err(label),
@@ -8588,9 +8570,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::SetNameChange(Arc::new(
-                    self.temporaries.set_name_buffer.clone(),
-                )),
+                UmlClassPropChange::SetNameChange(self.temporaries.set_name_buffer.clone().into()),
             ));
         }
         if ui
@@ -8619,9 +8599,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -8706,7 +8684,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             None
         };
         self.temporaries.midpoint_label = if let Some(spl) = set_props_label {
-            Some(Arc::new(format!("{}\n{}", model.set_name, spl)))
+            Some(format!("{}\n{}", model.set_name, spl).into())
         } else if !model.set_name.is_empty() {
             Some(model.set_name.clone())
         } else {
@@ -8739,10 +8717,10 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             self.temporaries.target_uuids.push(*e.read().uuid);
         }
 
-        self.temporaries.set_name_buffer = (*model.set_name).clone();
+        self.temporaries.set_name_buffer = model.set_name.to_string();
         self.temporaries.set_is_covering_buffer = model.set_is_covering;
         self.temporaries.set_is_disjoint_buffer = model.set_is_disjoint;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -8772,7 +8750,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
     }
 }
 
-pub fn stereotype_name_format(stereotype: &str, name: &str) -> Option<Arc<String>> {
+pub fn stereotype_name_format(stereotype: &str, name: &str) -> Option<Arc<str>> {
     if stereotype.is_empty() && name.is_empty() {
         None
     } else {
@@ -8802,8 +8780,8 @@ pub fn new_umlclass_dependency<P: UmlClassProfile>(
 ) -> (ERef<UmlClassDependency>, ERef<DependencyViewT<P>>) {
     let link_model = ERef::new(UmlClassDependency::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         source.0,
         target.0,
         target_arrow_open,
@@ -8852,7 +8830,7 @@ struct UmlClassDependencyTemporaries<P: UmlClassProfile> {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     stereotype_controller: P::DependencyStereotypeController,
     name_buffer: String,
     target_arrow_open_buffer: bool,
@@ -8881,7 +8859,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         match self.temporaries.midpoint_label.clone() {
             None => Ok(()),
             Some(label) => Err(label),
@@ -8933,7 +8911,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         ui.separator();
@@ -8966,9 +8944,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -9062,9 +9038,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         self.temporaries
             .stereotype_controller
             .refresh(&model.stereotype);
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.target_arrow_open_buffer = model.target_arrow_open;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -9105,12 +9081,12 @@ pub fn new_umlclass_association<P: UmlClassProfile>(
 ) -> (ERef<UmlClassAssociation>, ERef<AssociationViewT<P>>) {
     let link_model = ERef::new(UmlClassAssociation::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         source.0,
-        source_label_multiplicity.to_owned(),
+        source_label_multiplicity,
         target.0,
-        target_label_multiplicity.to_owned(),
+        target_label_multiplicity,
     ));
     let link_view =
         new_umlclass_association_view(link_model.clone(), center_point, source.1, target.1);
@@ -9156,7 +9132,7 @@ struct UmlClassAssociationTemporaries<P: UmlClassProfile> {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     stereotype_controller: P::AssociationStereotypeController,
     name_buffer: String,
     source_multiplicity_buffer: String,
@@ -9194,7 +9170,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         match self.temporaries.midpoint_label.clone() {
             None => Ok(()),
             Some(label) => Err(label),
@@ -9246,7 +9222,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         ui.separator();
@@ -9262,7 +9238,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 q.selected_views(),
                 UmlClassPropChange::LinkMultiplicityChange(
                     false,
-                    Arc::new(self.temporaries.source_multiplicity_buffer.clone()),
+                    self.temporaries.source_multiplicity_buffer.clone().into(),
                 ),
             ));
         }
@@ -9274,7 +9250,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 q.selected_views(),
                 UmlClassPropChange::LinkRoleChange(
                     false,
-                    Arc::new(self.temporaries.source_role_buffer.clone()),
+                    self.temporaries.source_role_buffer.clone().into(),
                 ),
             ));
         }
@@ -9289,7 +9265,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 q.selected_views(),
                 UmlClassPropChange::LinkReadingChange(
                     false,
-                    Arc::new(self.temporaries.source_reading_buffer.clone()),
+                    self.temporaries.source_reading_buffer.clone().into(),
                 ),
             ));
         }
@@ -9360,7 +9336,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 q.selected_views(),
                 UmlClassPropChange::LinkMultiplicityChange(
                     true,
-                    Arc::new(self.temporaries.target_multiplicity_buffer.clone()),
+                    self.temporaries.target_multiplicity_buffer.clone().into(),
                 ),
             ));
         }
@@ -9372,7 +9348,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 q.selected_views(),
                 UmlClassPropChange::LinkRoleChange(
                     true,
-                    Arc::new(self.temporaries.target_role_buffer.clone()),
+                    self.temporaries.target_role_buffer.clone().into(),
                 ),
             ));
         }
@@ -9387,7 +9363,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
                 q.selected_views(),
                 UmlClassPropChange::LinkReadingChange(
                     true,
-                    Arc::new(self.temporaries.target_reading_buffer.clone()),
+                    self.temporaries.target_reading_buffer.clone().into(),
                 ),
             ));
         }
@@ -9461,9 +9437,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -9685,18 +9659,18 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         self.temporaries
             .stereotype_controller
             .refresh(&model.stereotype);
-        self.temporaries.name_buffer = (*model.name).clone();
-        self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
-        self.temporaries.source_role_buffer = (*model.source_label_role).clone();
-        self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
+        self.temporaries.name_buffer = model.name.to_string();
+        self.temporaries.source_multiplicity_buffer = model.source_label_multiplicity.to_string();
+        self.temporaries.source_role_buffer = model.source_label_role.to_string();
+        self.temporaries.source_reading_buffer = model.source_label_reading.to_string();
         self.temporaries.source_navigability_buffer = model.source_navigability;
         self.temporaries.source_aggregation_buffer = model.source_aggregation;
-        self.temporaries.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
-        self.temporaries.target_role_buffer = (*model.target_label_role).clone();
-        self.temporaries.target_reading_buffer = (*model.target_label_reading).clone();
+        self.temporaries.target_multiplicity_buffer = model.target_label_multiplicity.to_string();
+        self.temporaries.target_role_buffer = model.target_label_role.to_string();
+        self.temporaries.target_reading_buffer = model.target_label_reading.to_string();
         self.temporaries.target_navigability_buffer = model.target_navigability;
         self.temporaries.target_aggregation_buffer = model.target_aggregation;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -9792,7 +9766,7 @@ pub struct UmlUseCaseGeneralizationAdapter {
 
 #[derive(Clone, Default)]
 struct UmlUseCaseGeneralizationTemporaries {
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
@@ -9824,7 +9798,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         match self.temporaries.midpoint_label.clone() {
             None => Ok(()),
             Some(label) => Err(label),
@@ -9917,9 +9891,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::SetNameChange(Arc::new(
-                    self.temporaries.set_name_buffer.clone(),
-                )),
+                UmlClassPropChange::SetNameChange(self.temporaries.set_name_buffer.clone().into()),
             ));
         }
         if ui
@@ -9948,9 +9920,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlClassPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -10032,7 +10002,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             None
         };
         self.temporaries.midpoint_label = if let Some(spl) = set_props_label {
-            Some(Arc::new(format!("{}\n{}", model.set_name, spl)))
+            Some(format!("{}\n{}", model.set_name, spl).into())
         } else if !model.set_name.is_empty() {
             Some(model.set_name.clone())
         } else {
@@ -10065,10 +10035,10 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>>
             self.temporaries.target_uuids.push(*e.read().uuid);
         }
 
-        self.temporaries.set_name_buffer = (*model.set_name).clone();
+        self.temporaries.set_name_buffer = model.set_name.to_string();
         self.temporaries.set_is_covering_buffer = model.set_is_covering;
         self.temporaries.set_is_disjoint_buffer = model.set_is_disjoint;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -10107,11 +10077,7 @@ pub fn new_umlclass_note<P: UmlClassProfile>(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<UmlClassNote>, ERef<UmlClassNoteView<P>>) {
-    let model = ERef::new(UmlClassNote::new(
-        ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        text.to_owned(),
-    ));
+    let model = ERef::new(UmlClassNote::new(ModelUuid::now_v7(), stereotype, text));
     let view = new_umlclass_note_view(
         model.clone(),
         position,
@@ -10138,7 +10104,7 @@ pub fn new_umlclass_note_view<P: UmlClassProfile>(
             request_focus,
             display_text: String::new(),
             stereotype_controller: Default::default(),
-            text_buffer: (*m.text).clone(),
+            text_buffer: m.text.to_string(),
 
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
@@ -10258,7 +10224,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
+                UmlClassPropChange::NameChange(self.temporaries.text_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -10710,7 +10676,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassNo
         self.temporaries
             .stereotype_controller
             .refresh(&model.stereotype);
-        self.temporaries.text_buffer = (*model.text).clone();
+        self.temporaries.text_buffer = model.text.to_string();
     }
 
     fn head_count(

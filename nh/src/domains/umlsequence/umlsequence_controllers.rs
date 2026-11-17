@@ -92,8 +92,8 @@ impl UmlSequenceOrdinalMovement {
 
 #[derive(Clone)]
 pub enum UmlSequencePropChange {
-    NameChange(Arc<String>),
-    StereotypeChange(Arc<String>),
+    NameChange(Arc<str>),
+    StereotypeChange(Arc<str>),
 
     ShowActivationsChange(bool),
 
@@ -101,16 +101,16 @@ pub enum UmlSequencePropChange {
     LifecycleKindChange(UmlSequenceMessageLifecycleKind),
     IsReturnChange(bool),
     DurationChange(f32),
-    StateInvariantChange(Arc<String>),
+    StateInvariantChange(Arc<str>),
     FlipMulticonnection(FlipMulticonnection),
 
     CombinedFragmentKindChange(UmlSequenceCombinedFragmentKind),
-    CombinedFragmentKindArgumentChange(Arc<String>),
-    CombinedFragmentSectionGuardChange(Arc<String>),
+    CombinedFragmentKindArgumentChange(Arc<str>),
+    CombinedFragmentSectionGuardChange(Arc<str>),
     ActivationsBehaviourChange(UmlSequenceActivationBehaviour),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -628,8 +628,8 @@ impl UmlSequenceDiagramBoardAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: UmlSequenceDiagramBoardBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -642,7 +642,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -763,64 +763,59 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &UmlSequenceElement) -> Arc<String> {
+    fn label_for(&self, e: &UmlSequenceElement) -> Arc<str> {
         match e {
             UmlSequenceElement::Diagram(inner) => {
                 format!("Diagram ({})", LabelProvider::sanitize(&inner.read().name),).into()
             }
             UmlSequenceElement::CombinedFragment(inner) => {
                 let r = inner.read();
-                Arc::new(combined_fragment_display_text(r.kind, &r.kind_argument))
+                combined_fragment_display_text(r.kind, &r.kind_argument).into()
             }
             UmlSequenceElement::CombinedFragmentSection(inner) => {
                 let r = inner.read();
-                let s = if r.guard.is_empty() {
-                    "Section".to_owned()
+                if r.guard.is_empty() {
+                    "Section".into()
                 } else {
-                    format!("Section ([{}])", r.guard)
-                };
-                Arc::new(s)
+                    format!("Section ([{}])", r.guard).into()
+                }
             }
             UmlSequenceElement::Lifeline(inner) => {
                 format!("Lifeline ({})", LabelProvider::sanitize(&inner.read().name),).into()
             }
             UmlSequenceElement::Message(inner) => {
                 let r = inner.read();
-                let s = if r.name.is_empty() {
-                    "Message".to_owned()
+                if r.name.is_empty() {
+                    "Message".into()
                 } else {
-                    format!("Message ({})", r.name)
-                };
-                Arc::new(s)
+                    format!("Message ({})", r.name).into()
+                }
             }
             UmlSequenceElement::Ref(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Ref".to_owned()
+                if r.text.is_empty() {
+                    "Ref".into()
                 } else {
-                    format!("Ref ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Ref ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
             UmlSequenceElement::DurationConstraint(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Duration Constraint".to_owned()
+                if r.text.is_empty() {
+                    "Duration Constraint".into()
                 } else {
-                    format!("Duration Constraint ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Duration Constraint ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
             UmlSequenceElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
-            UmlSequenceElement::NoteLink(_inner) => Arc::new("Note Link".to_string()),
+            UmlSequenceElement::NoteLink(_inner) => "Note Link".into(),
         }
     }
 
@@ -886,7 +881,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlSequencePropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                UmlSequencePropChange::NameChange(self.buffer.name.clone().into()),
             ));
         }
 
@@ -896,7 +891,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlSequencePropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                UmlSequencePropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -950,8 +945,8 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -1034,7 +1029,7 @@ fn new_controlller(
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(UmlSequenceDiagramBoard::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![],
     ));
     new_controlller(diagram, name.to_owned(), vec![])
@@ -1166,7 +1161,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(UmlSequenceDiagramBoard::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![diagram_model.into()],
     ));
     new_controlller(diagram, name.to_owned(), vec![diagram_view.into()])
@@ -2538,7 +2533,7 @@ pub fn new_umlsequence_diagram(
     let (standalone_models, standalone_views) = standalone.into_iter().collect();
     let diagram_model = ERef::new(UmlSequenceDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         lifeline_models,
         horizontal_models,
         standalone_models,
@@ -2573,7 +2568,7 @@ pub fn new_umlsequence_diagram_view(
         standalone_views,
         temporaries: UmlSequenceDiagramViewTemporaries {
             request_focus,
-            name_buffer: (*r.name).clone(),
+            name_buffer: r.name.to_string(),
             highlight: canvas::Highlight::from_selected(request_focus),
             ..Default::default()
         },
@@ -2796,9 +2791,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             {
                 commands.push(InsensitiveCommand::PropertyChange(
                     q.selected_views(),
-                    UmlSequencePropChange::NameChange(Arc::new(
-                        self.temporaries.name_buffer.clone(),
-                    )),
+                    UmlSequencePropChange::NameChange(self.temporaries.name_buffer.clone().into()),
                 ));
             }
             self.temporaries.request_focus = false;
@@ -2809,9 +2802,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             {
                 commands.push(InsensitiveCommand::PropertyChange(
                     q.selected_views(),
-                    UmlSequencePropChange::CommentChange(Arc::new(
-                        self.temporaries.comment_buffer.clone(),
-                    )),
+                    UmlSequencePropChange::CommentChange(
+                        self.temporaries.comment_buffer.clone().into(),
+                    ),
                 ));
             }
 
@@ -4051,8 +4044,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         let r = self.model.read();
 
         self.temporaries.display_text = format!("sd: {}", r.name);
-        self.temporaries.name_buffer = (*r.name).clone();
-        self.temporaries.comment_buffer = (*r.comment).clone();
+        self.temporaries.name_buffer = r.name.to_string();
+        self.temporaries.comment_buffer = r.comment.to_string();
     }
 
     fn head_count(
@@ -4237,7 +4230,7 @@ pub fn new_umlsequence_combinedfragment(
     let package_model = ERef::new(UmlSequenceCombinedFragment::new(
         ModelUuid::now_v7(),
         kind,
-        kind_argument.to_owned(),
+        kind_argument,
         end_behaviour,
         horizontal_span,
         section_models,
@@ -4709,9 +4702,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::CombinedFragmentKindArgumentChange(Arc::new(
-                    self.temporaries.kind_argument_buffer.clone(),
-                )),
+                UmlSequencePropChange::CombinedFragmentKindArgumentChange(
+                    self.temporaries.kind_argument_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -4758,9 +4751,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlSequencePropChange::CommentChange(
+                    self.temporaries.comment_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -5112,9 +5105,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         self.temporaries.display_text =
             combined_fragment_display_text(model.kind, &model.kind_argument);
         self.temporaries.kind_buffer = model.kind;
-        self.temporaries.kind_argument_buffer = (*model.kind_argument).clone();
+        self.temporaries.kind_argument_buffer = model.kind_argument.to_string();
         self.temporaries.end_behaviour_buffer = model.end_behaviour;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -5236,7 +5229,7 @@ pub fn new_umlsequence_combinedfragmentsection(
     let (child_models, child_views) = horizontals.into_iter().collect();
     let section_model = ERef::new(UmlSequenceCombinedFragmentSection::new(
         ModelUuid::now_v7(),
-        guard.to_owned(),
+        guard,
         child_models,
     ));
     let section_view =
@@ -6014,7 +6007,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         } else {
             format!("[{}]", r.guard)
         };
-        self.temporaries.guard_buffer = (*r.guard).clone();
+        self.temporaries.guard_buffer = r.guard.to_string();
     }
 
     fn head_count(
@@ -6121,8 +6114,8 @@ pub fn new_umlsequence_lifeline(
 ) -> (ERef<UmlSequenceLifeline>, ERef<UmlSequenceLifelineView>) {
     let class_model = ERef::new(UmlSequenceLifeline::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
-        stereotype.to_owned(),
+        name,
+        stereotype,
     ));
     let class_view = new_umlsequence_lifeline_view(
         class_model.clone(),
@@ -6146,9 +6139,9 @@ pub fn new_umlsequence_lifeline_view(
 
         request_focus,
         stereotype_in_guillemets: None,
-        stereotype_buffer: (*m.stereotype).clone(),
-        name_buffer: (*m.name).clone(),
-        comment_buffer: (*m.comment).clone(),
+        stereotype_buffer: m.stereotype.to_string(),
+        name_buffer: m.name.to_string(),
+        comment_buffer: m.comment.to_string(),
 
         highlight: canvas::Highlight::from_selected(request_focus),
         bounds_rect: egui::Rect::ZERO,
@@ -6205,7 +6198,7 @@ pub struct UmlSequenceLifelineView {
     #[nh_context_serde(skip_and_default)]
     request_focus: bool,
     #[nh_context_serde(skip_and_default)]
-    stereotype_in_guillemets: Option<Arc<String>>,
+    stereotype_in_guillemets: Option<Arc<str>>,
     #[nh_context_serde(skip_and_default)]
     stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -6603,9 +6596,9 @@ impl ElementController<UmlSequenceElement> for UmlSequenceLifelineView {
 pub fn draw_simple_uml_class(
     canvas: &mut dyn canvas::NHCanvas,
     position: egui::Pos2,
-    top_label: Option<Arc<String>>,
+    top_label: Option<Arc<str>>,
     main_label: &str,
-    bottom_label: Option<Arc<String>>,
+    bottom_label: Option<Arc<str>>,
     is_collection: bool,
     fill: egui::Color32,
     stroke: canvas::Stroke,
@@ -6749,7 +6742,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlSequencePropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -6775,7 +6768,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlSequencePropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -6965,9 +6958,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
             Some(format!("«{}»", model.stereotype).into())
         };
 
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.name_buffer = model.name.to_string();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -7033,8 +7026,8 @@ pub fn new_umlsequence_message(
 ) -> (ERef<UmlSequenceMessage>, ERef<UmlSequenceMessageView>) {
     let link_model = ERef::new(UmlSequenceMessage::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
-        state_invariant.to_owned(),
+        name,
+        state_invariant,
         synchronicity,
         lifecycle,
         is_return,
@@ -7364,7 +7357,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                UmlSequencePropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
 
@@ -7468,9 +7461,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::StateInvariantChange(Arc::new(
-                    self.temporaries.state_invariant_buffer.clone(),
-                )),
+                UmlSequencePropChange::StateInvariantChange(
+                    self.temporaries.state_invariant_buffer.clone().into(),
+                ),
             ));
         }
         ui.separator();
@@ -7503,9 +7496,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlSequencePropChange::CommentChange(
+                    self.temporaries.comment_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -7710,7 +7703,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             .push(*model.target.read().uuid());
 
         self.temporaries.display_text = match model.lifecycle {
-            UmlSequenceMessageLifecycleKind::None => (*model.name).clone(),
+            UmlSequenceMessageLifecycleKind::None => model.name.to_string(),
             UmlSequenceMessageLifecycleKind::Create => {
                 format!("«create»\n{}", model.name).trim().to_string()
             }
@@ -7723,13 +7716,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         } else {
             format!("{{{}}}", model.state_invariant)
         };
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.synchronicity_kind_buffer = model.synchronicity;
         self.temporaries.lifecycle_kind_buffer = model.lifecycle;
         self.temporaries.is_return_buffer = model.is_return;
         self.temporaries.duration_buffer = model.duration;
-        self.temporaries.state_invariant_buffer = (*model.state_invariant).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.state_invariant_buffer = model.state_invariant.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -7805,7 +7798,7 @@ pub fn new_umlsequence_ref(
 ) -> (ERef<UmlSequenceRef>, ERef<UmlSequenceRefView>) {
     let model = ERef::new(UmlSequenceRef::new(
         ModelUuid::now_v7(),
-        text.to_owned(),
+        text,
         horizontal_span,
     ));
     let view = new_umlsequence_ref_view(model.clone(), request_focus);
@@ -7823,7 +7816,7 @@ pub fn new_umlsequence_ref_view(
 
         temporaries: UmlSequenceRefViewTemporaries {
             request_focus,
-            text_buffer: (*r.text).clone(),
+            text_buffer: r.text.to_string(),
             highlight: canvas::Highlight::from_selected(request_focus),
             ..Default::default()
         },
@@ -8119,7 +8112,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
+                UmlSequencePropChange::NameChange(self.temporaries.text_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -8226,7 +8219,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.temporaries.text_buffer = (*model.text).clone();
+        self.temporaries.text_buffer = model.text.to_string();
     }
 
     fn head_count(
@@ -8284,7 +8277,7 @@ pub fn new_umlsequence_durationconstraint(
 ) {
     let link_model = ERef::new(UmlSequenceDurationConstraint::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         (source.0, source.1),
         (target.0, target.1),
     ));
@@ -8497,7 +8490,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
+                UmlSequencePropChange::NameChange(self.temporaries.text_buffer.clone().into()),
             ));
         }
 
@@ -8507,9 +8500,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::CommentChange(Arc::new(
-                    self.temporaries.comment_buffer.clone(),
-                )),
+                UmlSequencePropChange::CommentChange(
+                    self.temporaries.comment_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -8635,8 +8628,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDurationConstraintV
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.temporaries.text_buffer = (*model.text).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.text_buffer = model.text.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -8712,7 +8705,7 @@ pub fn new_umlsequence_note(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<UmlSequenceNote>, ERef<UmlSequenceNoteView>) {
-    let model = ERef::new(UmlSequenceNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let model = ERef::new(UmlSequenceNote::new(ModelUuid::now_v7(), text));
     let view = new_umlsequence_note_view(
         model.clone(),
         position,
@@ -8736,7 +8729,7 @@ pub fn new_umlsequence_note_view(
         model: model.clone(),
 
         request_focus,
-        text_buffer: (*m.text).clone(),
+        text_buffer: m.text.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -8830,7 +8823,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlSequencePropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                UmlSequencePropChange::NameChange(self.text_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -9227,7 +9220,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.text_buffer = (*model.text).clone();
+        self.text_buffer = model.text.to_string();
     }
 
     fn head_count(
@@ -9258,7 +9251,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceNoteView {
         let modelish = if let Some(UmlSequenceElement::Note(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlSequenceNote::new(model_uuid, (*old_model.text).clone()));
+            let modelish = ERef::new(UmlSequenceNote::new(model_uuid, &old_model.text));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };

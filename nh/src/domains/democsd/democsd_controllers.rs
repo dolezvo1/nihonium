@@ -67,8 +67,8 @@ pub enum DemoCsdOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum DemoCsdPropChange {
-    NameChange(Arc<String>),
-    IdentifierChange(Arc<String>),
+    NameChange(Arc<str>),
+    IdentifierChange(Arc<str>),
     TransactorSelfactivatingChange(bool),
     TransactorInternalChange(bool),
     TransactorCompositeChange(bool),
@@ -77,12 +77,12 @@ pub enum DemoCsdPropChange {
     TransactionMultipleChange(bool),
 
     LinkTypeChange(DemoCsdLinkType),
-    LinkMultiplicityChange(Arc<String>),
+    LinkMultiplicityChange(Arc<str>),
 
     PackageKindChange(DemoPackageKind),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -273,8 +273,8 @@ impl DemoCsdDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: DemoCsdDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -287,7 +287,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -347,37 +347,38 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         Ok(v)
     }
 
-    fn label_for(&self, e: &DemoCsdElement) -> Arc<String> {
+    fn label_for(&self, e: &DemoCsdElement) -> Arc<str> {
         match e {
             DemoCsdElement::Package(inner) => {
                 let r = inner.read();
-                Arc::new(format!("Package ({})", LabelProvider::sanitize(&r.name),))
+                format!("Package ({})", LabelProvider::sanitize(&r.name)).into()
             }
             DemoCsdElement::Transactor(inner) => {
                 let r = inner.read();
-                Arc::new(format!(
+                format!(
                     "Transactor {} ({})",
                     r.identifier,
                     LabelProvider::sanitize(&r.name)
-                ))
+                )
+                .into()
             }
             DemoCsdElement::Transaction(inner) => {
                 let r = inner.read();
-                Arc::new(format!(
+                format!(
                     "Transaction {} ({})",
                     r.identifier,
                     LabelProvider::sanitize(&r.name),
-                ))
+                )
+                .into()
             }
-            DemoCsdElement::Link(inner) => Arc::new(inner.read().link_type.as_str().to_owned()),
+            DemoCsdElement::Link(inner) => inner.read().link_type.as_str().into(),
             DemoCsdElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
         }
     }
@@ -426,7 +427,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                DemoCsdPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                DemoCsdPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         };
 
@@ -436,7 +437,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                DemoCsdPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                DemoCsdPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -486,8 +487,8 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -568,11 +569,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(DemoCsdDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(DemoCsdDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -687,11 +684,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(access_link.1.into());
 
     {
-        let diagram = ERef::new(DemoCsdDiagram::new(
-            ModelUuid::now_v7(),
-            name.to_owned(),
-            models,
-        ));
+        let diagram = ERef::new(DemoCsdDiagram::new(ModelUuid::now_v7(), name, models));
         new_controlller(diagram, name.to_owned(), controllers)
     }
 }
@@ -1745,7 +1738,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -1792,7 +1785,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                DemoCsdPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -1819,7 +1812,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoCsdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
     }
@@ -1865,8 +1858,8 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = model.name.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -1901,12 +1894,7 @@ fn new_democsd_package(
     bounds_rect: egui::Rect,
     request_focus: bool,
 ) -> (ERef<DemoCsdPackage>, ERef<PackageViewT>) {
-    let graph_model = ERef::new(DemoCsdPackage::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        kind,
-        vec![],
-    ));
+    let graph_model = ERef::new(DemoCsdPackage::new(ModelUuid::now_v7(), name, kind, vec![]));
     let graph_view = new_democsd_package_view(graph_model.clone(), bounds_rect, request_focus);
 
     (graph_model, graph_view)
@@ -1923,9 +1911,9 @@ fn new_democsd_package_view(
             model: model.clone(),
             temporaries: DemoCsdPackageAdapterTemporaries {
                 request_focus,
-                name_buffer: (*m.name).clone(),
+                name_buffer: m.name.to_string(),
                 kind_buffer: m.kind,
-                comment_buffer: (*m.comment).clone(),
+                comment_buffer: m.comment.to_string(),
             },
         },
         Vec::new(),
@@ -1948,8 +1936,8 @@ fn new_democsd_transactor(
 ) -> (ERef<DemoCsdTransactor>, ERef<DemoCsdTransactorView>) {
     let ta_model = ERef::new(DemoCsdTransactor::new(
         ModelUuid::now_v7(),
-        identifier.to_owned(),
-        name.to_owned(),
+        identifier,
+        name,
         internal,
         composite,
         transaction.as_ref().map(|t| t.0.clone()),
@@ -1977,12 +1965,12 @@ fn new_democsd_transactor_view(
         transaction_view: transaction.into(),
 
         request_focus,
-        identifier_buffer: (*m.identifier).clone(),
-        name_buffer: (*m.name).clone(),
+        identifier_buffer: m.identifier.to_string(),
+        name_buffer: m.name.to_string(),
         internal_buffer: m.internal,
         composite_buffer: m.composite,
         transaction_selfactivating_buffer: m.transaction_selfactivating,
-        comment_buffer: (*m.comment).clone(),
+        comment_buffer: m.comment.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -2120,7 +2108,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
+                DemoCsdPropChange::IdentifierChange(self.identifier_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -2131,7 +2119,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                DemoCsdPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
 
@@ -2173,7 +2161,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoCsdPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -2202,12 +2190,12 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.identifier_buffer = (*model.identifier).clone();
-        self.name_buffer = (*model.name).clone();
+        self.identifier_buffer = model.identifier.to_string();
+        self.name_buffer = model.name.to_string();
         self.internal_buffer = model.internal;
         self.composite_buffer = model.composite;
         self.transaction_selfactivating_buffer = model.transaction_selfactivating;
-        self.comment_buffer = (*model.comment).clone();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn draw_in(
@@ -2960,8 +2948,8 @@ fn new_democsd_transaction(
     let tx_model = ERef::new(DemoCsdTransaction::new(
         ModelUuid::now_v7(),
         kind,
-        identifier.to_owned(),
-        name.to_owned(),
+        identifier,
+        name,
         multiple,
     ));
     let tx_view = new_democsd_transaction_view(tx_model.clone(), position, actor, request_focus);
@@ -2980,10 +2968,10 @@ fn new_democsd_transaction_view(
 
         request_focus,
         kind_buffer: m.kind,
-        identifier_buffer: (*m.identifier).clone(),
-        name_buffer: (*m.name).to_owned(),
+        identifier_buffer: m.identifier.to_string(),
+        name_buffer: m.name.to_string(),
         multiple_buffer: m.multiple,
-        comment_buffer: (*m.comment).to_owned(),
+        comment_buffer: m.comment.to_string(),
 
         dragged: false,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -3165,7 +3153,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
+                DemoCsdPropChange::IdentifierChange(self.identifier_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -3176,7 +3164,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                DemoCsdPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
 
@@ -3196,7 +3184,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoCsdPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -3444,10 +3432,10 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.kind_buffer = model.kind;
-        self.identifier_buffer = (*model.identifier).clone();
-        self.name_buffer = (*model.name).clone();
+        self.identifier_buffer = model.identifier.to_string();
+        self.name_buffer = model.name.to_string();
         self.multiple_buffer = model.multiple;
-        self.comment_buffer = (*model.comment).clone();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -3508,7 +3496,7 @@ fn new_democsd_link(
     let link_model = ERef::new(DemoCsdLink::new(
         ModelUuid::now_v7(),
         link_type,
-        multiplicity.to_owned().into(),
+        multiplicity,
         source.0,
         target.0,
     ));
@@ -3622,9 +3610,9 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::LinkMultiplicityChange(Arc::new(
-                    self.temporaries.multiplicity_buffer.clone(),
-                )),
+                DemoCsdPropChange::LinkMultiplicityChange(
+                    self.temporaries.multiplicity_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -3634,7 +3622,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoCsdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -3721,8 +3709,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             .push(*model.target.read().uuid);
 
         self.temporaries.link_type_buffer = model.link_type;
-        self.temporaries.multiplicity_buffer = (*model.multiplicity).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.multiplicity_buffer = model.multiplicity.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -3757,7 +3745,7 @@ pub fn new_democsd_note(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<DemoCsdNote>, ERef<DemoCsdNoteView>) {
-    let model = ERef::new(DemoCsdNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let model = ERef::new(DemoCsdNote::new(ModelUuid::now_v7(), text));
     let view = new_democsd_note_view(
         model.clone(),
         position,
@@ -3781,7 +3769,7 @@ pub fn new_democsd_note_view(
         model: model.clone(),
 
         request_focus,
-        text_buffer: (*m.text).clone(),
+        text_buffer: m.text.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -3871,7 +3859,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoCsdPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                DemoCsdPropChange::NameChange(self.text_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -4251,7 +4239,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdNoteView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.text_buffer = (*model.text).clone();
+        self.text_buffer = model.text.to_string();
     }
 
     fn head_count(

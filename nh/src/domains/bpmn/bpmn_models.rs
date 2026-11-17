@@ -662,24 +662,24 @@ impl BpmnEvent {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct BpmnDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<BpmnStandaloneElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl BpmnDiagram {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         contained_elements: Vec<BpmnStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -1007,18 +1007,18 @@ pub struct BpmnTask {
     pub uuid: Arc<ModelUuid>,
     pub kind: BpmnTaskKind,
     pub is_call: bool,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub attached_events: Vec<ERef<BpmnBoundaryIntermediateEvent>>,
 }
 
 impl BpmnTask {
-    pub fn new(uuid: ModelUuid, kind: BpmnTaskKind, is_call: bool, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, kind: BpmnTaskKind, is_call: bool, name: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
             is_call,
-            name: Arc::new(name),
+            name: name.into(),
             attached_events: Vec::new(),
         }
     }
@@ -1152,7 +1152,7 @@ impl BpmnSubprocessKind {
 pub struct BpmnSubprocess {
     pub uuid: Arc<ModelUuid>,
     pub kind: BpmnSubprocessKind,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<BpmnStandaloneElement>,
     #[nh_context_serde(entity)]
@@ -1166,13 +1166,13 @@ impl BpmnSubprocess {
     pub fn new(
         uuid: ModelUuid,
         kind: BpmnSubprocessKind,
-        name: String,
+        name: &str,
         contained_elements: Vec<BpmnStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
             attached_events: Vec::new(),
         }
@@ -1393,7 +1393,7 @@ pub struct BpmnStartEvent {
     pub kind: BpmnEventKind,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub subkind: BpmnStartEventKind,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 }
 
 impl BpmnStartEvent {
@@ -1401,13 +1401,13 @@ impl BpmnStartEvent {
         uuid: ModelUuid,
         kind: BpmnEventKind,
         subkind: BpmnStartEventKind,
-        name: String,
+        name: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
             subkind,
-            name: Arc::new(name),
+            name: name.into(),
         }
     }
 
@@ -1468,7 +1468,7 @@ pub struct BpmnIntermediateEvent {
     pub kind: BpmnEventKind,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub subkind: BpmnIntermediateEventKind,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 }
 
 impl BpmnIntermediateEvent {
@@ -1476,13 +1476,13 @@ impl BpmnIntermediateEvent {
         uuid: ModelUuid,
         kind: BpmnEventKind,
         subkind: BpmnIntermediateEventKind,
-        name: String,
+        name: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
             subkind,
-            name: Arc::new(name),
+            name: name.into(),
         }
     }
 
@@ -1543,7 +1543,7 @@ pub struct BpmnBoundaryIntermediateEvent {
     pub kind: BpmnEventKind,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub subkind: BpmnBoundaryIntermediateEventKind,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 }
 
 impl BpmnBoundaryIntermediateEvent {
@@ -1551,13 +1551,13 @@ impl BpmnBoundaryIntermediateEvent {
         uuid: ModelUuid,
         kind: BpmnEventKind,
         subkind: BpmnBoundaryIntermediateEventKind,
-        name: String,
+        name: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
             subkind,
-            name: Arc::new(name),
+            name: name.into(),
         }
     }
 
@@ -1599,15 +1599,15 @@ pub struct BpmnEndEvent {
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: BpmnEventKind,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 }
 
 impl BpmnEndEvent {
-    pub fn new(uuid: ModelUuid, kind: BpmnEventKind, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, kind: BpmnEventKind, name: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
-            name: Arc::new(name),
+            name: name.into(),
         }
     }
 
@@ -1684,15 +1684,15 @@ pub struct BpmnGateway {
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: BpmnGatewayKind,
-    pub condition: Arc<String>,
+    pub condition: Arc<str>,
 }
 
 impl BpmnGateway {
-    pub fn new(uuid: ModelUuid, kind: BpmnGatewayKind, condition: String) -> Self {
+    pub fn new(uuid: ModelUuid, kind: BpmnGatewayKind, condition: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
-            condition: Arc::new(condition),
+            condition: condition.into(),
         }
     }
 
@@ -1858,7 +1858,7 @@ impl FullTextSearchable for BpmnPool {
 #[nh_context_serde(is_entity)]
 pub struct BpmnPoolSwimlane {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<BpmnStandaloneElement>,
 }
@@ -1866,12 +1866,12 @@ pub struct BpmnPoolSwimlane {
 impl BpmnPoolSwimlane {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         contained_elements: Vec<BpmnStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
         }
     }
@@ -2011,16 +2011,16 @@ pub struct BpmnData {
     pub kind: BpmnDataKind,
     #[full_text_searchable(skip)]
     pub is_collection: bool,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 }
 
 impl BpmnData {
-    pub fn new(uuid: ModelUuid, kind: BpmnDataKind, is_collection: bool, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, kind: BpmnDataKind, is_collection: bool, name: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
             is_collection,
-            name: Arc::new(name),
+            name: name.into(),
         }
     }
 
@@ -2088,7 +2088,7 @@ pub struct BpmnSequenceEdge {
     pub target: BpmnSequenceNonInitialElement,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: BpmnSequenceEdgeKind,
-    pub condition: Arc<String>,
+    pub condition: Arc<str>,
 }
 
 impl BpmnSequenceEdge {
@@ -2097,14 +2097,14 @@ impl BpmnSequenceEdge {
         source: BpmnSequenceNonFinalElement,
         target: BpmnSequenceNonInitialElement,
         kind: BpmnSequenceEdgeKind,
-        condition: String,
+        condition: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,
             target,
             kind,
-            condition: Arc::new(condition),
+            condition: condition.into(),
         }
     }
 
@@ -2189,7 +2189,7 @@ pub struct BpmnMessageEdge {
     pub target: BpmnMessageableElement,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: BpmnMessageEdgeKind,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 }
 
 impl BpmnMessageEdge {
@@ -2198,14 +2198,14 @@ impl BpmnMessageEdge {
         source: BpmnMessageableElement,
         target: BpmnMessageableElement,
         kind: BpmnMessageEdgeKind,
-        name: String,
+        name: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,
             target,
             kind,
-            name: Arc::new(name),
+            name: name.into(),
         }
     }
 
@@ -2327,15 +2327,15 @@ pub struct BpmnAnnotation {
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: BpmnElement,
-    pub text: Arc<String>,
+    pub text: Arc<str>,
 }
 
 impl BpmnAnnotation {
-    pub fn new(uuid: ModelUuid, target: BpmnElement, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, target: BpmnElement, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
             target,
-            text: Arc::new(text),
+            text: text.into(),
         }
     }
 

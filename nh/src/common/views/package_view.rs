@@ -26,7 +26,7 @@ pub trait PackageAdapter<DomainT: Domain>:
 {
     fn model_section(&self) -> DomainT::ViewTargettingSectionT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
-    fn model_name(&self) -> Arc<String>;
+    fn model_name(&self) -> Arc<str>;
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)>;
 
@@ -54,7 +54,7 @@ pub trait PackageAdapter<DomainT: Domain>:
         _settings: &DomainT::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
-    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
+    ) -> Result<egui::Rect, (egui::Color32, Arc<str>)> {
         Err((egui::Color32::BLACK, self.model_name()))
     }
 

@@ -248,20 +248,20 @@ pub fn top_sort_info(m: &DemoCsdElement) -> ModelTopSortInfo {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct DemoCsdDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoCsdElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoCsdDiagram {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoCsdElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, contained_elements: Vec<DemoCsdElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -428,27 +428,27 @@ impl FullTextSearchable for DemoCsdDiagram {
 #[nh_context_serde(is_entity)]
 pub struct DemoCsdPackage {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     pub kind: DemoPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoCsdElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoCsdPackage {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         kind: DemoPackageKind,
         contained_elements: Vec<DemoCsdElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             kind,
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -554,22 +554,22 @@ impl FullTextSearchable for DemoCsdPackage {
 pub struct DemoCsdTransactor {
     pub uuid: Arc<ModelUuid>,
 
-    pub identifier: Arc<String>,
-    pub name: Arc<String>,
+    pub identifier: Arc<str>,
+    pub name: Arc<str>,
     pub internal: bool,
     pub composite: bool,
     #[nh_context_serde(entity)]
     pub transaction: UFOption<ERef<DemoCsdTransaction>>,
     pub transaction_selfactivating: bool,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoCsdTransactor {
     pub fn new(
         uuid: ModelUuid,
-        identifier: String,
-        name: String,
+        identifier: &str,
+        name: &str,
         internal: bool,
         composite: bool,
         transaction: Option<ERef<DemoCsdTransaction>>,
@@ -578,14 +578,14 @@ impl DemoCsdTransactor {
         Self {
             uuid: Arc::new(uuid),
 
-            identifier: Arc::new(identifier),
-            name: Arc::new(name),
+            identifier: identifier.into(),
+            name: name.into(),
             internal,
             composite,
             transaction: transaction.into(),
             transaction_selfactivating,
 
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -705,31 +705,31 @@ pub struct DemoCsdTransaction {
 
     #[full_text_searchable(skip)]
     pub kind: DemoTransactionKind,
-    pub identifier: Arc<String>,
-    pub name: Arc<String>,
+    pub identifier: Arc<str>,
+    pub name: Arc<str>,
     #[full_text_searchable(skip)]
     pub multiple: bool,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoCsdTransaction {
     pub fn new(
         uuid: ModelUuid,
         kind: DemoTransactionKind,
-        identifier: String,
-        name: String,
+        identifier: &str,
+        name: &str,
         multiple: bool,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
 
             kind,
-            identifier: Arc::new(identifier),
-            name: Arc::new(name),
+            identifier: identifier.into(),
+            name: name.into(),
             multiple,
 
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -801,30 +801,30 @@ pub struct DemoCsdLink {
     pub uuid: Arc<ModelUuid>,
 
     pub link_type: DemoCsdLinkType,
-    pub multiplicity: Arc<String>,
+    pub multiplicity: Arc<str>,
     #[nh_context_serde(entity)]
     pub source: ERef<DemoCsdTransactor>,
     #[nh_context_serde(entity)]
     pub target: ERef<DemoCsdTransaction>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoCsdLink {
     pub fn new(
         uuid: ModelUuid,
         link_type: DemoCsdLinkType,
-        multiplicity: Arc<String>,
+        multiplicity: &str,
         source: ERef<DemoCsdTransactor>,
         target: ERef<DemoCsdTransaction>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             link_type,
-            multiplicity,
+            multiplicity: multiplicity.into(),
             source,
             target,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -884,14 +884,14 @@ impl FullTextSearchable for DemoCsdLink {
 pub struct DemoCsdNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub text: Arc<String>,
+    pub text: Arc<str>,
 }
 
 impl DemoCsdNote {
-    pub fn new(uuid: ModelUuid, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            text: Arc::new(text),
+            text: text.into(),
         }
     }
     pub fn deep_copy_clone_inner(

@@ -2,7 +2,6 @@ use std::collections::{HashSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::Arc;
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
 use crate::common::uuid::{ControllerUuid, FolderUuid, ResourceUuid};
@@ -260,7 +259,7 @@ impl NHProjectSerialization {
                 HierarchyNode::Folder(uuid, name, children) => {
                     NHProjectHierarchyNodeSerialization::Folder {
                         uuid: *uuid,
-                        name: (**name).clone(),
+                        name: name.to_string(),
                         hierarchy: children.iter().map(|e| ph(e, d)).collect(),
                     }
                 }
@@ -437,7 +436,7 @@ impl NHProjectSerialization {
                     hierarchy,
                 } => Ok(HierarchyNode::Folder(
                     *uuid,
-                    Arc::new((*name).clone()),
+                    name.clone().into(),
                     hierarchy
                         .iter()
                         .map(|e| h(e, d, tlc, resources, cds))

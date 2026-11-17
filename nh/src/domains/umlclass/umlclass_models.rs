@@ -453,20 +453,20 @@ pub fn top_sort_info(m: &UmlClassElement) -> ModelTopSortInfo {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct UmlClassDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlClassElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlClassDiagram {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<UmlClassElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, contained_elements: Vec<UmlClassElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -819,32 +819,32 @@ impl UmlClassPackageKind {
 #[nh_context_serde(is_entity)]
 pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-    pub stereotype: Arc<String>,
+    pub name: Arc<str>,
+    pub stereotype: Arc<str>,
     pub visibility: UFOption<UmlClassVisibilityKind>,
     pub kind: UmlClassPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlClassElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlClassPackage {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
-        stereotype: String,
+        name: &str,
+        stereotype: &str,
         kind: UmlClassPackageKind,
         contained_elements: Vec<UmlClassElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
-            stereotype: Arc::new(stereotype),
+            name: name.into(),
+            stereotype: stereotype.into(),
             visibility: UFOption::None,
             kind,
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -959,29 +959,29 @@ impl FullTextSearchable for UmlClassPackage {
 pub struct UmlClassInstance {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub instance_name: Arc<String>,
-    pub instance_type: Arc<String>,
-    pub stereotype: Arc<String>,
-    pub instance_slots: Arc<String>,
+    pub instance_name: Arc<str>,
+    pub instance_type: Arc<str>,
+    pub stereotype: Arc<str>,
+    pub instance_slots: Arc<str>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlClassInstance {
     pub fn new(
         uuid: ModelUuid,
-        instance_name: String,
-        instance_type: String,
-        stereotype: String,
-        instance_slots: String,
+        instance_name: &str,
+        instance_type: &str,
+        stereotype: &str,
+        instance_slots: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            instance_name: Arc::new(instance_name),
-            instance_type: Arc::new(instance_type),
-            stereotype: Arc::new(stereotype),
-            instance_slots: Arc::new(instance_slots),
-            comment: Arc::new("".to_owned()),
+            instance_name: instance_name.into(),
+            instance_type: instance_type.into(),
+            stereotype: stereotype.into(),
+            instance_slots: instance_slots.into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1057,11 +1057,11 @@ pub enum UmlClassMemberInheritanceKind {
 pub struct UmlClassProperty {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-    pub value_type: Arc<String>,
-    pub multiplicity: Arc<String>,
-    pub default_value: Arc<String>,
-    pub stereotype: Arc<String>,
+    pub name: Arc<str>,
+    pub value_type: Arc<str>,
+    pub multiplicity: Arc<str>,
+    pub default_value: Arc<str>,
+    pub stereotype: Arc<str>,
 
     #[full_text_searchable(skip)]
     pub visibility: UFOption<UmlClassVisibilityKind>,
@@ -1085,20 +1085,20 @@ impl UmlClassProperty {
     pub fn new(
         uuid: ModelUuid,
         visibility: UFOption<UmlClassVisibilityKind>,
-        name: String,
-        value_type: String,
-        multiplicity: String,
-        default_value: String,
-        stereotype: String,
+        name: &str,
+        value_type: &str,
+        multiplicity: &str,
+        default_value: &str,
+        stereotype: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             visibility,
-            name: Arc::new(name),
-            value_type: Arc::new(value_type),
-            multiplicity: Arc::new(multiplicity),
-            default_value: Arc::new(default_value),
-            stereotype: Arc::new(stereotype),
+            name: name.into(),
+            value_type: value_type.into(),
+            multiplicity: multiplicity.into(),
+            default_value: default_value.into(),
+            stereotype: stereotype.into(),
 
             inherited: UmlClassMemberInheritanceKind::None,
             is_static: false,
@@ -1156,10 +1156,10 @@ impl Model for UmlClassProperty {
 pub struct UmlClassOperation {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-    pub parameters: Arc<String>,
-    pub return_type: Arc<String>,
-    pub stereotype: Arc<String>,
+    pub name: Arc<str>,
+    pub parameters: Arc<str>,
+    pub return_type: Arc<str>,
+    pub stereotype: Arc<str>,
 
     #[full_text_searchable(skip)]
     pub visibility: UFOption<UmlClassVisibilityKind>,
@@ -1181,18 +1181,18 @@ impl UmlClassOperation {
     pub fn new(
         uuid: ModelUuid,
         visibility: UFOption<UmlClassVisibilityKind>,
-        name: String,
-        parameters: String,
-        return_type: String,
-        stereotype: String,
+        name: &str,
+        parameters: &str,
+        return_type: &str,
+        stereotype: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             visibility,
-            name: Arc::new(name),
-            parameters: Arc::new(parameters),
-            return_type: Arc::new(return_type),
-            stereotype: Arc::new(stereotype),
+            name: name.into(),
+            parameters: parameters.into(),
+            return_type: return_type.into(),
+            stereotype: stereotype.into(),
 
             inherited: UmlClassMemberInheritanceKind::None,
             is_static: false,
@@ -1244,9 +1244,9 @@ impl Model for UmlClassOperation {
 #[nh_context_serde(is_entity)]
 pub struct UmlClass {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-    pub stereotype: Arc<String>,
-    pub template_parameters: Arc<String>,
+    pub name: Arc<str>,
+    pub stereotype: Arc<str>,
+    pub template_parameters: Arc<str>,
     pub visibility: UFOption<UmlClassVisibilityKind>,
     pub is_abstract: bool,
     #[nh_context_serde(entity)]
@@ -1254,7 +1254,7 @@ pub struct UmlClass {
     #[nh_context_serde(entity)]
     pub operations: Vec<ERef<UmlClassOperation>>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlClass {
@@ -1263,23 +1263,23 @@ impl UmlClass {
 
     pub fn new(
         uuid: ModelUuid,
-        name: String,
-        stereotype: String,
-        template_parameters: String,
+        name: &str,
+        stereotype: &str,
+        template_parameters: &str,
         is_abstract: bool,
         properties: Vec<ERef<UmlClassProperty>>,
         operations: Vec<ERef<UmlClassOperation>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
-            stereotype: Arc::new(stereotype),
-            template_parameters: Arc::new(template_parameters),
+            name: name.into(),
+            stereotype: stereotype.into(),
+            template_parameters: template_parameters.into(),
             visibility: UFOption::None,
             is_abstract,
             properties,
             operations,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1453,24 +1453,24 @@ impl FullTextSearchable for UmlClass {
 pub struct UmlUseCase {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-    pub stereotype: Arc<String>,
+    pub name: Arc<str>,
+    pub stereotype: Arc<str>,
     #[full_text_searchable(skip)]
     pub is_abstract: bool,
-    pub extension_points: Arc<String>,
+    pub extension_points: Arc<str>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlUseCase {
-    pub fn new(uuid: ModelUuid, name: String, stereotype: String, is_abstract: bool) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, stereotype: &str, is_abstract: bool) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
-            stereotype: Arc::new(stereotype),
+            name: name.into(),
+            stereotype: stereotype.into(),
             is_abstract,
-            extension_points: Arc::new("".to_owned()),
-            comment: Arc::new("".to_owned()),
+            extension_points: "".into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1518,19 +1518,19 @@ pub struct UmlClassGeneralization {
     #[nh_context_serde(entity)]
     pub targets: Vec<ERef<UmlClass>>,
 
-    pub set_name: Arc<String>,
+    pub set_name: Arc<str>,
     #[full_text_searchable(skip)]
     pub set_is_covering: bool,
     #[full_text_searchable(skip)]
     pub set_is_disjoint: bool,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlClassGeneralization {
     pub fn new(
         uuid: ModelUuid,
-        set_name: String,
+        set_name: &str,
         sources: Vec<ERef<UmlClass>>,
         targets: Vec<ERef<UmlClass>>,
     ) -> Self {
@@ -1539,11 +1539,11 @@ impl UmlClassGeneralization {
             sources,
             targets,
 
-            set_name: Arc::new(set_name),
+            set_name: set_name.into(),
             set_is_covering: false,
             set_is_disjoint: false,
 
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1656,8 +1656,8 @@ impl ContainerModel for UmlClassGeneralization {
 pub struct UmlClassDependency {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: UmlClassAssociable,
@@ -1667,26 +1667,26 @@ pub struct UmlClassDependency {
     #[full_text_searchable(skip)]
     pub target_arrow_open: bool,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlClassDependency {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
-        name: String,
+        stereotype: &str,
+        name: &str,
         source: UmlClassAssociable,
         target: UmlClassAssociable,
         target_arrow_open: bool,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             source,
             target,
             target_arrow_open,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1777,14 +1777,14 @@ impl UmlClassAssociationAggregation {
 pub struct UmlClassAssociation {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: UmlClassAssociable,
-    pub source_label_multiplicity: Arc<String>,
-    pub source_label_role: Arc<String>,
-    pub source_label_reading: Arc<String>,
+    pub source_label_multiplicity: Arc<str>,
+    pub source_label_role: Arc<str>,
+    pub source_label_reading: Arc<str>,
     #[full_text_searchable(skip)]
     pub source_navigability: UmlClassAssociationNavigability,
     #[full_text_searchable(skip)]
@@ -1792,44 +1792,44 @@ pub struct UmlClassAssociation {
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlClassAssociable,
-    pub target_label_multiplicity: Arc<String>,
-    pub target_label_role: Arc<String>,
-    pub target_label_reading: Arc<String>,
+    pub target_label_multiplicity: Arc<str>,
+    pub target_label_role: Arc<str>,
+    pub target_label_reading: Arc<str>,
     #[full_text_searchable(skip)]
     pub target_navigability: UmlClassAssociationNavigability,
     #[full_text_searchable(skip)]
     pub target_aggregation: UmlClassAssociationAggregation,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlClassAssociation {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
-        name: String,
+        stereotype: &str,
+        name: &str,
         source: UmlClassAssociable,
-        source_label_multiplicity: String,
+        source_label_multiplicity: &str,
         target: UmlClassAssociable,
-        target_label_multiplicity: String,
+        target_label_multiplicity: &str,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             source,
-            source_label_multiplicity: Arc::new(source_label_multiplicity),
-            source_label_role: Arc::new("".to_owned()),
-            source_label_reading: Arc::new("".to_owned()),
+            source_label_multiplicity: source_label_multiplicity.into(),
+            source_label_role: "".into(),
+            source_label_reading: "".into(),
             source_navigability: UmlClassAssociationNavigability::Unspecified,
             source_aggregation: UmlClassAssociationAggregation::None,
             target,
-            target_label_multiplicity: Arc::new(target_label_multiplicity),
-            target_label_role: Arc::new("".to_owned()),
-            target_label_reading: Arc::new("".to_owned()),
+            target_label_multiplicity: target_label_multiplicity.into(),
+            target_label_role: "".into(),
+            target_label_reading: "".into(),
             target_navigability: UmlClassAssociationNavigability::Unspecified,
             target_aggregation: UmlClassAssociationAggregation::None,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1900,13 +1900,13 @@ pub struct UmlUseCaseGeneralization {
     #[nh_context_serde(entity)]
     pub targets: Vec<ERef<UmlUseCase>>,
 
-    pub set_name: Arc<String>,
+    pub set_name: Arc<str>,
     #[full_text_searchable(skip)]
     pub set_is_covering: bool,
     #[full_text_searchable(skip)]
     pub set_is_disjoint: bool,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlUseCaseGeneralization {
@@ -1920,11 +1920,11 @@ impl UmlUseCaseGeneralization {
             sources,
             targets,
 
-            set_name: Arc::new("".to_owned()),
+            set_name: "".into(),
             set_is_covering: false,
             set_is_disjoint: false,
 
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -2037,16 +2037,16 @@ impl ContainerModel for UmlUseCaseGeneralization {
 pub struct UmlClassNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub stereotype: Arc<String>,
-    pub text: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub text: Arc<str>,
 }
 
 impl UmlClassNote {
-    pub fn new(uuid: ModelUuid, stereotype: String, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, stereotype: &str, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
-            text: Arc::new(text),
+            stereotype: stereotype.into(),
+            text: text.into(),
         }
     }
     pub fn deep_copy_clone_inner(

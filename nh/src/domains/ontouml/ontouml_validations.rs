@@ -684,7 +684,7 @@ fn validate_structure(
     }
     #[derive(Default)]
     struct ElementInfo {
-        stereotype: Arc<String>,
+        stereotype: Arc<str>,
         identity_providers_min: usize,
         identity_providers_max: usize,
         is_abstract: bool,
@@ -820,7 +820,7 @@ fn validate_structure(
                     });
                 }
 
-                match m.stereotype.as_str() {
+                match &*m.stereotype {
                     ontouml_models::MEDIATION => {
                         if let Some(((lm1, _), (lm2, _))) =
                             source_multiplicity.zip(target_multiplicity)
@@ -859,8 +859,8 @@ fn validate_structure(
                             let t = t.read();
                             let e = element_infos.entry(*t.uuid).or_default();
 
-                            if t.stereotype.as_str() != ontouml_models::QUALITY
-                                && t.stereotype.as_str() != ontouml_models::MODE
+                            if *t.stereotype != *ontouml_models::QUALITY
+                                && *t.stereotype != *ontouml_models::MODE
                             {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
@@ -886,7 +886,7 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
-                            if s.stereotype.as_str() != ontouml_models::QUALITY {
+                            if *s.stereotype != *ontouml_models::QUALITY {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(
@@ -900,8 +900,8 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
-                            if t.stereotype.as_str() != ontouml_models::QUALITY
-                                && t.stereotype.as_str() != ontouml_models::MODE
+                            if *t.stereotype != *ontouml_models::QUALITY
+                                && *t.stereotype != *ontouml_models::MODE
                             {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
@@ -943,7 +943,7 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
-                            if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
+                            if *s.stereotype != *ontouml_models::COLLECTIVE {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(
@@ -958,7 +958,7 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
-                            if t.stereotype.as_str() != ontouml_models::COLLECTIVE {
+                            if *t.stereotype != *ontouml_models::COLLECTIVE {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(
@@ -988,7 +988,7 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
-                            if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
+                            if *s.stereotype != *ontouml_models::COLLECTIVE {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(
@@ -1019,7 +1019,7 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
-                            if t.stereotype.as_str() != ontouml_models::QUANTITY {
+                            if *t.stereotype != *ontouml_models::QUANTITY {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(
@@ -1051,7 +1051,7 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
-                            if s.stereotype.as_str() != ontouml_models::QUANTITY {
+                            if *s.stereotype != *ontouml_models::QUANTITY {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(
@@ -1065,7 +1065,7 @@ fn validate_structure(
 
                         if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
-                            if t.stereotype.as_str() != ontouml_models::QUANTITY {
+                            if *t.stereotype != *ontouml_models::QUANTITY {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     error_type: ErrorType::InvalidRelation(
@@ -1159,7 +1159,7 @@ fn validate_structure(
             }
         }
         if es.check_role
-            && info.stereotype.as_str() == ontouml_models::ROLE
+            && *info.stereotype == *ontouml_models::ROLE
             && r_lowerbounds(&element_infos, k) == 0
         {
             problems.push(ValidationProblem::Error {
@@ -1171,9 +1171,9 @@ fn validate_structure(
 
         if es.check_relator
             && !info.is_abstract
-            && (info.stereotype.as_str() == ontouml_models::RELATOR
+            && (*info.stereotype == *ontouml_models::RELATOR
                 || has_matching_supertype(&element_infos, *k, &|e| {
-                    e.stereotype.as_str() == ontouml_models::RELATOR
+                    *e.stereotype == *ontouml_models::RELATOR
                 }))
             && r_lowerbounds(&element_infos, k) < 2
         {
@@ -1184,7 +1184,7 @@ fn validate_structure(
             });
         }
         if es.check_phase
-            && info.stereotype.as_str() == ontouml_models::PHASE
+            && *info.stereotype == *ontouml_models::PHASE
             && !info.in_disjoint_complete_set
         {
             problems.push(ValidationProblem::Error {
@@ -1194,10 +1194,10 @@ fn validate_structure(
             });
         }
         if es.check_other
-            && (info.stereotype.as_str() == ontouml_models::CATEGORY
-                || info.stereotype.as_str() == ontouml_models::MIXIN
-                || info.stereotype.as_str() == ontouml_models::PHASE_MIXIN
-                || info.stereotype.as_str() == ontouml_models::ROLE_MIXIN)
+            && (*info.stereotype == *ontouml_models::CATEGORY
+                || *info.stereotype == *ontouml_models::MIXIN
+                || *info.stereotype == *ontouml_models::PHASE_MIXIN
+                || *info.stereotype == *ontouml_models::ROLE_MIXIN)
             && !info.is_abstract
         {
             problems.push(ValidationProblem::Error {
@@ -1207,8 +1207,8 @@ fn validate_structure(
             });
         }
         if es.check_other
-            && (info.stereotype.as_str() == ontouml_models::QUALITY
-                || info.stereotype.as_str() == ontouml_models::MODE)
+            && (*info.stereotype == *ontouml_models::QUALITY
+                || *info.stereotype == *ontouml_models::MODE)
             && info.direct_characterizations_toward < 1
         {
             problems.push(ValidationProblem::Error {
@@ -1407,14 +1407,14 @@ fn validate_binover(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) 
                     ontouml_models::ROLE,
                     ontouml_models::PHASE,
                 ]
-                .contains(&&**inner.read().stereotype),
+                .contains(&&*inner.read().stereotype),
             }
         }
         fn is_relator(c: &UmlClassAssociable) -> bool {
             match c {
                 UmlClassAssociable::Instance(_) | UmlClassAssociable::UseCase(_) => false,
                 UmlClassAssociable::Class(inner) => {
-                    *inner.read().stereotype == ontouml_models::RELATOR
+                    *inner.read().stereotype == *ontouml_models::RELATOR
                 }
             }
         }
@@ -1422,7 +1422,7 @@ fn validate_binover(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) 
             match c {
                 UmlClassAssociable::Instance(_) | UmlClassAssociable::UseCase(_) => false,
                 UmlClassAssociable::Class(inner) => {
-                    *inner.read().stereotype == ontouml_models::MODE
+                    *inner.read().stereotype == *ontouml_models::MODE
                 }
             }
         }
@@ -1435,7 +1435,7 @@ fn validate_binover(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) 
                     ontouml_models::ROLE_MIXIN,
                     ontouml_models::MIXIN,
                 ]
-                .contains(&&**inner.read().stereotype),
+                .contains(&&*inner.read().stereotype),
             }
         }
         fn are_disjoint_upwards(
@@ -1615,7 +1615,7 @@ fn validate_decint(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
 fn validate_depphase(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     #[derive(Default)]
     struct DepPhaseInfo {
-        stereotype: Option<Arc<String>>,
+        stereotype: Option<Arc<str>>,
         assoc_mediation_count: usize,
     }
     fn r_depphase_collect(infos: &mut HashMap<ModelUuid, DepPhaseInfo>, e: &UmlClassElement) {
@@ -1632,7 +1632,7 @@ fn validate_depphase(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram)
             }
             UmlClassElement::Association(inner) => {
                 let r = inner.read();
-                if *r.stereotype == ontouml_models::MEDIATION {
+                if *r.stereotype == *ontouml_models::MEDIATION {
                     infos
                         .entry(*r.source.uuid())
                         .or_default()
@@ -1652,7 +1652,7 @@ fn validate_depphase(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram)
     }
     for e in &infos {
         if let Some(s) = &e.1.stereotype
-            && **s == ontouml_models::PHASE
+            && **s == *ontouml_models::PHASE
             && e.1.assoc_mediation_count >= 1
         {
             problems.push(ValidationProblem::AntiPattern {
@@ -1667,7 +1667,7 @@ fn validate_depphase(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram)
 fn validate_freerole(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     #[derive(Default)]
     struct FreeRoleInfo {
-        stereotype: Option<Arc<String>>,
+        stereotype: Option<Arc<str>>,
         assoc_mediation_count: usize,
     }
     fn r_freerole_collect(infos: &mut HashMap<ModelUuid, FreeRoleInfo>, e: &UmlClassElement) {
@@ -1684,7 +1684,7 @@ fn validate_freerole(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram)
             }
             UmlClassElement::Association(inner) => {
                 let r = inner.read();
-                if *r.stereotype == ontouml_models::MEDIATION {
+                if *r.stereotype == *ontouml_models::MEDIATION {
                     infos
                         .entry(*r.source.uuid())
                         .or_default()
@@ -1704,7 +1704,7 @@ fn validate_freerole(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram)
     }
     for e in &infos {
         if let Some(s) = &e.1.stereotype
-            && **s == ontouml_models::ROLE
+            && **s == *ontouml_models::ROLE
             && e.1.assoc_mediation_count == 0
         {
             problems.push(ValidationProblem::AntiPattern {
@@ -1752,7 +1752,7 @@ fn validate_gsrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
 fn validate_hetcoll(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     #[derive(Default)]
     struct HetCollInfo {
-        stereotype: Option<Arc<String>>,
+        stereotype: Option<Arc<str>>,
         source_end_membership_count: usize,
     }
     fn r_hetcoll_collect(infos: &mut HashMap<ModelUuid, HetCollInfo>, e: &UmlClassElement) {
@@ -1769,7 +1769,7 @@ fn validate_hetcoll(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) 
             }
             UmlClassElement::Association(inner) => {
                 let r = inner.read();
-                if *r.stereotype == ontouml_models::MEMBER_OF {
+                if *r.stereotype == *ontouml_models::MEMBER_OF {
                     infos
                         .entry(*r.source.uuid())
                         .or_default()
@@ -1785,7 +1785,7 @@ fn validate_hetcoll(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) 
     }
     for e in &infos {
         if let Some(s) = &e.1.stereotype
-            && **s == ontouml_models::COLLECTIVE
+            && **s == *ontouml_models::COLLECTIVE
             && e.1.source_end_membership_count > 1
         {
             problems.push(ValidationProblem::AntiPattern {
@@ -1816,7 +1816,7 @@ fn validate_homofunc(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram)
             }
             UmlClassElement::Association(inner) => {
                 let r = inner.read();
-                if *r.stereotype == ontouml_models::COMPONENT_OF {
+                if *r.stereotype == *ontouml_models::COMPONENT_OF {
                     infos
                         .entry(*r.source.uuid())
                         .or_default()
@@ -1844,7 +1844,7 @@ fn validate_homofunc(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram)
 fn validate_mixrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     #[derive(Default)]
     struct MixRigInfo {
-        stereotype: Option<Arc<String>>,
+        stereotype: Option<Arc<str>>,
         has_rigid_children: bool,
         has_anti_rigid_children: bool,
     }
@@ -1883,7 +1883,7 @@ fn validate_mixrig(problems: &mut Vec<ValidationProblem>, m: &UmlClassDiagram) {
     }
     for e in &infos {
         if let Some(s) = &e.1.stereotype
-            && **s == ontouml_models::MIXIN
+            && **s == *ontouml_models::MIXIN
             && e.1.has_rigid_children != e.1.has_anti_rigid_children
         {
             problems.push(ValidationProblem::AntiPattern {
@@ -1906,7 +1906,7 @@ fn validate_multdep_relrig_reprel(
 ) {
     #[derive(Default)]
     struct RelatorInfo {
-        stereotype: Option<Arc<String>>,
+        stereotype: Option<Arc<str>>,
         has_associated_rigids: bool,
         total_mediations: u32,
         has_nonrepeatable_mediations: bool,
@@ -1926,7 +1926,7 @@ fn validate_multdep_relrig_reprel(
 
             let e = infos.get(&a).unwrap();
             let result = if let Some(s) = &e.stereotype
-                && **s == ontouml_models::RELATOR
+                && **s == *ontouml_models::RELATOR
             {
                 true
             } else {
@@ -1984,7 +1984,7 @@ fn validate_multdep_relrig_reprel(
                 }
                 UmlClassElement::Association(inner) => {
                     let r = inner.read();
-                    if *r.stereotype == ontouml_models::MEDIATION {
+                    if *r.stereotype == *ontouml_models::MEDIATION {
                         if let UmlClassAssociable::Class(s) = &r.source
                             && is_relator(infos, *s.read().uuid)
                         {
@@ -2092,10 +2092,7 @@ fn validate_relcomp_relspec(
     let mut association_infos = HashMap::new();
     fn r_collect(
         class_ancestor_infos: &mut HashMap<ModelUuid, Vec<ModelUuid>>,
-        association_infos: &mut HashMap<
-            ModelUuid,
-            (ModelUuid, Arc<String>, ModelUuid, Arc<String>),
-        >,
+        association_infos: &mut HashMap<ModelUuid, (ModelUuid, Arc<str>, ModelUuid, Arc<str>)>,
         e: &UmlClassElement,
     ) {
         match e {
@@ -2217,7 +2214,7 @@ fn validate_undefformal_undefphase(
 ) {
     #[derive(Default)]
     struct UndefInfo {
-        stereotype: Option<Arc<String>>,
+        stereotype: Option<Arc<str>>,
         has_intrinsics: bool,
         parents: Vec<ERef<UmlClassGeneralization>>,
     }
@@ -2240,7 +2237,7 @@ fn validate_undefformal_undefphase(
                 }
                 UmlClassElement::Association(inner) => {
                     let r = inner.read();
-                    if *r.stereotype == ontouml_models::CHARACTERIZATION {
+                    if *r.stereotype == *ontouml_models::CHARACTERIZATION {
                         infos.entry(*r.source.uuid()).or_default().has_intrinsics = true;
                     }
                 }
@@ -2313,7 +2310,7 @@ fn validate_undefformal_undefphase(
             }
             UmlClassElement::Association(inner) => {
                 let r = inner.read();
-                if *r.stereotype == ontouml_models::FORMAL
+                if *r.stereotype == *ontouml_models::FORMAL
                     && (!has_intrinsics_including_transitively(infos, *r.source.uuid())
                         || !has_intrinsics_including_transitively(infos, *r.target.uuid()))
                 {
@@ -2335,7 +2332,7 @@ fn validate_undefformal_undefphase(
     if check_undefphase {
         for e in &infos {
             if let Some(s) = &e.1.stereotype
-                && **s == ontouml_models::PHASE
+                && **s == *ontouml_models::PHASE
                 && !e.1.parents.iter().any(|e| {
                     e.read()
                         .targets
@@ -2367,9 +2364,9 @@ mod test {
     fn new_class(id: u32, stereotype: &'static str, is_abstract: bool) -> ERef<UmlClass> {
         ERef::new(UmlClass::new(
             generate_modeluuid(id),
-            "".to_owned(),
-            stereotype.to_owned(),
-            "".to_owned(),
+            "",
+            stereotype,
+            "",
             is_abstract,
             Vec::new(),
             Vec::new(),
@@ -2383,8 +2380,7 @@ mod test {
         is_disjoint: bool,
         is_covering: bool,
     ) -> ERef<UmlClassGeneralization> {
-        let mut g =
-            UmlClassGeneralization::new(generate_modeluuid(id), "".to_owned(), sources, targets);
+        let mut g = UmlClassGeneralization::new(generate_modeluuid(id), "", sources, targets);
         g.set_is_disjoint = is_disjoint;
         g.set_is_covering = is_covering;
 
@@ -2399,19 +2395,19 @@ mod test {
     ) -> ERef<UmlClassAssociation> {
         ERef::new(UmlClassAssociation::new(
             generate_modeluuid(id),
-            stereotype.to_owned(),
-            "".to_owned(),
+            stereotype,
+            "",
             source,
-            "0..*".to_owned(),
+            "0..*",
             target,
-            "1..1".to_owned(),
+            "1..1",
         ))
     }
 
     fn new_diagram(elements: Vec<UmlClassElement>) -> ERef<UmlClassDiagram> {
         ERef::new(UmlClassDiagram::new(
             uuid!("10000000-0000-0000-0000-000000000000").into(),
-            "Test OntoUML Diagram".to_owned(),
+            "Test OntoUML Diagram",
             elements,
         ))
     }
@@ -2443,7 +2439,7 @@ mod test {
             kind.clone().into(),
             kind.clone().into(),
         );
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -2467,7 +2463,7 @@ mod test {
             kind.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         let result = validate(
             vec![kind.into(), assoc.into()],
@@ -2508,7 +2504,7 @@ mod test {
             kind.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         let result = validate(
             vec![kind.into(), assoc.into()],
@@ -2544,7 +2540,7 @@ mod test {
         let kind_uuid = *kind.read().uuid;
         let assoc = new_association(6, "world", kind.clone().into(), kind.clone().into());
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         let result = validate(
             vec![kind.into(), assoc.into()],
@@ -2614,8 +2610,8 @@ mod test {
             collective.clone().into(),
             quality.clone().into(),
         );
-        member_of.write().source_label_multiplicity = Arc::new("1".to_owned());
-        member_of.write().target_label_multiplicity = Arc::new("1".to_owned());
+        member_of.write().source_label_multiplicity = "1".into();
+        member_of.write().target_label_multiplicity = "1".into();
 
         let elements = vec![quality.into(), collective.into(), member_of.into()];
 
@@ -2645,8 +2641,8 @@ mod test {
             mode.clone().into(),
             quantity.clone().into(),
         );
-        containment.write().source_label_multiplicity = Arc::new("1".to_owned());
-        containment.write().target_label_multiplicity = Arc::new("1".to_owned());
+        containment.write().source_label_multiplicity = "1".into();
+        containment.write().target_label_multiplicity = "1".into();
 
         let elements = vec![mode.into(), quantity.into(), containment.into()];
 
@@ -2676,8 +2672,8 @@ mod test {
             quality.clone().into(),
             collective.clone().into(),
         );
-        member_of.write().source_label_multiplicity = Arc::new("1".to_owned());
-        member_of.write().target_label_multiplicity = Arc::new("1".to_owned());
+        member_of.write().source_label_multiplicity = "1".into();
+        member_of.write().target_label_multiplicity = "1".into();
         let member_of_uuid = *member_of.read().uuid;
 
         let elements = vec![quality.into(), collective.into(), member_of.into()];
@@ -2705,8 +2701,8 @@ mod test {
             quality.clone().into(),
             mode.clone().into(),
         );
-        containment.write().source_label_multiplicity = Arc::new("1".to_owned());
-        containment.write().target_label_multiplicity = Arc::new("1".to_owned());
+        containment.write().source_label_multiplicity = "1".into();
+        containment.write().target_label_multiplicity = "1".into();
         let containment_uuid = *containment.read().uuid;
 
         let elements = vec![quality.into(), mode.into(), containment.into()];
@@ -2878,8 +2874,8 @@ mod test {
             kind.clone().into(),
             mode.clone().into(),
         );
-        characterization1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        characterization1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        characterization1.write().source_label_multiplicity = "1".into();
+        characterization1.write().target_label_multiplicity = "1".into();
         let quality = new_class(4, ontouml_models::QUALITY, false);
         let characterization2 = new_association(
             5,
@@ -2887,8 +2883,8 @@ mod test {
             kind.clone().into(),
             quality.clone().into(),
         );
-        characterization2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        characterization2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        characterization2.write().source_label_multiplicity = "1".into();
+        characterization2.write().target_label_multiplicity = "1".into();
 
         let elements = vec![
             kind.into(),
@@ -3005,8 +3001,8 @@ mod test {
             role.clone().into(),
             relator.clone().into(),
         );
-        mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation.write().source_label_multiplicity = "1".into();
+        mediation.write().target_label_multiplicity = "1".into();
 
         let elements = vec![
             kind.into(),
@@ -3066,8 +3062,8 @@ mod test {
             kind1.clone().into(),
             relator2.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("2".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "2".into();
+        mediation1.write().target_label_multiplicity = "1".into();
 
         let elements = vec![relator2.into(), kind1.into(), mediation1.into()];
         assert_eq!(
@@ -3087,8 +3083,8 @@ mod test {
             kind2.clone().into(),
             relator3.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
         let kind3 = new_class(8, ontouml_models::KIND, false);
         let mediation3 = new_association(
             9,
@@ -3096,8 +3092,8 @@ mod test {
             kind3.clone().into(),
             relator3.clone().into(),
         );
-        mediation3.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation3.write().source_label_multiplicity = "1".into();
+        mediation3.write().target_label_multiplicity = "1".into();
 
         let elements = vec![
             relator3.into(),
@@ -3125,8 +3121,8 @@ mod test {
             kind1.clone().into(),
             relator.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1".into();
         let kind2 = new_class(6, ontouml_models::KIND, false);
         let mediation2 = new_association(
             7,
@@ -3134,8 +3130,8 @@ mod test {
             kind2.clone().into(),
             subkind.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
 
         let elements = vec![
             relator.into(),
@@ -3184,8 +3180,8 @@ mod test {
             kind1.clone().into(),
             relator2.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1".into();
 
         let elements = vec![relator2.into(), kind1.into(), mediation1.into()];
         let result = validate(elements, true, super::OntoUmlAntipatternSettings::NONE);
@@ -3214,8 +3210,8 @@ mod test {
             relator3.clone().into(),
         );
         let mediation2_uuid = *mediation2.read().uuid;
-        mediation2.write().source_label_multiplicity = Arc::new("0..1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "0..1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
         let kind3 = new_class(8, ontouml_models::KIND, false);
         let mediation3 = new_association(
             9,
@@ -3223,8 +3219,8 @@ mod test {
             kind3.clone().into(),
             relator3.clone().into(),
         );
-        mediation3.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation3.write().source_label_multiplicity = "1".into();
+        mediation3.write().target_label_multiplicity = "1".into();
 
         let elements = vec![
             relator3.into(),
@@ -3269,8 +3265,8 @@ mod test {
             kind1.clone().into(),
             relator.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1".into();
 
         let elements = vec![
             relator.into(),
@@ -3380,7 +3376,7 @@ mod test {
             kind1.clone().into(),
             kind2.clone().into(),
         );
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3411,7 +3407,7 @@ mod test {
             subkind1.clone().into(),
             subkind2.clone().into(),
         );
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3440,7 +3436,7 @@ mod test {
             mixin1.clone().into(),
             mixin2.clone().into(),
         );
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3463,7 +3459,7 @@ mod test {
             kind1.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3497,7 +3493,7 @@ mod test {
             subkind1.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3539,7 +3535,7 @@ mod test {
             subkind2.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3581,7 +3577,7 @@ mod test {
             subkind2.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3617,7 +3613,7 @@ mod test {
             mixin2.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert!(
             validate(
@@ -3656,7 +3652,7 @@ mod test {
             mixin3.clone().into(),
         );
         let assoc_uuid = *assoc.read().uuid;
-        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3762,8 +3758,8 @@ mod test {
             phase.clone().into(),
             relator.clone().into(),
         );
-        mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation.write().source_label_multiplicity = "1".into();
+        mediation.write().target_label_multiplicity = "1".into();
 
         assert!(
             validate(
@@ -3813,8 +3809,8 @@ mod test {
             role1.clone().into(),
             relator.clone().into(),
         );
-        mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation.write().source_label_multiplicity = "1".into();
+        mediation.write().target_label_multiplicity = "1".into();
 
         assert!(
             validate(
@@ -3880,14 +3876,14 @@ mod test {
             collective.clone().into(),
             kind1.clone().into(),
         );
-        assoc1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc1.write().source_label_multiplicity = "1".into();
         let assoc2 = new_association(
             5,
             ontouml_models::MEMBER_OF,
             collective.clone().into(),
             kind2.clone().into(),
         );
-        assoc2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc2.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -3919,7 +3915,7 @@ mod test {
             kind1.clone().into(),
             kind2.clone().into(),
         );
-        assoc1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        assoc1.write().source_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -4028,8 +4024,8 @@ mod test {
             relator1.clone().into(),
             role.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         let relator2 = new_class(6, ontouml_models::RELATOR, false);
         let mediation2 = new_association(
@@ -4038,8 +4034,8 @@ mod test {
             relator2.clone().into(),
             role.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4077,8 +4073,8 @@ mod test {
             relator1.clone().into(),
             role.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         let relator2 = new_class(6, ontouml_models::RELATOR, true);
         let subkind = new_class(7, ontouml_models::SUBKIND, false);
@@ -4089,8 +4085,8 @@ mod test {
             subkind.clone().into(),
             role.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4128,8 +4124,8 @@ mod test {
             relator.clone().into(),
             role.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4162,8 +4158,8 @@ mod test {
             subkind.clone().into(),
             role.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4195,8 +4191,8 @@ mod test {
             relator.clone().into(),
             kind.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4225,8 +4221,8 @@ mod test {
             subkind.clone().into(),
             kind.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4257,8 +4253,8 @@ mod test {
             relator.clone().into(),
             kind.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4281,8 +4277,8 @@ mod test {
             relator.clone().into(),
             kind.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("2".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().source_label_multiplicity = "2".into();
+        mediation1.write().target_label_multiplicity = "2".into();
 
         assert_eq!(
             validate(
@@ -4312,16 +4308,16 @@ mod test {
             kind2.clone().into(),
         );
         let mediation1_uuid = *mediation1.read().uuid;
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1..2".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1..2".into();
         let mediation2 = new_association(
             8,
             ontouml_models::MEDIATION,
             subkind1.clone().into(),
             subkind2.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -4366,16 +4362,16 @@ mod test {
             subkind1.clone().into(),
             kind2.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1".into();
         let mediation2 = new_association(
             9,
             ontouml_models::MEDIATION,
             subkind2.clone().into(),
             kind3.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -4409,16 +4405,16 @@ mod test {
             kind2.clone().into(),
             kind1.clone().into(),
         );
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1".into();
         let mediation2 = new_association(
             6,
             ontouml_models::MEDIATION,
             kind3.clone().into(),
             kind1.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -4453,16 +4449,16 @@ mod test {
             kind2.clone().into(),
         );
         let mediation1_uuid = *mediation1.read().uuid;
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1".into();
         let mediation2 = new_association(
             8,
             ontouml_models::MEDIATION,
             subkind1.clone().into(),
             subkind2.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(
@@ -4501,16 +4497,16 @@ mod test {
             kind1.clone().into(),
         );
         let mediation1_uuid = *mediation1.read().uuid;
-        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().source_label_multiplicity = "1".into();
+        mediation1.write().target_label_multiplicity = "1".into();
         let mediation2 = new_association(
             7,
             ontouml_models::MEDIATION,
             subkind1.clone().into(),
             subkind2.clone().into(),
         );
-        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
-        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().source_label_multiplicity = "1".into();
+        mediation2.write().target_label_multiplicity = "1".into();
 
         assert_eq!(
             validate(

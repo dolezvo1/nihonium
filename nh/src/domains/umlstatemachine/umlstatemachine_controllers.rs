@@ -76,17 +76,17 @@ impl UmlStateMachineOrdinalMovement {
 
 #[derive(Clone)]
 pub enum UmlStateMachinePropChange {
-    NameChange(Arc<String>),
-    StereotypeChange(Arc<String>),
+    NameChange(Arc<str>),
+    StereotypeChange(Arc<str>),
 
-    TransitionGuardChange(Arc<String>),
-    TransitionBehaviorChange(Arc<String>),
+    TransitionGuardChange(Arc<str>),
+    TransitionBehaviorChange(Arc<str>),
     StateMachineIsProtocolChange(bool),
 
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -262,8 +262,8 @@ impl UmlStateMachineDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: UmlStateMachineDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -276,7 +276,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -381,7 +381,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &UmlStateMachineElement) -> Arc<String> {
+    fn label_for(&self, e: &UmlStateMachineElement) -> Arc<str> {
         match e {
             UmlStateMachineElement::StateMachine(inner) => {
                 let r = inner.read();
@@ -410,20 +410,14 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                 s.push(')');
                 s.into()
             }
-            UmlStateMachineElement::CompositeStateRegion(_inner) => {
-                "Composite State Region".to_owned().into()
-            }
+            UmlStateMachineElement::CompositeStateRegion(_inner) => "Composite State Region".into(),
             UmlStateMachineElement::InternalTransition(inner) => {
                 let r = inner.read();
                 format!("Internal Transition ({})", r.trigger).into()
             }
-            UmlStateMachineElement::InitialPseudostate(..) => {
-                "Initial Pseudostate".to_owned().into()
-            }
-            UmlStateMachineElement::TerminatePseudostate(..) => {
-                "Terminate Pseudostate".to_owned().into()
-            }
-            UmlStateMachineElement::FinalState(..) => "Final State".to_owned().into(),
+            UmlStateMachineElement::InitialPseudostate(..) => "Initial Pseudostate".into(),
+            UmlStateMachineElement::TerminatePseudostate(..) => "Terminate Pseudostate".into(),
+            UmlStateMachineElement::FinalState(..) => "Final State".into(),
             UmlStateMachineElement::Edge(inner) => {
                 let r = inner.read();
                 let mut s = String::new();
@@ -433,18 +427,17 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
                     s.push_str(&r.name);
                     s.push(')');
                 }
-                Arc::new(s)
+                s.into()
             }
             UmlStateMachineElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
-            UmlStateMachineElement::NoteLink(_inner) => Arc::new("Note Link".to_string()),
+            UmlStateMachineElement::NoteLink(_inner) => "Note Link".into(),
         }
     }
 
@@ -513,7 +506,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlStateMachinePropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                UmlStateMachinePropChange::NameChange(self.buffer.name.clone().into()),
             ));
         }
 
@@ -523,7 +516,7 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                UmlStateMachinePropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                UmlStateMachinePropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -577,8 +570,8 @@ impl DiagramAdapter<UmlStateMachineDomain> for UmlStateMachineDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -662,7 +655,7 @@ fn new_controlller(
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
     let diagram = ERef::new(UmlStateMachineDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![],
     ));
     new_controlller(diagram, name.to_owned(), vec![])
@@ -789,7 +782,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(UmlStateMachineDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![activity.into()],
     ));
 
@@ -2351,8 +2344,8 @@ pub fn new_umlstatemachine_statemachine(
 ) -> (ERef<UmlStateMachine>, ERef<StateMachineViewT>) {
     let package_model = ERef::new(UmlStateMachine::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         is_protocol,
         Vec::new(),
     ));
@@ -2373,11 +2366,11 @@ pub fn new_umlstatemachine_statemachine_view(
             model: model.clone(),
             background_color: MGlobalColor::None,
             request_focus,
-            display_text: Arc::new("".to_owned()),
-            stereotype_buffer: (*m.stereotype).clone(),
-            name_buffer: (*m.name).clone(),
+            display_text: "".into(),
+            stereotype_buffer: m.stereotype.to_string(),
+            name_buffer: m.name.to_string(),
             is_protocol_buffer: m.is_protocol,
-            comment_buffer: (*m.comment).clone(),
+            comment_buffer: m.comment.to_string(),
         },
         Vec::new(),
         canvas::Highlight::from_selected(request_focus),
@@ -2396,7 +2389,7 @@ pub struct UmlStateMachineAdapter {
     #[nh_context_serde(skip_and_default)]
     request_focus: bool,
     #[nh_context_serde(skip_and_default)]
-    display_text: Arc<String>,
+    display_text: Arc<str>,
     #[nh_context_serde(skip_and_default)]
     stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2414,7 +2407,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -2448,7 +2441,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlStateMachineDomain as Domain>::ToolT)>,
-    ) -> Result<egui::Rect, (egui::Color32, Arc<String>)> {
+    ) -> Result<egui::Rect, (egui::Color32, Arc<str>)> {
         // Draw top left pentagon
         const PENTAGON_PADDING: f32 = 4.0;
         let pentagon_bg = egui::Color32::WHITE;
@@ -2501,9 +2494,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::StereotypeChange(Arc::new(
-                    self.stereotype_buffer.clone(),
-                )),
+                UmlStateMachinePropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
 
@@ -2513,7 +2504,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                UmlStateMachinePropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -2534,7 +2525,7 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlStateMachinePropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
     }
@@ -2634,10 +2625,10 @@ impl PackageAdapter<UmlStateMachineDomain> for UmlStateMachineAdapter {
 
             acc.into()
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.name_buffer = model.name.to_string();
         self.is_protocol_buffer = model.is_protocol;
-        self.comment_buffer = (*model.comment).clone();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -2693,8 +2684,8 @@ pub fn new_umlstatemachine_compositestate(
     let (region_models, region_views) = regions.into_iter().collect();
     let model = ERef::new(UmlStateMachineCompositeState::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         it_models,
         region_models,
     ));
@@ -2727,7 +2718,7 @@ pub fn new_umlstatemachine_compositestate_view(
         background_color,
         temporaries: UmlStateMachineCompositeStateViewTemporaries {
             request_focus,
-            name_buffer: (*r.name).clone(),
+            name_buffer: r.name.to_string(),
             highlight: canvas::Highlight::from_selected(request_focus),
             ..Default::default()
         },
@@ -3115,9 +3106,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::StereotypeChange(Arc::new(
-                    self.temporaries.stereotype_buffer.clone(),
-                )),
+                UmlStateMachinePropChange::StereotypeChange(
+                    self.temporaries.stereotype_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -3131,9 +3122,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::NameChange(Arc::new(
-                    self.temporaries.name_buffer.clone(),
-                )),
+                UmlStateMachinePropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -4078,8 +4067,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineCompositeSt
         if !r.stereotype.is_empty() {
             self.temporaries.stereotype_in_guillemets = format!("«{}»", r.stereotype);
         }
-        self.temporaries.stereotype_buffer = (*r.stereotype).clone();
-        self.temporaries.name_buffer = (*r.name).clone();
+        self.temporaries.stereotype_buffer = r.stereotype.to_string();
+        self.temporaries.name_buffer = r.name.to_string();
 
         // Structural refresh
         let views_map = self
@@ -5060,9 +5049,9 @@ fn new_umlstatemachine_internaltransition(
 ) {
     let model = ERef::new(UmlStateMachineInternalTransition::new(
         ModelUuid::now_v7(),
-        trigger.to_owned(),
-        guard.to_owned(),
-        behavior.to_owned(),
+        trigger,
+        guard,
+        behavior,
     ));
     let view = new_umlstatemachine_internaltransition_view(model.clone(), request_focus);
 
@@ -5079,7 +5068,7 @@ fn new_umlstatemachine_internaltransition_view(
 
         request_focus,
         display_text: String::new(),
-        trigger_buffer: (*r.trigger).clone(),
+        trigger_buffer: r.trigger.to_string(),
         guard_buffer: String::new(),
         behavior_buffer: String::new(),
 
@@ -5140,7 +5129,7 @@ impl UmlStateMachineInternalTransitionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::NameChange(Arc::new(self.trigger_buffer.clone())),
+                UmlStateMachinePropChange::NameChange(self.trigger_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -5155,9 +5144,7 @@ impl UmlStateMachineInternalTransitionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::TransitionGuardChange(Arc::new(
-                    self.guard_buffer.clone(),
-                )),
+                UmlStateMachinePropChange::TransitionGuardChange(self.guard_buffer.clone().into()),
             ));
         }
 
@@ -5167,9 +5154,9 @@ impl UmlStateMachineInternalTransitionView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::TransitionBehaviorChange(Arc::new(
-                    self.behavior_buffer.clone(),
-                )),
+                UmlStateMachinePropChange::TransitionBehaviorChange(
+                    self.behavior_buffer.clone().into(),
+                ),
             ));
         }
 
@@ -5427,9 +5414,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTra
         let m = self.model.read();
 
         self.display_text = {
-            let mut t = (*m.trigger).clone();
+            let mut t = m.trigger.to_string();
 
-            if !m.guard.is_empty() && !matches!(m.trigger.as_str(), "entry" | "do" | "exit") {
+            if !m.guard.is_empty() && !matches!(&*m.trigger, "entry" | "do" | "exit") {
                 t.push_str(" [");
                 t.push_str(&m.guard);
                 t.push_str("]");
@@ -5441,9 +5428,9 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineInternalTra
             t
         };
 
-        self.trigger_buffer = (*m.trigger).clone();
-        self.guard_buffer = (*m.guard).clone();
-        self.behavior_buffer = (*m.behavior).clone();
+        self.trigger_buffer = m.trigger.to_string();
+        self.guard_buffer = m.guard.to_string();
+        self.behavior_buffer = m.behavior.to_string();
     }
     fn head_count(
         &mut self,
@@ -6562,7 +6549,7 @@ pub fn new_umlstatemachine_edge(
 ) -> (ERef<UmlStateMachineEdge>, ERef<EdgeViewT>) {
     let link_model = ERef::new(UmlStateMachineEdge::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         source.0,
         target.0,
     ));
@@ -6610,7 +6597,7 @@ struct UmlStateMachineEdgeTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     name_buffer: String,
 }
 
@@ -6634,7 +6621,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
         _settings: &<UmlStateMachineDomain as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlStateMachineDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         match self.temporaries.midpoint_label.clone() {
             None => Ok(()),
             Some(label) => Err(label),
@@ -6685,9 +6672,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::NameChange(Arc::new(
-                    self.temporaries.name_buffer.clone(),
-                )),
+                UmlStateMachinePropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
 
@@ -6759,7 +6744,7 @@ impl MulticonnectionAdapter<UmlStateMachineDomain> for UmlStateMachineEdgeAdapte
             true => None,
             false => Some(model.name.clone()),
         };
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
     }
 
     fn deep_copy_init(
@@ -6799,8 +6784,8 @@ pub fn new_umlstatemachine_note(
 ) -> (ERef<UmlStateMachineNote>, ERef<UmlStateMachineNoteView>) {
     let comment_model = ERef::new(UmlStateMachineNote::new(
         ModelUuid::now_v7(),
-        stereotype.to_owned(),
-        text.to_owned(),
+        stereotype,
+        text,
     ));
     let comment_view = new_umlstatemachine_note_view(
         comment_model.clone(),
@@ -6826,8 +6811,8 @@ pub fn new_umlstatemachine_note_view(
 
         request_focus,
         display_text: String::new(),
-        stereotype_buffer: (*m.stereotype).clone(),
-        text_buffer: (*m.text).clone(),
+        stereotype_buffer: m.stereotype.to_string(),
+        text_buffer: m.text.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -6931,9 +6916,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::StereotypeChange(Arc::new(
-                    self.stereotype_buffer.clone(),
-                )),
+                UmlStateMachinePropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
         if ui
@@ -6942,7 +6925,7 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlStateMachinePropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                UmlStateMachinePropChange::NameChange(self.text_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -7387,8 +7370,8 @@ impl ElementControllerGen2<UmlStateMachineDomain> for UmlStateMachineNoteView {
             s.push_str(&model.text);
             s
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.text_buffer = (*model.text).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.text_buffer = model.text.to_string();
     }
 
     fn head_count(

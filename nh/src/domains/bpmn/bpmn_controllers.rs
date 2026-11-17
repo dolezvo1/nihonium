@@ -78,7 +78,7 @@ impl BpmnOrdinalMovement {
 
 #[derive(Clone)]
 pub enum BpmnPropChange {
-    NameChange(Arc<String>),
+    NameChange(Arc<str>),
 
     TaskKindChange(BpmnTaskKind),
     IsCallChange(bool),
@@ -96,7 +96,7 @@ pub enum BpmnPropChange {
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
 }
 
 impl Debug for BpmnPropChange {
@@ -269,8 +269,8 @@ impl BpmnDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: BpmnDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -283,7 +283,7 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -396,7 +396,7 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &BpmnElement) -> Arc<String> {
+    fn label_for(&self, e: &BpmnElement) -> Arc<str> {
         match e {
             BpmnElement::Task(inner) => {
                 let r = inner.read();
@@ -521,7 +521,7 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                BpmnPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                BpmnPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         }
 
@@ -531,7 +531,7 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                BpmnPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                BpmnPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -577,8 +577,8 @@ impl DiagramAdapter<BpmnDomain> for BpmnDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -657,11 +657,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(BpmnDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(BpmnDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -811,7 +807,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(BpmnDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![
             pool1.into(),
             pool2.into(),
@@ -2866,7 +2862,7 @@ pub fn new_bpmn_subprocess(
     let model = ERef::new(BpmnSubprocess::new(
         ModelUuid::now_v7(),
         kind,
-        name.to_owned(),
+        name,
         Vec::new(),
     ));
     let package_view = new_bpmn_subprocess_view(model.clone(), bounds_rect, request_focus);
@@ -2889,7 +2885,7 @@ pub fn new_bpmn_subprocess_view(
             all_children_status: HashMap::new(),
             request_focus,
             kind_buffer: m.kind,
-            name_buffer: (*m.name).clone(),
+            name_buffer: m.name.to_string(),
             dragged_type_and_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
         },
@@ -3073,7 +3069,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                BpmnPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -3942,7 +3938,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnSubprocessView {
     fn refresh_buffers(&mut self) {
         let r = self.model.read();
         self.temporaries.kind_buffer = r.kind;
-        self.temporaries.name_buffer = (*r.name).clone();
+        self.temporaries.name_buffer = r.name.to_string();
     }
 
     fn head_count(
@@ -4934,11 +4930,7 @@ pub fn new_bpmn_poolswimlane(
     name: &str,
     bounds_rect: egui::Rect,
 ) -> (ERef<BpmnPoolSwimlane>, ERef<BpmnPoolSwimlaneView>) {
-    let package_model = ERef::new(BpmnPoolSwimlane::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        Vec::new(),
-    ));
+    let package_model = ERef::new(BpmnPoolSwimlane::new(ModelUuid::now_v7(), name, Vec::new()));
     let package_view = new_bpmn_poolswimlane_view(package_model.clone(), bounds_rect);
 
     (package_model, package_view)
@@ -5030,7 +5022,7 @@ impl BpmnPoolSwimlaneView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                BpmnPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
 
@@ -5723,7 +5715,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnPoolSwimlaneView {
     fn refresh_buffers(&mut self) {
         let r = self.model.read();
 
-        self.temporaries.name_buffer = (*r.name).clone();
+        self.temporaries.name_buffer = r.name.to_string();
     }
 
     fn head_count(
@@ -5972,12 +5964,7 @@ fn new_bpmn_task(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<BpmnTask>, ERef<BpmnTaskView>) {
-    let model = ERef::new(BpmnTask::new(
-        ModelUuid::now_v7(),
-        kind,
-        is_call,
-        name.to_owned(),
-    ));
+    let model = ERef::new(BpmnTask::new(ModelUuid::now_v7(), kind, is_call, name));
     let view = new_bpmn_task_view(model.clone(), position, background_color, request_focus);
 
     (model, view)
@@ -5996,7 +5983,7 @@ fn new_bpmn_task_view(
         temporaries: BpmnTaskViewTemporaries {
             all_children_status: Default::default(),
             request_focus,
-            name_buffer: (*m.name).clone(),
+            name_buffer: m.name.to_string(),
             kind_buffer: m.kind,
             is_call_buffer: m.is_call,
             dragged_shape: None,
@@ -6137,7 +6124,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                BpmnPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -6861,7 +6848,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnTaskView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
         self.temporaries.is_call_buffer = model.is_call;
     }
@@ -6964,7 +6951,7 @@ fn new_bpmn_startevent(
         ModelUuid::now_v7(),
         kind,
         subkind,
-        name.to_owned(),
+        name,
     ));
     let view = new_bpmn_event_view(model.clone().into(), position, request_focus);
 
@@ -6981,7 +6968,7 @@ fn new_bpmn_intermediateevent(
         ModelUuid::now_v7(),
         kind,
         subkind,
-        name.to_owned(),
+        name,
     ));
     let view = new_bpmn_event_view(model.clone().into(), position, request_focus);
 
@@ -6998,7 +6985,7 @@ fn new_bpmn_boundaryinetermediateevent(
         ModelUuid::now_v7(),
         kind,
         subkind,
-        name.to_owned(),
+        name,
     ));
     let view = new_bpmn_event_view(model.clone().into(), position, request_focus);
 
@@ -7010,11 +6997,7 @@ fn new_bpmn_endevent(
     position: egui::Pos2,
     request_focus: bool,
 ) -> (ERef<BpmnEndEvent>, ERef<BpmnEventView>) {
-    let model = ERef::new(BpmnEndEvent::new(
-        ModelUuid::now_v7(),
-        kind,
-        name.to_owned(),
-    ));
+    let model = ERef::new(BpmnEndEvent::new(ModelUuid::now_v7(), kind, name));
     let view = new_bpmn_event_view(model.clone().into(), position, request_focus);
 
     (model, view)
@@ -7034,10 +7017,10 @@ fn new_bpmn_event_view(
             kind_buffer: Default::default(),
             subkind_buffer: Default::default(),
             name_buffer: match model {
-                BpmnEvent::StartEvent(inner) => (*inner.read().name).clone(),
-                BpmnEvent::IntermediateEvent(inner) => (*inner.read().name).clone(),
-                BpmnEvent::BoundaryIntermediateEvent(inner) => (*inner.read().name).clone(),
-                BpmnEvent::EndEvent(inner) => (*inner.read().name).clone(),
+                BpmnEvent::StartEvent(inner) => inner.read().name.to_string(),
+                BpmnEvent::IntermediateEvent(inner) => inner.read().name.to_string(),
+                BpmnEvent::BoundaryIntermediateEvent(inner) => inner.read().name.to_string(),
+                BpmnEvent::EndEvent(inner) => inner.read().name.to_string(),
             },
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
@@ -7147,7 +7130,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                BpmnPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -7941,27 +7924,27 @@ impl ElementControllerGen2<BpmnDomain> for BpmnEventView {
         match &self.model {
             BpmnEvent::StartEvent(inner) => {
                 let r = inner.read();
-                self.temporaries.name_buffer = (*r.name).clone();
+                self.temporaries.name_buffer = r.name.to_string();
                 self.temporaries.kind_buffer = r.kind;
                 self.temporaries.subkind_buffer = BpmnEventViewSubkindBuffer::Start(r.subkind);
             }
             BpmnEvent::IntermediateEvent(inner) => {
                 let r = inner.read();
-                self.temporaries.name_buffer = (*r.name).clone();
+                self.temporaries.name_buffer = r.name.to_string();
                 self.temporaries.kind_buffer = r.kind;
                 self.temporaries.subkind_buffer =
                     BpmnEventViewSubkindBuffer::Intermediate(r.subkind);
             }
             BpmnEvent::BoundaryIntermediateEvent(inner) => {
                 let r = inner.read();
-                self.temporaries.name_buffer = (*r.name).clone();
+                self.temporaries.name_buffer = r.name.to_string();
                 self.temporaries.kind_buffer = r.kind;
                 self.temporaries.subkind_buffer =
                     BpmnEventViewSubkindBuffer::BoundaryIntermediate(r.subkind);
             }
             BpmnEvent::EndEvent(inner) => {
                 let r = inner.read();
-                self.temporaries.name_buffer = (*r.name).clone();
+                self.temporaries.name_buffer = r.name.to_string();
                 self.temporaries.kind_buffer = r.kind;
                 self.temporaries.subkind_buffer = BpmnEventViewSubkindBuffer::End;
             }
@@ -8032,11 +8015,7 @@ pub fn new_bpmn_gateway(
     position: egui::Pos2,
     request_focus: bool,
 ) -> (ERef<BpmnGateway>, ERef<BpmnGatewayView>) {
-    let model = ERef::new(BpmnGateway::new(
-        ModelUuid::now_v7(),
-        kind,
-        condition.to_owned(),
-    ));
+    let model = ERef::new(BpmnGateway::new(ModelUuid::now_v7(), kind, condition));
     let node_view = new_bpmn_gateway_view(model.clone(), position, request_focus);
 
     (model, node_view)
@@ -8053,7 +8032,7 @@ pub fn new_bpmn_gateway_view(
 
         request_focus,
         kind_buffer: m.kind,
-        condition_buffer: (*m.condition).clone(),
+        condition_buffer: m.condition.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -8168,7 +8147,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.condition_buffer.clone())),
+                BpmnPropChange::NameChange(self.condition_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -8561,7 +8540,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnGatewayView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.kind_buffer = model.kind;
-        self.condition_buffer = (*model.condition).clone();
+        self.condition_buffer = model.condition.to_string();
     }
 
     fn head_count(
@@ -8623,7 +8602,7 @@ pub fn new_bpmn_data(
         ModelUuid::now_v7(),
         kind,
         is_collection,
-        name.to_owned(),
+        name,
     ));
     let node_view = new_bpmn_data_view(
         node_model.clone(),
@@ -8648,7 +8627,7 @@ pub fn new_bpmn_data_view(
         request_focus,
         kind_buffer: m.kind,
         is_collection_buffer: m.is_collection,
-        name_buffer: (*m.name).clone(),
+        name_buffer: m.name.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -8741,7 +8720,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                BpmnPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -9156,7 +9135,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnDataView {
 
         self.kind_buffer = model.kind;
         self.is_collection_buffer = model.is_collection;
-        self.name_buffer = (*model.name).clone();
+        self.name_buffer = model.name.to_string();
     }
 
     fn head_count(
@@ -9220,7 +9199,7 @@ pub fn new_bpmn_sequenceedge(
         source.0,
         target.0,
         kind,
-        condition.to_owned(),
+        condition,
     ));
     let link_view =
         new_bpmn_sequenceedge_view(link_model.clone(), center_point, source.1, target.1);
@@ -9266,7 +9245,7 @@ struct BpmnSequenceEdgeAdapterTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     condition_buffer: String,
     kind_buffer: BpmnSequenceEdgeKind,
 }
@@ -9291,7 +9270,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnSequenceEdgeAdapter {
         _settings: &<BpmnDomain as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<BpmnDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         if self.temporaries.kind_buffer == BpmnSequenceEdgeKind::DefaultBranch {
             for source in sources {
                 let a = source.points[0].1;
@@ -9371,7 +9350,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnSequenceEdgeAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.temporaries.condition_buffer.clone())),
+                BpmnPropChange::NameChange(self.temporaries.condition_buffer.clone().into()),
             ));
         }
 
@@ -9448,9 +9427,9 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnSequenceEdgeAdapter {
 
         self.temporaries.midpoint_label = match model.condition.is_empty() {
             true => None,
-            false => Some(model.condition.clone().into()),
+            false => Some(model.condition.clone()),
         };
-        self.temporaries.condition_buffer = (*model.condition).clone();
+        self.temporaries.condition_buffer = model.condition.to_string();
         self.temporaries.kind_buffer = model.kind;
     }
 
@@ -9489,7 +9468,7 @@ pub fn new_bpmn_messageedge(
         source.0,
         target.0,
         kind,
-        name.to_owned(),
+        name,
     ));
     let link_view = new_bpmn_messageedge_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
@@ -9534,7 +9513,7 @@ struct BpmnMessageEdgeAdapterTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    midpoint_label: Option<Arc<String>>,
+    midpoint_label: Option<Arc<str>>,
     condition_buffer: String,
     kind_buffer: BpmnMessageEdgeKind,
 }
@@ -9559,7 +9538,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnMessageEdgeAdapter {
         _settings: &<BpmnDomain as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<BpmnDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         let align_point = match self.temporaries.kind_buffer {
             BpmnMessageEdgeKind::Unspecified => {
                 canvas.draw_ellipse_proximity(
@@ -9676,7 +9655,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnMessageEdgeAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.temporaries.condition_buffer.clone())),
+                BpmnPropChange::NameChange(self.temporaries.condition_buffer.clone().into()),
             ));
         }
 
@@ -9753,7 +9732,7 @@ impl MulticonnectionAdapter<BpmnDomain> for BpmnMessageEdgeAdapter {
             true => None,
             false => Some(model.name.clone().into()),
         };
-        self.temporaries.condition_buffer = (*model.name).clone();
+        self.temporaries.condition_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
     }
 
@@ -9940,11 +9919,7 @@ pub fn new_bpmn_annotation(
     text: &str,
     position: egui::Pos2,
 ) -> (ERef<BpmnAnnotation>, ERef<BpmnAnnotationView>) {
-    let comment_model = ERef::new(BpmnAnnotation::new(
-        ModelUuid::now_v7(),
-        target.0,
-        text.to_owned(),
-    ));
+    let comment_model = ERef::new(BpmnAnnotation::new(ModelUuid::now_v7(), target.0, text));
     let comment_view = new_bpmn_annotation_view(comment_model.clone(), target.1, position);
 
     (comment_model, comment_view)
@@ -9960,7 +9935,7 @@ pub fn new_bpmn_annotation_view(
         model: model.clone(),
         target_view,
 
-        text_buffer: (*m.text).clone(),
+        text_buffer: m.text.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
@@ -10048,7 +10023,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnAnnotationView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                BpmnPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                BpmnPropChange::NameChange(self.text_buffer.clone().into()),
             ));
         }
 
@@ -10390,7 +10365,7 @@ impl ElementControllerGen2<BpmnDomain> for BpmnAnnotationView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.text_buffer = (*model.text).clone();
+        self.text_buffer = model.text.to_string();
     }
 
     fn head_count(

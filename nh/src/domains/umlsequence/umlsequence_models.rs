@@ -526,21 +526,21 @@ impl UmlSequenceHorizontalElement {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct UmlSequenceDiagramBoard {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 
     #[nh_context_serde(entity)]
     pub elements: Vec<UmlSequenceStandaloneElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlSequenceDiagramBoard {
-    pub fn new(uuid: ModelUuid, name: String, elements: Vec<UmlSequenceStandaloneElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, elements: Vec<UmlSequenceStandaloneElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -822,7 +822,7 @@ impl FullTextSearchable for UmlSequenceDiagramBoard {
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
 
     #[nh_context_serde(entity)]
     pub vertical_elements: Vec<ERef<UmlSequenceLifeline>>,
@@ -831,24 +831,24 @@ pub struct UmlSequenceDiagram {
     #[nh_context_serde(entity)]
     pub standalone_elements: Vec<UmlSequenceNonDiagramStandaloneElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlSequenceDiagram {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         vertical_elements: Vec<ERef<UmlSequenceLifeline>>,
         horizontal_elements: Vec<UmlSequenceHorizontalElement>,
         standalone_elements: Vec<UmlSequenceNonDiagramStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             vertical_elements,
             horizontal_elements,
             standalone_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1052,19 +1052,19 @@ pub struct UmlSequenceLifeline {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
 
-    pub name: Arc<String>,
-    pub stereotype: Arc<String>,
+    pub name: Arc<str>,
+    pub stereotype: Arc<str>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlSequenceLifeline {
-    pub fn new(uuid: ModelUuid, name: String, stereotype: String) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, stereotype: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
-            stereotype: Arc::new(stereotype),
-            comment: Arc::new("".to_owned()),
+            name: name.into(),
+            stereotype: stereotype.into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1147,8 +1147,8 @@ impl UmlSequenceMessageLifecycleKind {
 pub struct UmlSequenceMessage {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-    pub state_invariant: Arc<String>,
+    pub name: Arc<str>,
+    pub state_invariant: Arc<str>,
 
     #[full_text_searchable(skip)]
     pub synchronicity: UmlSequenceMessageSynchronicityKind,
@@ -1166,14 +1166,14 @@ pub struct UmlSequenceMessage {
     #[nh_context_serde(entity)]
     pub target: ERef<UmlSequenceLifeline>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlSequenceMessage {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
-        state_invariant: String,
+        name: &str,
+        state_invariant: &str,
         synchronicity: UmlSequenceMessageSynchronicityKind,
         lifecycle: UmlSequenceMessageLifecycleKind,
         is_return: bool,
@@ -1183,15 +1183,15 @@ impl UmlSequenceMessage {
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
-            state_invariant: Arc::new(state_invariant),
+            name: name.into(),
+            state_invariant: state_invariant.into(),
             synchronicity,
             lifecycle,
             is_return,
             duration,
             source,
             target,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1333,21 +1333,21 @@ impl UmlSequenceActivationBehaviour {
 pub struct UmlSequenceCombinedFragment {
     pub uuid: Arc<ModelUuid>,
     pub kind: UmlSequenceCombinedFragmentKind,
-    pub kind_argument: Arc<String>,
+    pub kind_argument: Arc<str>,
     pub end_behaviour: UmlSequenceActivationBehaviour,
 
     pub horizontal_span: HashSet<ModelUuid>,
     #[nh_context_serde(entity)]
     pub sections: Vec<ERef<UmlSequenceCombinedFragmentSection>>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlSequenceCombinedFragment {
     pub fn new(
         uuid: ModelUuid,
         kind: UmlSequenceCombinedFragmentKind,
-        kind_argument: String,
+        kind_argument: &str,
         end_behaviour: UmlSequenceActivationBehaviour,
         horizontal_span: HashSet<ModelUuid>,
         sections: Vec<ERef<UmlSequenceCombinedFragmentSection>>,
@@ -1355,11 +1355,11 @@ impl UmlSequenceCombinedFragment {
         Self {
             uuid: Arc::new(uuid),
             kind,
-            kind_argument: Arc::new(kind_argument),
+            kind_argument: kind_argument.into(),
             end_behaviour,
             horizontal_span,
             sections,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1489,7 +1489,7 @@ impl FullTextSearchable for UmlSequenceCombinedFragment {
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceCombinedFragmentSection {
     pub uuid: Arc<ModelUuid>,
-    pub guard: Arc<String>,
+    pub guard: Arc<str>,
 
     #[nh_context_serde(entity)]
     pub horizontal_elements: Vec<UmlSequenceHorizontalElement>,
@@ -1498,12 +1498,12 @@ pub struct UmlSequenceCombinedFragmentSection {
 impl UmlSequenceCombinedFragmentSection {
     pub fn new(
         uuid: ModelUuid,
-        guard: String,
+        guard: &str,
         horizontal_elements: Vec<UmlSequenceHorizontalElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            guard: Arc::new(guard),
+            guard: guard.into(),
             horizontal_elements,
         }
     }
@@ -1627,16 +1627,16 @@ impl FullTextSearchable for UmlSequenceCombinedFragmentSection {
 pub struct UmlSequenceRef {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub text: Arc<String>,
+    pub text: Arc<str>,
     #[full_text_searchable(skip)]
     pub horizontal_span: HashSet<ModelUuid>,
 }
 
 impl UmlSequenceRef {
-    pub fn new(uuid: ModelUuid, text: String, horizontal_span: HashSet<ModelUuid>) -> Self {
+    pub fn new(uuid: ModelUuid, text: &str, horizontal_span: HashSet<ModelUuid>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            text: Arc::new(text),
+            text: text.into(),
             horizontal_span,
         }
     }
@@ -1684,7 +1684,7 @@ pub struct DurationEnding {
 pub struct UmlSequenceDurationConstraint {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub text: Arc<String>,
+    pub text: Arc<str>,
     #[nh_context_serde(entity)]
     #[full_text_searchable(skip)]
     pub source: DurationEnding,
@@ -1692,19 +1692,19 @@ pub struct UmlSequenceDurationConstraint {
     #[full_text_searchable(skip)]
     pub target: DurationEnding,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl UmlSequenceDurationConstraint {
     pub fn new(
         uuid: ModelUuid,
-        text: String,
+        text: &str,
         source: (bool, UmlSequenceHorizontalElement),
         target: (bool, UmlSequenceHorizontalElement),
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            text: Arc::new(text),
+            text: text.into(),
             source: DurationEnding {
                 element: source.1,
                 end: source.0,
@@ -1713,7 +1713,7 @@ impl UmlSequenceDurationConstraint {
                 element: target.1,
                 end: target.0,
             },
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1763,14 +1763,14 @@ impl Model for UmlSequenceDurationConstraint {
 pub struct UmlSequenceNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub text: Arc<String>,
+    pub text: Arc<str>,
 }
 
 impl UmlSequenceNote {
-    pub fn new(uuid: ModelUuid, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            text: Arc::new(text),
+            text: text.into(),
         }
     }
     pub fn deep_copy_clone_inner(

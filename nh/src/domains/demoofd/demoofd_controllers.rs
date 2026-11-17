@@ -75,22 +75,22 @@ pub enum DemoOfdOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum DemoOfdPropChange {
-    NameChange(Arc<String>),
+    NameChange(Arc<str>),
 
-    EntityPropertiesChange(Arc<String>),
+    EntityPropertiesChange(Arc<str>),
     EntityInternalChange(bool),
 
     EventKindChange(DemoTransactionKind),
-    EventIdentifierChange(Arc<String>),
+    EventIdentifierChange(Arc<str>),
 
-    LinkMultiplicityChange(/*target?*/ bool, Arc<String>),
+    LinkMultiplicityChange(/*target?*/ bool, Arc<str>),
     AggregationKindChange(bool),
     FlipMulticonnection(FlipMulticonnection),
 
     PackageKindChange(DemoPackageKind),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -313,8 +313,8 @@ impl DemoOfdDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: DemoOfdDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -327,7 +327,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -437,33 +437,29 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &DemoOfdElement) -> Arc<String> {
+    fn label_for(&self, e: &DemoOfdElement) -> Arc<str> {
         match e {
-            DemoOfdElement::Package(inner) => Arc::new(format!(
-                "Package ({})",
-                LabelProvider::sanitize(&inner.read().name)
-            )),
-            DemoOfdElement::EntityType(inner) => Arc::new(format!(
-                "Entity ({})",
-                LabelProvider::sanitize(&inner.read().name)
-            )),
-            DemoOfdElement::EventType(inner) => Arc::new(format!("Event ({})", inner.read().name)),
-            DemoOfdElement::PropertyType(inner) => Arc::new(format!(
-                "Property ({})",
-                LabelProvider::sanitize(&inner.read().name)
-            )),
-            DemoOfdElement::Specialization(_inner) => Arc::new("Specialization".to_owned()),
-            DemoOfdElement::Aggregation(_inner) => Arc::new("Aggregation".to_owned()),
-            DemoOfdElement::Precedence(_inner) => Arc::new("Precedence".to_owned()),
-            DemoOfdElement::Exclusion(_inner) => Arc::new("Exclusion".to_owned()),
+            DemoOfdElement::Package(inner) => {
+                format!("Package ({})", LabelProvider::sanitize(&inner.read().name)).into()
+            }
+            DemoOfdElement::EntityType(inner) => {
+                format!("Entity ({})", LabelProvider::sanitize(&inner.read().name)).into()
+            }
+            DemoOfdElement::EventType(inner) => format!("Event ({})", inner.read().name).into(),
+            DemoOfdElement::PropertyType(inner) => {
+                format!("Property ({})", LabelProvider::sanitize(&inner.read().name)).into()
+            }
+            DemoOfdElement::Specialization(_inner) => "Specialization".into(),
+            DemoOfdElement::Aggregation(_inner) => "Aggregation".into(),
+            DemoOfdElement::Precedence(_inner) => "Precedence".into(),
+            DemoOfdElement::Exclusion(_inner) => "Exclusion".into(),
             DemoOfdElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
         }
     }
@@ -512,7 +508,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                DemoOfdPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                DemoOfdPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         }
 
@@ -522,7 +518,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                DemoOfdPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -572,8 +568,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -654,11 +650,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(DemoOfdDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(DemoOfdDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -725,7 +717,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram2 = ERef::new(DemoOfdDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![
             entity_membership.into(),
             event_started.into(),
@@ -2133,7 +2125,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -2180,7 +2172,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                DemoOfdPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -2207,7 +2199,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
     }
@@ -2253,8 +2245,8 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = model.name.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -2286,12 +2278,7 @@ fn new_demoofd_package(
     bounds_rect: egui::Rect,
     request_focus: bool,
 ) -> (ERef<DemoOfdPackage>, ERef<PackageViewT>) {
-    let graph_model = ERef::new(DemoOfdPackage::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        kind,
-        vec![],
-    ));
+    let graph_model = ERef::new(DemoOfdPackage::new(ModelUuid::now_v7(), name, kind, vec![]));
     let graph_view = new_demoofd_package_view(graph_model.clone(), bounds_rect, request_focus);
 
     (graph_model, graph_view)
@@ -2308,9 +2295,9 @@ fn new_demoofd_package_view(
             model: model.clone(),
             temporaries: DemoOfdPackageAdapterTemporaries {
                 request_focus,
-                name_buffer: (*m.name).clone(),
+                name_buffer: m.name.to_string(),
                 kind_buffer: m.kind,
-                comment_buffer: (*m.comment).clone(),
+                comment_buffer: m.comment.to_string(),
             },
         },
         Vec::new(),
@@ -2328,8 +2315,8 @@ fn new_demoofd_entitytype(
 ) -> (ERef<DemoOfdEntityType>, ERef<DemoOfdEntityView>) {
     let class_model = ERef::new(DemoOfdEntityType::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
-        properties.to_owned(),
+        name,
+        properties,
         is_internal,
     ));
     let class_view = new_demoofd_entitytype_view(class_model.clone(), position, request_focus);
@@ -2347,10 +2334,10 @@ fn new_demoofd_entitytype_view(
         model: model.clone(),
 
         request_focus,
-        name_buffer: (*m.name).clone(),
-        properties_buffer: (*m.properties).clone(),
+        name_buffer: m.name.to_string(),
+        properties_buffer: m.properties.to_string(),
         internal_buffer: m.internal,
-        comment_buffer: (*m.comment).clone(),
+        comment_buffer: m.comment.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -2634,7 +2621,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                DemoOfdPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -2645,7 +2632,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::EntityPropertiesChange(Arc::new(self.properties_buffer.clone())),
+                DemoOfdPropChange::EntityPropertiesChange(self.properties_buffer.clone().into()),
             ));
         }
 
@@ -2662,7 +2649,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -2938,10 +2925,10 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.name_buffer = (*model.name).clone();
-        self.properties_buffer = (*model.properties).clone();
+        self.name_buffer = model.name.to_string();
+        self.properties_buffer = model.properties.to_string();
         self.internal_buffer = model.internal;
-        self.comment_buffer = (*model.comment).clone();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -3009,8 +2996,8 @@ fn new_demoofd_eventtype(
     let instance_model = ERef::new(DemoOfdEventType::new(
         ModelUuid::now_v7(),
         transaction_kind,
-        identifier.to_owned(),
-        name.to_owned(),
+        identifier,
+        name,
         base_entity_type.0,
         spec_model,
     ));
@@ -3039,9 +3026,9 @@ fn new_demoofd_eventtype_view(
         specialization_view: UFOption::from(specialization_entity_type),
         request_focus,
         kind_buffer: m.kind,
-        identifier_buffer: (*m.identifier).clone(),
-        name_buffer: (*m.name).clone(),
-        comment_buffer: (*m.comment).clone(),
+        identifier_buffer: m.identifier.to_string(),
+        name_buffer: m.name.to_string(),
+        comment_buffer: m.comment.to_string(),
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
         position,
@@ -3166,7 +3153,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::EventIdentifierChange(Arc::new(self.identifier_buffer.clone())),
+                DemoOfdPropChange::EventIdentifierChange(self.identifier_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -3177,7 +3164,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                DemoOfdPropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
 
@@ -3187,7 +3174,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -3669,9 +3656,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.kind_buffer = model.kind;
-        self.identifier_buffer = (*model.identifier).clone();
-        self.name_buffer = (*model.name).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.identifier_buffer = model.identifier.to_string();
+        self.name_buffer = model.name.to_string();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -3797,10 +3784,10 @@ fn new_demoofd_propertytype(
 ) -> (ERef<DemoOfdPropertyType>, ERef<PropertyTypeViewT>) {
     let link_model = ERef::new(DemoOfdPropertyType::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
-        domain_multiplicity.to_owned(),
+        name,
+        domain_multiplicity,
         source.0,
-        range_multiplicity.to_owned(),
+        range_multiplicity,
         target.0,
     ));
     let link_view =
@@ -3875,7 +3862,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         _settings: &<DemoOfdDomain as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         let r = self.model.read();
         if r.name.is_empty() {
             Ok(())
@@ -3916,7 +3903,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                DemoOfdPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         ui.separator();
@@ -3932,7 +3919,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
                 q.selected_views(),
                 DemoOfdPropChange::LinkMultiplicityChange(
                     false,
-                    Arc::new(self.temporaries.domain_multiplicity_buffer.clone()),
+                    self.temporaries.domain_multiplicity_buffer.clone().into(),
                 ),
             ));
         }
@@ -3949,7 +3936,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
                 q.selected_views(),
                 DemoOfdPropChange::LinkMultiplicityChange(
                     true,
-                    Arc::new(self.temporaries.range_multiplicity_buffer.clone()),
+                    self.temporaries.range_multiplicity_buffer.clone().into(),
                 ),
             ));
         }
@@ -3969,7 +3956,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4072,10 +4059,10 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             .target_uuids
             .push(*model.range_element.read().uuid);
 
-        self.temporaries.name_buffer = (*model.name).clone();
-        self.temporaries.domain_multiplicity_buffer = (*model.domain_multiplicity).clone();
-        self.temporaries.range_multiplicity_buffer = (*model.range_multiplicity).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = model.name.to_string();
+        self.temporaries.domain_multiplicity_buffer = model.domain_multiplicity.to_string();
+        self.temporaries.range_multiplicity_buffer = model.range_multiplicity.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -4212,7 +4199,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4270,7 +4257,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
             .target_uuids
             .push(*model.range_element.read().uuid);
 
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -4461,7 +4448,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4536,7 +4523,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
             .push(*model.range_element.read().uuid);
 
         self.temporaries.is_generalization_buffer = model.is_generalization;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -4673,7 +4660,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4731,7 +4718,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
             .target_uuids
             .push(*model.range_element.read().uuid);
 
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -4816,7 +4803,7 @@ struct DemoOfdExclusionTemporaries {
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 
-    midpoint_label: Arc<String>,
+    midpoint_label: Arc<str>,
 
     comment_buffer: String,
 }
@@ -4841,7 +4828,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         _settings: &<DemoOfdDomain as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         canvas.draw_ellipse(
             center,
             egui::Vec2::new(10.0, 10.0),
@@ -4918,7 +4905,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                DemoOfdPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4973,8 +4960,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
             .target_uuids
             .push(*model.range_element.uuid());
 
-        self.temporaries.midpoint_label = Arc::new("X".to_owned());
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.midpoint_label = "X".into();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -5011,7 +4998,7 @@ pub fn new_demoofd_note(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<DemoOfdNote>, ERef<DemoOfdNoteView>) {
-    let model = ERef::new(DemoOfdNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let model = ERef::new(DemoOfdNote::new(ModelUuid::now_v7(), text));
     let view = new_demoofd_note_view(
         model.clone(),
         position,
@@ -5035,7 +5022,7 @@ pub fn new_demoofd_note_view(
         model: model.clone(),
 
         request_focus,
-        text_buffer: (*m.text).clone(),
+        text_buffer: m.text.to_string(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::from_selected(request_focus),
@@ -5125,7 +5112,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                DemoOfdPropChange::NameChange(Arc::new(self.text_buffer.clone())),
+                DemoOfdPropChange::NameChange(self.text_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -5505,7 +5492,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdNoteView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.text_buffer = (*model.text).clone();
+        self.text_buffer = model.text.to_string();
     }
 
     fn head_count(

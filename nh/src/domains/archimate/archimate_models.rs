@@ -219,19 +219,19 @@ pub fn top_sort_info(m: &ArchiMateElement) -> ModelTopSortInfo {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct ArchiMateDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<ArchiMateElement>,
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl ArchiMateDiagram {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<ArchiMateElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, contained_elements: Vec<ArchiMateElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -726,28 +726,28 @@ impl ArchiMateConceptKind {
 pub struct ArchiMateConcept {
     pub uuid: Arc<ModelUuid>,
     pub kind: ArchiMateConceptKind,
-    pub stereotype: Arc<String>,
-    pub name: Arc<String>,
+    pub stereotype: Arc<str>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<ArchiMateElement>,
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl ArchiMateConcept {
     pub fn new(
         uuid: ModelUuid,
         kind: ArchiMateConceptKind,
-        stereotype: String,
-        name: String,
+        stereotype: &str,
+        name: &str,
         contained_elements: Vec<ArchiMateElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
-            stereotype: Arc::new(stereotype),
-            name: Arc::new(name),
+            stereotype: stereotype.into(),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -943,7 +943,7 @@ impl ArchiMateRelationshipKind {
 pub struct ArchiMateRelationshipEnding {
     #[nh_context_serde(entity)]
     pub concept: ERef<ArchiMateConcept>,
-    pub multiplicity: Arc<String>,
+    pub multiplicity: Arc<str>,
 }
 
 #[derive(
@@ -955,8 +955,8 @@ pub struct ArchiMateRelationship {
     pub uuid: Arc<ModelUuid>,
     #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: ArchiMateRelationshipKind,
-    pub name: Arc<String>,
-    pub stereotype: Arc<String>,
+    pub name: Arc<str>,
+    pub stereotype: Arc<str>,
     #[full_text_searchable(skip)]
     pub junction_kind: ArchiMateJunctionKind,
     #[full_text_searchable(skip)]
@@ -971,16 +971,16 @@ impl ArchiMateRelationship {
     pub fn new(
         uuid: ModelUuid,
         kind: ArchiMateRelationshipKind,
-        name: String,
-        stereotype: String,
+        name: &str,
+        stereotype: &str,
         sources: Vec<ArchiMateRelationshipEnding>,
         targets: Vec<ArchiMateRelationshipEnding>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
-            name: Arc::new(name),
-            stereotype: Arc::new(stereotype),
+            name: name.into(),
+            stereotype: stereotype.into(),
             junction_kind: ArchiMateJunctionKind::AndJunction,
             sources,
             targets,
@@ -1037,7 +1037,7 @@ impl ArchiMateRelationship {
                     pos,
                     ArchiMateRelationshipEnding {
                         concept: c,
-                        multiplicity: Arc::new("".to_owned()),
+                        multiplicity: "".into(),
                     },
                 );
                 Ok(pos.try_into().unwrap())
@@ -1050,7 +1050,7 @@ impl ArchiMateRelationship {
                     pos,
                     ArchiMateRelationshipEnding {
                         concept: c,
-                        multiplicity: Arc::new("".to_owned()),
+                        multiplicity: "".into(),
                     },
                 );
                 Ok(pos.try_into().unwrap())

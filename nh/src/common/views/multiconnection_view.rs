@@ -24,9 +24,9 @@ use crate::common::{
 pub struct ArrowData {
     pub line_type: canvas::LineType,
     pub arrowhead_type: canvas::ArrowheadType,
-    pub multiplicity: Option<Arc<String>>,
-    pub role: Option<Arc<String>>,
-    pub reading: Option<Arc<String>>,
+    pub multiplicity: Option<Arc<str>>,
+    pub role: Option<Arc<str>>,
+    pub reading: Option<Arc<str>>,
 }
 
 impl ArrowData {
@@ -196,7 +196,7 @@ pub trait MulticonnectionAdapter<DomainT: Domain>:
         _settings: &DomainT::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         Ok(())
     }
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData>;
@@ -814,8 +814,8 @@ where
                 shape,
                 shape_intersect,
                 [
-                    data.multiplicity.as_ref().map(|e| e.as_str()),
-                    data.role.as_ref().map(|e| e.as_str()),
+                    data.multiplicity.as_ref().map(|e| &**e),
+                    data.role.as_ref().map(|e| &**e),
                 ],
             );
 

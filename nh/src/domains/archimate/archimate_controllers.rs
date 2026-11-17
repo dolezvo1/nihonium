@@ -59,17 +59,17 @@ pub struct ArchiMateOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum ArchiMatePropChange {
-    NameChange(Arc<String>),
-    StereotypeChange(Arc<String>),
+    NameChange(Arc<str>),
+    StereotypeChange(Arc<str>),
 
     ConceptKindChange(ArchiMateConceptKind),
     RelationshipKindChange(ArchiMateRelationshipKind),
     RelationshipJunctionKindChange(ArchiMateJunctionKind),
-    RelationshipMultiplicityChange(bool, ModelUuid, Arc<String>),
+    RelationshipMultiplicityChange(bool, ModelUuid, Arc<str>),
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
 }
 
 impl Debug for ArchiMatePropChange {
@@ -216,8 +216,8 @@ impl ArchiMateDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: ArchiMateDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -230,7 +230,7 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -282,7 +282,7 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &ArchiMateElement) -> Arc<String> {
+    fn label_for(&self, e: &ArchiMateElement) -> Arc<str> {
         match e {
             ArchiMateElement::Concept(inner) => {
                 let r = inner.read();
@@ -377,7 +377,7 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                ArchiMatePropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                ArchiMatePropChange::NameChange(self.buffer.name.clone().into()),
             ));
         };
 
@@ -387,7 +387,7 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                ArchiMatePropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                ArchiMatePropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -441,8 +441,8 @@ impl DiagramAdapter<ArchiMateDomain> for ArchiMateDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -523,11 +523,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(ArchiMateDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(ArchiMateDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -699,7 +695,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(ArchiMateDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![
             createreservation.into(),
             bookingcreation.into(),
@@ -1866,8 +1862,8 @@ fn new_archimate_concept(
     let model = ERef::new(ArchiMateConcept::new(
         ModelUuid::now_v7(),
         kind,
-        stereotype.to_owned(),
-        name.to_owned(),
+        stereotype,
+        name,
         Vec::new(),
     ));
     let view = new_archimate_concept_view(
@@ -2009,7 +2005,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                ArchiMatePropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                ArchiMatePropChange::StereotypeChange(self.stereotype_buffer.clone().into()),
             ));
         }
 
@@ -2019,7 +2015,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                ArchiMatePropChange::NameChange(Arc::new(self.name_buffer.clone())),
+                ArchiMatePropChange::NameChange(self.name_buffer.clone().into()),
             ));
         }
         self.request_focus = false;
@@ -2047,7 +2043,7 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                ArchiMatePropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                ArchiMatePropChange::CommentChange(self.comment_buffer.clone().into()),
             ));
         }
 
@@ -3610,10 +3606,10 @@ impl ElementControllerGen2<ArchiMateDomain> for ArchiMateConceptView {
         } else {
             String::new()
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.name_buffer = (*model.name).clone();
+        self.stereotype_buffer = model.stereotype.to_string();
+        self.name_buffer = model.name.to_string();
         self.kind_buffer = model.kind;
-        self.comment_buffer = (*model.comment).clone();
+        self.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -3732,15 +3728,15 @@ fn new_archimate_relationship(
     let model = ERef::new(ArchiMateRelationship::new(
         ModelUuid::now_v7(),
         kind,
-        name.to_owned(),
-        stereotype.to_owned(),
+        name,
+        stereotype,
         vec![ArchiMateRelationshipEnding {
             concept: source.0,
-            multiplicity: Arc::new("".to_owned()),
+            multiplicity: "".into(),
         }],
         vec![ArchiMateRelationshipEnding {
             concept: target.0,
-            multiplicity: Arc::new("".to_owned()),
+            multiplicity: "".into(),
         }],
     ));
     let view = new_archimate_relationship_view(
@@ -3841,7 +3837,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
         _settings: &<ArchiMateDomain as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<ArchiMateDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         if self.temporaries.is_junction {
             let (bg, prox) = match self.temporaries.junction_kind_buffer {
                 ArchiMateJunctionKind::AndJunction => (egui::Color32::BLACK, egui::Color32::WHITE),
@@ -3979,9 +3975,9 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                ArchiMatePropChange::StereotypeChange(Arc::new(
-                    self.temporaries.stereotype_buffer.clone(),
-                )),
+                ArchiMatePropChange::StereotypeChange(
+                    self.temporaries.stereotype_buffer.clone().into(),
+                ),
             ));
         }
         if ui
@@ -3990,7 +3986,7 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                ArchiMatePropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                ArchiMatePropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
 
@@ -4353,18 +4349,18 @@ impl MulticonnectionAdapter<ArchiMateDomain> for ArchiMateRelationshipAdapter {
             s
         };
         self.temporaries.kind_buffer = model.kind;
-        self.temporaries.stereotype_buffer = (*model.stereotype).clone();
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.stereotype_buffer = model.stereotype.to_string();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.junction_kind_buffer = model.junction_kind;
         self.temporaries.source_multiplicities_buffers = model
             .sources
             .iter()
-            .map(|e| (*e.concept.read().uuid, (*e.multiplicity).clone()))
+            .map(|e| (*e.concept.read().uuid, e.multiplicity.to_string()))
             .collect();
         self.temporaries.target_multiplicities_buffers = model
             .targets
             .iter()
-            .map(|e| (*e.concept.read().uuid, (*e.multiplicity).clone()))
+            .map(|e| (*e.concept.read().uuid, e.multiplicity.to_string()))
             .collect();
         self.temporaries.is_junction = model.sources.len() > 1 || model.targets.len() > 1;
     }

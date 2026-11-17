@@ -90,7 +90,7 @@ impl RdfElement {
             RdfElement::Graph(inner) => {
                 let model = inner.read();
                 let old_graph = collector.current_graph.replace(SimpleTerm::Iri(
-                    IriRef::new(MownStr::from((*model.iri).clone())).unwrap(),
+                    IriRef::new(MownStr::from(model.iri.to_string())).unwrap(),
                 ));
 
                 for c in &model.contained_elements {
@@ -107,7 +107,7 @@ impl RdfElement {
 
                 collector.add_triple([
                     subject,
-                    SimpleTerm::Iri(IriRef::new(MownStr::from((*model.iri).clone())).unwrap()),
+                    SimpleTerm::Iri(IriRef::new(MownStr::from(model.iri.to_string())).unwrap()),
                     object,
                 ]);
             }
@@ -277,20 +277,20 @@ pub fn top_sort_info(m: &RdfElement) -> ModelTopSortInfo {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct RdfDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<RdfElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl RdfDiagram {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<RdfElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, contained_elements: Vec<RdfElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -503,20 +503,20 @@ impl FullTextSearchable for RdfDiagram {
 #[nh_context_serde(is_entity)]
 pub struct RdfGraph {
     pub uuid: Arc<ModelUuid>,
-    pub iri: Arc<String>,
+    pub iri: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<RdfElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl RdfGraph {
-    pub fn new(uuid: ModelUuid, iri: String, contained_elements: Vec<RdfElement>) -> Self {
+    pub fn new(uuid: ModelUuid, iri: &str, contained_elements: Vec<RdfElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            iri: Arc::new(iri),
+            iri: iri.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -622,21 +622,21 @@ impl FullTextSearchable for RdfGraph {
 pub struct RdfLiteral {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub content: Arc<String>,
-    pub datatype: Arc<String>,
-    pub langtag: Arc<String>,
+    pub content: Arc<str>,
+    pub datatype: Arc<str>,
+    pub langtag: Arc<str>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl RdfLiteral {
-    pub fn new(uuid: ModelUuid, content: String, datatype: String, langtag: String) -> Self {
+    pub fn new(uuid: ModelUuid, content: &str, datatype: &str, langtag: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            content: Arc::new(content),
-            datatype: Arc::new(datatype),
-            langtag: Arc::new(langtag),
-            comment: Arc::new("".to_owned()),
+            content: content.into(),
+            datatype: datatype.into(),
+            langtag: langtag.into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -660,8 +660,8 @@ impl RdfLiteral {
     fn term_repr(&self) -> SimpleTerm<'static> {
         if !self.langtag.is_empty() {
             SimpleTerm::LiteralLanguage(
-                MownStr::from((*self.content).clone()),
-                LanguageTag::new(MownStr::from((*self.langtag).clone())).unwrap(),
+                MownStr::from(self.content.to_string()),
+                LanguageTag::new(MownStr::from(self.langtag.to_string())).unwrap(),
                 None,
             )
         } else {
@@ -672,7 +672,7 @@ impl RdfLiteral {
             }
             .to_owned();
             SimpleTerm::LiteralDatatype(
-                MownStr::from((*self.content).clone()),
+                MownStr::from(self.content.to_string()),
                 IriRef::new(MownStr::from(datatype)).unwrap(),
             )
         }
@@ -698,17 +698,17 @@ impl Model for RdfLiteral {
 pub struct RdfNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub iri: Arc<String>,
+    pub iri: Arc<str>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl RdfNode {
-    pub fn new(uuid: ModelUuid, iri: String) -> Self {
+    pub fn new(uuid: ModelUuid, iri: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            iri: Arc::new(iri),
-            comment: Arc::new("".to_owned()),
+            iri: iri.into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -728,7 +728,7 @@ impl RdfNode {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn term_repr(&self) -> SimpleTerm<'static> {
-        SimpleTerm::Iri(IriRef::new(MownStr::from((*self.iri).clone())).unwrap())
+        SimpleTerm::Iri(IriRef::new(MownStr::from(self.iri.to_string())).unwrap())
     }
 }
 
@@ -751,7 +751,7 @@ impl Model for RdfNode {
 pub struct RdfPredicate {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub iri: Arc<String>,
+    pub iri: Arc<str>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: ERef<RdfNode>,
@@ -759,22 +759,22 @@ pub struct RdfPredicate {
     #[nh_context_serde(entity)]
     pub target: RdfTargettableElement,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl RdfPredicate {
     pub fn new(
         uuid: ModelUuid,
-        iri: String,
+        iri: &str,
         source: ERef<RdfNode>,
         target: RdfTargettableElement,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            iri: Arc::new(iri),
+            iri: iri.into(),
             source,
             target,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(

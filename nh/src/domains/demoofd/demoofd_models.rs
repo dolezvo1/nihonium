@@ -375,20 +375,20 @@ pub fn top_sort_info(m: &DemoOfdElement) -> ModelTopSortInfo {
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct DemoOfdDiagram {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoOfdElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdDiagram {
-    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoOfdElement>) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, contained_elements: Vec<DemoOfdElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
 
@@ -617,27 +617,27 @@ impl FullTextSearchable for DemoOfdDiagram {
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdPackage {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     pub kind: DemoPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoOfdElement>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdPackage {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
+        name: &str,
         kind: DemoPackageKind,
         contained_elements: Vec<DemoOfdElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             kind,
             contained_elements,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -744,22 +744,22 @@ impl FullTextSearchable for DemoOfdPackage {
 pub struct DemoOfdEntityType {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-    pub properties: Arc<String>,
+    pub name: Arc<str>,
+    pub properties: Arc<str>,
     #[full_text_searchable(skip)]
     pub internal: bool,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdEntityType {
-    pub fn new(uuid: ModelUuid, name: String, properties: String, internal: bool) -> Self {
+    pub fn new(uuid: ModelUuid, name: &str, properties: &str, internal: bool) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
-            properties: Arc::new(properties),
+            name: name.into(),
+            properties: properties.into(),
             internal,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -798,34 +798,34 @@ pub struct DemoOfdEventType {
     pub uuid: Arc<ModelUuid>,
 
     pub kind: DemoTransactionKind,
-    pub identifier: Arc<String>,
-    pub name: Arc<String>,
+    pub identifier: Arc<str>,
+    pub name: Arc<str>,
 
     #[nh_context_serde(entity)]
     pub base_entity_type: ERef<DemoOfdEntityType>,
     #[nh_context_serde(entity)]
     pub specialization_entity_type: UFOption<ERef<DemoOfdEntityType>>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdEventType {
     pub fn new(
         uuid: ModelUuid,
         kind: DemoTransactionKind,
-        identifier: String,
-        name: String,
+        identifier: &str,
+        name: &str,
         base_entity_type: ERef<DemoOfdEntityType>,
         specialization_entity_type: Option<ERef<DemoOfdEntityType>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
-            identifier: Arc::new(identifier),
-            name: Arc::new(name),
+            identifier: identifier.into(),
+            name: name.into(),
             base_entity_type,
             specialization_entity_type: specialization_entity_type.into(),
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -954,36 +954,36 @@ impl FullTextSearchable for DemoOfdEventType {
 pub struct DemoOfdPropertyType {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub name: Arc<str>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub domain_element: ERef<DemoOfdEntityType>,
-    pub domain_multiplicity: Arc<String>,
+    pub domain_multiplicity: Arc<str>,
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub range_element: ERef<DemoOfdEntityType>,
-    pub range_multiplicity: Arc<String>,
+    pub range_multiplicity: Arc<str>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdPropertyType {
     pub fn new(
         uuid: ModelUuid,
-        name: String,
-        domain_multiplicity: String,
+        name: &str,
+        domain_multiplicity: &str,
         domain_element: ERef<DemoOfdEntityType>,
-        range_multiplicity: String,
+        range_multiplicity: &str,
         range_element: ERef<DemoOfdEntityType>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            name: name.into(),
             domain_element,
-            domain_multiplicity: Arc::new(domain_multiplicity),
+            domain_multiplicity: domain_multiplicity.into(),
             range_element,
-            range_multiplicity: Arc::new(range_multiplicity),
-            comment: Arc::new("".to_owned()),
+            range_multiplicity: range_multiplicity.into(),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1045,7 +1045,7 @@ pub struct DemoOfdSpecialization {
     #[nh_context_serde(entity)]
     pub range_element: ERef<DemoOfdEntityType>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdSpecialization {
@@ -1058,7 +1058,7 @@ impl DemoOfdSpecialization {
             uuid: Arc::new(uuid),
             domain_element,
             range_element,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1119,7 +1119,7 @@ pub struct DemoOfdAggregation {
     #[full_text_searchable(skip)]
     pub is_generalization: bool,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdAggregation {
@@ -1134,7 +1134,7 @@ impl DemoOfdAggregation {
             domain_elements,
             range_element,
             is_generalization,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1253,7 +1253,7 @@ pub struct DemoOfdPrecedence {
     #[nh_context_serde(entity)]
     pub range_element: ERef<DemoOfdEventType>,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdPrecedence {
@@ -1266,7 +1266,7 @@ impl DemoOfdPrecedence {
             uuid: Arc::new(uuid),
             domain_element,
             range_element,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1325,7 +1325,7 @@ pub struct DemoOfdExclusion {
     #[nh_context_serde(entity)]
     pub range_element: DemoOfdType,
 
-    pub comment: Arc<String>,
+    pub comment: Arc<str>,
 }
 
 impl DemoOfdExclusion {
@@ -1334,7 +1334,7 @@ impl DemoOfdExclusion {
             uuid: Arc::new(uuid),
             domain_element,
             range_element,
-            comment: Arc::new("".to_owned()),
+            comment: "".into(),
         }
     }
     pub fn deep_copy_clone_inner(
@@ -1386,14 +1386,14 @@ impl Model for DemoOfdExclusion {
 pub struct DemoOfdNote {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    pub text: Arc<String>,
+    pub text: Arc<str>,
 }
 
 impl DemoOfdNote {
-    pub fn new(uuid: ModelUuid, text: String) -> Self {
+    pub fn new(uuid: ModelUuid, text: &str) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            text: Arc::new(text),
+            text: text.into(),
         }
     }
     pub fn deep_copy_clone_inner(

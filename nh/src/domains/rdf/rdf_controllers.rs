@@ -58,15 +58,15 @@ pub struct RdfOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum RdfPropChange {
-    NameChange(Arc<String>),
-    IriChange(Arc<String>),
+    NameChange(Arc<str>),
+    IriChange(Arc<str>),
 
-    ContentChange(Arc<String>),
-    DataTypeChange(Arc<String>),
-    LangTagChange(Arc<String>),
+    ContentChange(Arc<str>),
+    DataTypeChange(Arc<str>),
+    LangTagChange(Arc<str>),
 
     ColorChange(ColorChangeData),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     FlipMulticonnection(FlipMulticonnection),
 }
 
@@ -230,8 +230,8 @@ impl RdfDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: RdfDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -244,7 +244,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -292,7 +292,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &RdfElement) -> Arc<String> {
+    fn label_for(&self, e: &RdfElement) -> Arc<str> {
         match e {
             RdfElement::Graph(inner) => inner.read().iri.clone(),
             RdfElement::Literal(inner) => inner.read().content.clone(),
@@ -345,7 +345,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                RdfPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                RdfPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         };
 
@@ -355,7 +355,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                RdfPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                RdfPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -401,8 +401,8 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -500,11 +500,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(RdfDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(RdfDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -540,7 +536,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(RdfDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![
             node.into(),
             literal_model.into(),
@@ -578,11 +574,7 @@ pub fn stress_test<const N1: usize, const DX: u32, const DY: u32>(
         }
     }
 
-    let diagram = ERef::new(RdfDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        models,
-    ));
+    let diagram = ERef::new(RdfDiagram::new(ModelUuid::now_v7(), name, models));
     new_controlller(diagram, name.to_owned(), views)
 }
 
@@ -1359,11 +1351,7 @@ fn new_rdf_graph(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
-    let model = ERef::new(RdfGraph::new(
-        ModelUuid::now_v7(),
-        iri.to_owned(),
-        Vec::new(),
-    ));
+    let model = ERef::new(RdfGraph::new(ModelUuid::now_v7(), iri, Vec::new()));
     let view = new_rdf_graph_view(model.clone(), bounds_rect, background_color, request_focus);
 
     (model, view)
@@ -1382,8 +1370,8 @@ fn new_rdf_graph_view(
             background_color,
             temporaries: RdfGraphAdapterTemporaries {
                 request_focus,
-                iri_buffer: (*m.iri).clone(),
-                comment_buffer: (*m.comment).clone(),
+                iri_buffer: m.iri.to_string(),
+                comment_buffer: m.comment.to_string(),
             },
         },
         Vec::new(),
@@ -1419,7 +1407,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().iri.clone()
     }
 
@@ -1463,7 +1451,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
+                RdfPropChange::IriChange(self.temporaries.iri_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -1474,7 +1462,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                RdfPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
     }
@@ -1532,8 +1520,8 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.iri_buffer = (*model.iri).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.iri_buffer = model.iri.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(&self, new_uuid: ModelUuid, m: &mut HashMap<ModelUuid, RdfElement>) -> Self
@@ -1563,7 +1551,7 @@ fn new_rdf_node(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<RdfNode>, ERef<RdfNodeView>) {
-    let model = ERef::new(RdfNode::new(ModelUuid::now_v7(), iri.to_owned()));
+    let model = ERef::new(RdfNode::new(ModelUuid::now_v7(), iri));
     let view = new_rdf_node_view(model.clone(), position, background_color, request_focus);
     (model, view)
 }
@@ -1711,7 +1699,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
+                RdfPropChange::IriChange(self.temporaries.iri_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -1722,7 +1710,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                RdfPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -2072,8 +2060,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.iri_buffer = (*model.iri).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.iri_buffer = model.iri.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -2129,9 +2117,9 @@ fn new_rdf_literal(
 ) -> (ERef<RdfLiteral>, ERef<RdfLiteralView>) {
     let model = ERef::new(RdfLiteral::new(
         ModelUuid::now_v7(),
-        content.to_owned(),
-        datatype.to_owned(),
-        langtag.to_owned(),
+        content,
+        datatype,
+        langtag,
     ));
     let view = new_rdf_literal_view(model.clone(), position, background_color, request_focus);
     (model, view)
@@ -2247,7 +2235,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::ContentChange(Arc::new(self.temporaries.content_buffer.clone())),
+                RdfPropChange::ContentChange(self.temporaries.content_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -2257,7 +2245,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::DataTypeChange(Arc::new(self.temporaries.datatype_buffer.clone())),
+                RdfPropChange::DataTypeChange(self.temporaries.datatype_buffer.clone().into()),
             ));
         };
 
@@ -2267,7 +2255,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::LangTagChange(Arc::new(self.temporaries.langtag_buffer.clone())),
+                RdfPropChange::LangTagChange(self.temporaries.langtag_buffer.clone().into()),
             ));
         }
 
@@ -2277,7 +2265,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                RdfPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -2528,10 +2516,10 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.content_buffer = (*model.content).clone();
-        self.temporaries.datatype_buffer = (*model.datatype).clone();
-        self.temporaries.langtag_buffer = (*model.langtag).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.content_buffer = model.content.to_string();
+        self.temporaries.datatype_buffer = model.datatype.to_string();
+        self.temporaries.langtag_buffer = model.langtag.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -2585,7 +2573,7 @@ fn new_rdf_predicate(
 ) -> (ERef<RdfPredicate>, ERef<LinkViewT>) {
     let model = ERef::new(RdfPredicate::new(
         ModelUuid::now_v7(),
-        iri.to_owned(),
+        iri,
         source.0,
         target.0,
     ));
@@ -2656,7 +2644,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         _settings: &<RdfDomain as Domain>::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<RdfDomain as Domain>::ToolT)>,
-    ) -> Result<(), Arc<String>> {
+    ) -> Result<(), Arc<str>> {
         Err(self.model.read().iri.clone())
     }
 
@@ -2699,7 +2687,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
+                RdfPropChange::IriChange(self.temporaries.iri_buffer.clone().into()),
             ));
         }
 
@@ -2709,7 +2697,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                RdfPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -2777,8 +2765,8 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.iri_buffer = (*model.iri).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.iri_buffer = model.iri.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(&self, new_uuid: ModelUuid, m: &mut HashMap<ModelUuid, RdfElement>) -> Self

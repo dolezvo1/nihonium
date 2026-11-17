@@ -62,7 +62,7 @@ pub struct NetworkOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum NetworkPropChange {
-    NameChange(Arc<String>),
+    NameChange(Arc<str>),
 
     NodeKindChange(NetworkNodeKind),
     UserKindChange(NetworkUserKind),
@@ -71,14 +71,14 @@ pub enum NetworkPropChange {
 
     AssociationLineTypeChange(NetworkAssociationLineType),
     AssociationArrowheadTypeChange(/*target?*/ bool, NetworkAssociationArrowheadType),
-    AssociationMultiplicityChange(/*target?*/ bool, Arc<String>),
-    AssociationRoleChange(/*target?*/ bool, Arc<String>),
-    AssociationReadingChange(/*target?*/ bool, Arc<String>),
+    AssociationMultiplicityChange(/*target?*/ bool, Arc<str>),
+    AssociationRoleChange(/*target?*/ bool, Arc<str>),
+    AssociationReadingChange(/*target?*/ bool, Arc<str>),
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
     CustomImageChange(UFOption<ResourceUuid>),
-    CommentChange(Arc<String>),
+    CommentChange(Arc<str>),
     NoteAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
@@ -235,8 +235,8 @@ impl NetworkDiagramAdapter {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: NetworkDiagramBuffer {
-                name: (*m.name).clone(),
-                comment: (*m.comment).clone(),
+                name: m.name.to_string(),
+                comment: m.comment.to_string(),
             },
         }
     }
@@ -249,7 +249,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -316,7 +316,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
 
         Ok(v)
     }
-    fn label_for(&self, e: &NetworkElement) -> Arc<String> {
+    fn label_for(&self, e: &NetworkElement) -> Arc<str> {
         match e {
             NetworkElement::Container(inner) => format!(
                 "Container ({})",
@@ -338,12 +338,11 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
             NetworkElement::Association(_inner) => "Association".to_owned().into(),
             NetworkElement::Note(inner) => {
                 let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Note".to_owned()
+                if r.text.is_empty() {
+                    "Note".into()
                 } else {
-                    format!("Note ({})", LabelProvider::sanitize(&r.text))
-                };
-                Arc::new(s)
+                    format!("Note ({})", LabelProvider::sanitize(&r.text)).into()
+                }
             }
         }
     }
@@ -392,7 +391,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                NetworkPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+                NetworkPropChange::NameChange(self.buffer.name.clone().into()),
             ));
         };
 
@@ -402,7 +401,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 std::iter::once(*view_uuid).collect(),
-                NetworkPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+                NetworkPropChange::CommentChange(self.buffer.comment.clone().into()),
             ));
         }
     }
@@ -452,8 +451,8 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.buffer.name = (*model.name).clone();
-        self.buffer.comment = (*model.comment).clone();
+        self.buffer.name = model.name.to_string();
+        self.buffer.comment = model.comment.to_string();
     }
 
     fn menubar_options_fun(
@@ -534,11 +533,7 @@ fn new_controlller(
 }
 
 pub fn new(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let diagram = ERef::new(NetworkDiagram::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        vec![],
-    ));
+    let diagram = ERef::new(NetworkDiagram::new(ModelUuid::now_v7(), name, vec![]));
     new_controlller(diagram, name.to_owned(), vec![])
 }
 
@@ -629,7 +624,7 @@ pub fn demo(name: &str) -> (ViewUuid, ERef<dyn DiagramController>) {
 
     let diagram = ERef::new(NetworkDiagram::new(
         ModelUuid::now_v7(),
-        name.to_owned(),
+        name,
         vec![
             internet.into(),
             router.into(),
@@ -2031,11 +2026,7 @@ fn new_network_container(
     bounds_rect: egui::Rect,
     request_focus: bool,
 ) -> (ERef<NetworkContainer>, ERef<PackageViewT>) {
-    let container_model = ERef::new(NetworkContainer::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        Vec::new(),
-    ));
+    let container_model = ERef::new(NetworkContainer::new(ModelUuid::now_v7(), name, Vec::new()));
     let container_view =
         new_network_container_view(container_model.clone(), bounds_rect, request_focus);
 
@@ -2055,8 +2046,8 @@ fn new_network_container_view(
             custom_image: UFOption::None,
             temporaries: NetworkContainerAdapterTemporaries {
                 request_focus,
-                name_buffer: (*m.name).clone(),
-                comment_buffer: (*m.comment).clone(),
+                name_buffer: m.name.to_string(),
+                comment_buffer: m.comment.to_string(),
             },
         },
         Vec::new(),
@@ -2093,7 +2084,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
+    fn model_name(&self) -> Arc<str> {
         self.model.read().name.clone()
     }
 
@@ -2152,7 +2143,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                NetworkPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -2163,7 +2154,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
     }
@@ -2243,8 +2234,8 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.name_buffer = model.name.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -2366,7 +2357,7 @@ fn new_network_node(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<NetworkNode>, ERef<NetworkNodeView>) {
-    let model = ERef::new(NetworkNode::new(ModelUuid::now_v7(), name.to_owned(), kind));
+    let model = ERef::new(NetworkNode::new(ModelUuid::now_v7(), name, kind));
     let view = new_network_node_view(model.clone(), position, background_color, request_focus);
     (model, view)
 }
@@ -2479,7 +2470,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                NetworkPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -2507,7 +2498,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -3508,9 +3499,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -3565,7 +3556,7 @@ fn new_network_user(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<NetworkUser>, ERef<NetworkUserView>) {
-    let user_model = ERef::new(NetworkUser::new(ModelUuid::now_v7(), name.to_owned(), kind));
+    let user_model = ERef::new(NetworkUser::new(ModelUuid::now_v7(), name, kind));
     let user_view = new_network_user_view(
         user_model.clone(),
         position,
@@ -3683,7 +3674,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                NetworkPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -3711,7 +3702,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4198,9 +4189,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -4255,7 +4246,7 @@ fn new_network_file(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<NetworkFile>, ERef<NetworkFileView>) {
-    let user_model = ERef::new(NetworkFile::new(ModelUuid::now_v7(), name.to_owned(), kind));
+    let user_model = ERef::new(NetworkFile::new(ModelUuid::now_v7(), name, kind));
     let user_view = new_network_file_view(
         user_model.clone(),
         position,
@@ -4373,7 +4364,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                NetworkPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -4401,7 +4392,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -4770,9 +4761,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -4826,11 +4817,7 @@ fn new_network_location(
     position: egui::Pos2,
     request_focus: bool,
 ) -> (ERef<NetworkLocation>, ERef<NetworkLocationView>) {
-    let model = ERef::new(NetworkLocation::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        kind,
-    ));
+    let model = ERef::new(NetworkLocation::new(ModelUuid::now_v7(), name, kind));
     let view = new_network_location_view(model.clone(), position, request_focus);
     (model, view)
 }
@@ -4846,9 +4833,9 @@ fn new_network_location_view(
 
         temporaries: NetworkLocationViewTemporaries {
             request_focus,
-            name_buffer: (*m.name).to_owned(),
+            name_buffer: m.name.to_string(),
             kind_buffer: m.kind,
-            comment_buffer: (*m.comment).to_owned(),
+            comment_buffer: m.comment.to_string(),
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
         },
@@ -4940,7 +4927,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+                NetworkPropChange::NameChange(self.temporaries.name_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -4968,7 +4955,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -5398,9 +5385,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkLocationView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.name_buffer = model.name.to_string();
         self.temporaries.kind_buffer = model.kind;
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn head_count(
@@ -5617,7 +5604,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 q.selected_views(),
                 NetworkPropChange::AssociationMultiplicityChange(
                     false,
-                    Arc::new(self.temporaries.source_multiplicity_buffer.clone()),
+                    self.temporaries.source_multiplicity_buffer.clone().into(),
                 ),
             ));
         }
@@ -5629,7 +5616,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 q.selected_views(),
                 NetworkPropChange::AssociationRoleChange(
                     false,
-                    Arc::new(self.temporaries.source_role_buffer.clone()),
+                    self.temporaries.source_role_buffer.clone().into(),
                 ),
             ));
         }
@@ -5644,7 +5631,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 q.selected_views(),
                 NetworkPropChange::AssociationReadingChange(
                     false,
-                    Arc::new(self.temporaries.source_reading_buffer.clone()),
+                    self.temporaries.source_reading_buffer.clone().into(),
                 ),
             ));
         }
@@ -5684,7 +5671,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 q.selected_views(),
                 NetworkPropChange::AssociationMultiplicityChange(
                     true,
-                    Arc::new(self.temporaries.target_multiplicity_buffer.clone()),
+                    self.temporaries.target_multiplicity_buffer.clone().into(),
                 ),
             ));
         }
@@ -5696,7 +5683,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 q.selected_views(),
                 NetworkPropChange::AssociationRoleChange(
                     true,
-                    Arc::new(self.temporaries.target_role_buffer.clone()),
+                    self.temporaries.target_role_buffer.clone().into(),
                 ),
             ));
         }
@@ -5711,7 +5698,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                 q.selected_views(),
                 NetworkPropChange::AssociationReadingChange(
                     true,
-                    Arc::new(self.temporaries.target_reading_buffer.clone()),
+                    self.temporaries.target_reading_buffer.clone().into(),
                 ),
             ));
         }
@@ -5722,7 +5709,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+                NetworkPropChange::CommentChange(self.temporaries.comment_buffer.clone().into()),
             ));
         }
 
@@ -5870,9 +5857,9 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         fn ah(
             line_type: NetworkAssociationLineType,
             arrowhead_type: NetworkAssociationArrowheadType,
-            multiplicity: &Arc<String>,
-            role: &Arc<String>,
-            reading: &Arc<String>,
+            multiplicity: &Arc<str>,
+            role: &Arc<str>,
+            reading: &Arc<str>,
         ) -> ArrowData {
             let line_type = match line_type {
                 NetworkAssociationLineType::Solid => canvas::LineType::Solid,
@@ -5947,14 +5934,14 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
 
         self.temporaries.line_type_buffer = model.line_type;
         self.temporaries.source_arrowhead_buffer = model.source_arrowhead;
-        self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
-        self.temporaries.source_role_buffer = (*model.source_label_role).clone();
-        self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
+        self.temporaries.source_multiplicity_buffer = model.source_label_multiplicity.to_string();
+        self.temporaries.source_role_buffer = model.source_label_role.to_string();
+        self.temporaries.source_reading_buffer = model.source_label_reading.to_string();
         self.temporaries.target_arrowhead_buffer = model.target_arrowhead;
-        self.temporaries.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
-        self.temporaries.target_role_buffer = (*model.target_label_role).clone();
-        self.temporaries.target_reading_buffer = (*model.target_label_reading).clone();
-        self.temporaries.comment_buffer = (*model.comment).clone();
+        self.temporaries.target_multiplicity_buffer = model.target_label_multiplicity.to_string();
+        self.temporaries.target_role_buffer = model.target_label_role.to_string();
+        self.temporaries.target_reading_buffer = model.target_label_reading.to_string();
+        self.temporaries.comment_buffer = model.comment.to_string();
     }
 
     fn deep_copy_init(
@@ -5992,7 +5979,7 @@ pub fn new_network_note(
     background_color: MGlobalColor,
     request_focus: bool,
 ) -> (ERef<NetworkNote>, ERef<NetworkNoteView>) {
-    let model = ERef::new(NetworkNote::new(ModelUuid::now_v7(), text.to_owned()));
+    let model = ERef::new(NetworkNote::new(ModelUuid::now_v7(), text));
     let view = new_network_note_view(
         model.clone(),
         position,
@@ -6017,7 +6004,7 @@ pub fn new_network_note_view(
 
         temporaries: NetworkNoteViewTemporaries {
             request_focus,
-            text_buffer: (*m.text).clone(),
+            text_buffer: m.text.to_string(),
             dragged_shape: None,
             highlight: canvas::Highlight::from_selected(request_focus),
         },
@@ -6113,7 +6100,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::NameChange(Arc::new(self.temporaries.text_buffer.clone())),
+                NetworkPropChange::NameChange(self.temporaries.text_buffer.clone().into()),
             ));
         }
         self.temporaries.request_focus = false;
@@ -6526,7 +6513,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNoteView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.temporaries.text_buffer = (*model.text).clone();
+        self.temporaries.text_buffer = model.text.to_string();
     }
 
     fn head_count(
